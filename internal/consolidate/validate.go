@@ -156,6 +156,12 @@ func (v *validator) add(op *Op, scrub func(string) string) ([]string, string) {
 	case len(op.Evidence) == 0:
 		return nil, "add needs evidence"
 	}
+	if model.ScopeKind(op.ScopeKind) == model.Global {
+		return nil, "add may not be global"
+	}
+	if !within(op.Scope, v.project) {
+		return nil, "scope must be inside the session's project"
+	}
 	for _, id := range op.Evidence {
 		if !v.events[id] {
 			return nil, fmt.Sprintf("evidence %d is outside the input", id)

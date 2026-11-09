@@ -180,9 +180,6 @@ func (a applier) add(op Op) error {
 			return err
 		}
 	}
-	if m.Status == model.Candidate {
-		m.Status = model.Active
-	}
 	return a.write("add", m, before)
 }
 

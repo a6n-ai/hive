@@ -177,7 +177,7 @@ func TestHostileOpsDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid, rejected := consolidate.Validate(ops, consolidate.Input{Events: inputEvents(ids), Memories: memories(e, a, b, c)}, e.scrub, noFind)
+	valid, rejected := consolidate.Validate(ops, consolidate.Input{Project: "/p", Events: inputEvents(ids), Memories: memories(e, a, b, c)}, e.scrub, noFind)
 	if len(valid) != 2 || len(rejected) != 6 {
 		t.Fatalf("valid = %d rejected = %d, want 2 and 6: %+v", len(valid), len(rejected), rejected)
 	}
@@ -193,13 +193,13 @@ func TestTooManyOpsRejected(t *testing.T) {
 	ids, _, _, _ := abc(e)
 	var ops []string
 	for i := 0; i < 51; i++ {
-		ops = append(ops, fmt.Sprintf(`{"op":"add","type":"decision","scope_kind":"global","scope":"","key":"k%d","text":"t","evidence":[%d]}`, i, ids[0]))
+		ops = append(ops, fmt.Sprintf(`{"op":"add","type":"decision","scope_kind":"project","scope":"/p","key":"k%d","text":"t","evidence":[%d]}`, i, ids[0]))
 	}
 	parsed, err := consolidate.ParseOps(`{"ops":[` + strings.Join(ops, ",") + `]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid, rejected := consolidate.Validate(parsed, consolidate.Input{Events: inputEvents(ids)}, e.scrub, noFind)
+	valid, rejected := consolidate.Validate(parsed, consolidate.Input{Project: "/p", Events: inputEvents(ids)}, e.scrub, noFind)
 	if len(valid) != 50 || len(rejected) != 1 {
 		t.Errorf("valid = %d rejected = %d, want 50 and 1", len(valid), len(rejected))
 	}
