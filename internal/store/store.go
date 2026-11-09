@@ -160,6 +160,23 @@ func (s *Store) write(ctx context.Context, fn func(*Tx) error) error {
 	return nil
 }
 
+// Savepoint runs fn so that its writes are undone if fn fails. Other writes in
+// the transaction are kept.
+func (t *Tx) Savepoint(fn func() error) error {
+	if _, err := t.tx.Exec(`SAVEPOINT drain_evt`); err != nil {
+		return err
+	}
+	if err := fn(); err != nil {
+		if _, rerr := t.tx.Exec(`ROLLBACK TO drain_evt`); rerr != nil {
+			return rerr
+		}
+		_, _ = t.tx.Exec(`RELEASE drain_evt`)
+		return err
+	}
+	_, err := t.tx.Exec(`RELEASE drain_evt`)
+	return err
+}
+
 // AfterCommit registers f to run only if the transaction commits.
 func (t *Tx) AfterCommit(f func()) { t.afterCommit = append(t.afterCommit, f) }
 

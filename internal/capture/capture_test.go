@@ -257,3 +257,54 @@ func TestHugeCommandDoesNotStopCapture(t *testing.T) {
 		t.Fatal("normal event not stored after the huge spool line")
 	}
 }
+
+type poisonExtractor struct{}
+
+func (poisonExtractor) Kinds() []model.EventKind { return []model.EventKind{model.Prompt} }
+func (poisonExtractor) Extract(_ context.Context, e *model.Event, _ *store.Tx, _ config.Config) error {
+	if e.PromptText == "POISON" {
+		return errors.New("extractor always fails on this event")
+	}
+	return nil
+}
+
+func TestPoisonSpooledEventIsQuarantined(t *testing.T) {
+	ctx := context.Background()
+	p, path := newPipeline(t)
+	p.Extract.Register(poisonExtractor{})
+	prompt := func(digest, text string) *model.Event {
+		return &model.Event{TS: 1000, Agent: "claude-code", Session: "s1", Project: "/p", Kind: model.Prompt, PromptText: text, Digest: digest}
+	}
+	for _, e := range []*model.Event{prompt("marker", "POISON"), prompt("n1", "normal1"), prompt("n2", "normal2")} {
+		if err := p.Store.Spool(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.Capture(ctx, *prompt("n3", "normal3")); err != nil {
+		t.Fatalf("Capture with a poisoned spool: %v", err)
+	}
+	if err := p.Capture(ctx, *prompt("n4", "normal4")); err != nil {
+		t.Fatalf("second Capture: %v", err)
+	}
+	evs, err := p.Store.QueryEvents("s1", "", []model.EventKind{model.Prompt}, 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := map[string]bool{}
+	for _, e := range evs {
+		stored[e.PromptText] = true
+	}
+	for _, want := range []string{"normal1", "normal2", "normal3", "normal4"} {
+		if !stored[want] {
+			t.Errorf("%s not stored", want)
+		}
+	}
+	bad, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "spool", "bad", "poison-*.jsonl"))
+	if len(bad) != 1 {
+		t.Fatalf("poison files = %v, want 1", bad)
+	}
+	b, err := os.ReadFile(bad[0])
+	if err != nil || !bytes.Contains(b, []byte(`"POISON"`)) {
+		t.Fatalf("poison file = %q, err %v", b, err)
+	}
+}

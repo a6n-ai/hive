@@ -9,6 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/extract"
@@ -100,8 +103,10 @@ func (p *Pipeline) Capture(ctx context.Context, e model.Event) error {
 			if underAny(drained[i].Project, p.Cfg.Exclude.Paths) {
 				continue
 			}
-			if err := p.process(ctx, tx, &drained[i]); err != nil {
-				return err
+			if err := tx.Savepoint(func() error { return p.process(ctx, tx, &drained[i]) }); err != nil {
+				if err := quarantine(p.Store.Path(), &drained[i]); err != nil {
+					return err
+				}
 			}
 		}
 		inserted, err := tx.InsertEvent(&e)
@@ -115,6 +120,21 @@ func (p *Pipeline) Capture(ctx context.Context, e model.Event) error {
 		return p.Store.Spool(&e)
 	}
 	return err
+}
+
+// quarantine keeps an event whose processing always fails in spool/bad, so it
+// cannot fail every later write.
+func quarantine(dbPath string, e *model.Event) error {
+	dir := filepath.Join(filepath.Dir(dbPath), "spool", "bad")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	name := filepath.Join(dir, fmt.Sprintf("poison-%d.jsonl", time.Now().UnixNano()))
+	return os.WriteFile(name, append(line, '\n'), 0o600)
 }
 
 // process runs on an event that is already inserted.
