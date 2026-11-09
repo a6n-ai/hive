@@ -162,6 +162,20 @@ func TestLargeInputLinearTime(t *testing.T) {
 	}
 }
 
+func TestManyUnclosedValuesLinearTime(t *testing.T) {
+	s := newScrubber(t)
+	timeFor := func(n int) time.Duration {
+		in := strings.Repeat("echo password=\"x9unclosed value here\n", n)
+		start := time.Now()
+		s.Scrub(in)
+		return time.Since(start)
+	}
+	small, large := timeFor(2000), timeFor(20000)
+	if ratio := float64(large) / float64(small); ratio > 30 {
+		t.Fatalf("10x input took %.1fx longer (%v vs %v), want roughly linear", ratio, large, small)
+	}
+}
+
 func TestQuotedValueDoesNotCrossLines(t *testing.T) {
 	s := newScrubber(t)
 	in := "password=\"first9value\napi_key=\"second9value\"\n"
@@ -184,6 +198,27 @@ func TestClosedMultilineValueRedacted(t *testing.T) {
 	} {
 		if out, _ := s.Scrub(in); strings.Contains(out, "line2tail9") || strings.Contains(out, "line1") {
 			t.Errorf("leaked:\n in:  %q\n out: %q", in, out)
+		}
+	}
+}
+
+// Security review round 5: a multi-line value must not end on a quote that
+// opens another assignment, with LF or CRLF line ends.
+func TestValueStopsBeforeNextAssignment(t *testing.T) {
+	s := newScrubber(t)
+	cases := []struct{ in, secret string }{
+		{"password=\"first9value\r\napi_key=\"second9value\"\r\n", "second9value"},
+		{"password=\"first9value\nfoo = 1\ntoken=\"third9value\"", "third9value"},
+		{"{\"password\": \"first9value\n\"api_key\": \"second9value\"}", "second9value"},
+		{"password=\"first9value\r\n", "first9value"},
+		// The quote ending line 2 opens api_key's own multi-line value.
+		{"password: \"first9value\napi_key: \"\n  second9value\"\n", "second9value"},
+		// A secret key in the middle of the next line also ends the value.
+		{"echo password=\"first9value\necho token=\"second9value\n", "second9value"},
+	}
+	for _, c := range cases {
+		if out, _ := s.Scrub(c.in); strings.Contains(out, c.secret) || strings.Contains(out, "first9value") {
+			t.Errorf("leaked:\n in:  %q\n out: %q", c.in, out)
 		}
 	}
 }

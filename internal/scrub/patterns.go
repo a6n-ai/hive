@@ -25,29 +25,19 @@ var builtin = []rule{
 	// Greedy up to the last '@' before the host, so a password containing '@'
 	// is redacted whole.
 	{"url_credentials", regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.\-]*://([^\s:/@]+:[^\s/]*)@[^\s@/]+`), 1},
-	// A quoted key (JSON, YAML) may end its unquoted value at ',' or '}'.
-	{"assignment", regexp.MustCompile(`(?im)\b` + secretKeys + `s?\b["']\s*[:=]\s*(` + quotedValue + `|[^\s'",}]+)`), 1},
-	// A bare key (shell, env, .ini) keeps the whole token after it.
-	{"assignment", regexp.MustCompile(`(?im)\b` + secretKeys + `s?\b\s*[:=]\s*(` + quotedValue + `|[^\s'"]+)`), 1},
 }
 
+// Assignments (password=..., "api_key": "...") are found by assignKey and
+// their values measured by the scanner in assign.go, not by a regex: quoted
+// values that span lines cannot be bounded correctly by a regular expression.
 const secretKeys = `(?:password|passwd|secret|token|api[_\-]?key|auth|credential)`
 
-// quotedValue, tried in order:
-//  1. a closed value on one line (escape-aware);
-//  2. a closed value spanning lines, accepted only when its closing quote is
-//     followed by end of line or , ; } ] — so an unterminated value cannot run
-//     on to the next line's opening quote (`a="x⏎b="y"`) and hide that secret;
-//     the terminator is redacted with the value;
-//  3. an unterminated or backslash-ended value, redacted to end of line.
-var quotedValue = quotedForms(`"`) + `|` + quotedForms(`'`)
+// assignKey matches a secret key and its separator; group 1 is a quote that
+// closes a quoted key (JSON, YAML). The value starts at the end of the match.
+var assignKey = regexp.MustCompile(`(?i)\b` + secretKeys + `s?\b(["']?)[ \t]*[:=][ \t]*`)
 
-// quotedForms returns the three alternatives above for quote character q.
-func quotedForms(q string) string {
-	return q + `(?:[^` + q + `\\\n]|\\[^\n])*` + q +
-		`|` + q + `(?:[^` + q + `\\]|\\.|\\\n)*` + q + `[ \t]*(?:[,;}\]]|$)` +
-		`|` + q + `[^` + q + `\n]*` + q + `?`
-}
+// assignmentStart matches a line that begins any key: or key= assignment.
+var assignmentStart = regexp.MustCompile(`^[ \t]*["']?[A-Za-z_][\w.\-]*["']?[ \t]*[:=]`)
 
 // entropyCandidate finds runs that may be random secrets.
 var entropyCandidate = regexp.MustCompile(`[A-Za-z0-9_=+\-]{32,}`)

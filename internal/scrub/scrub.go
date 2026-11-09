@@ -41,6 +41,7 @@ func (sc *Scrubber) Scrub(s string) (string, []Finding) {
 	for _, r := range sc.rules {
 		s = replace(s, r, &findings)
 	}
+	s = redactAssignments(s, &findings)
 	s = scrubEntropy(s, &findings)
 	return s, findings
 }
