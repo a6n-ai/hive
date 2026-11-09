@@ -307,3 +307,26 @@ func TestManySameLineKeysLinear(t *testing.T) {
 		t.Fatalf("10x input took %.1fx longer (%v vs %v), want roughly linear", ratio, large, small)
 	}
 }
+
+func TestSecretKeysInsideIdentifiers(t *testing.T) {
+	s := newScrubber(t)
+	for _, c := range []struct{ in, value string }{
+		{"DB_PASSWORD=hunter9two", "hunter9two"},
+		{"AWS_SECRET_ACCESS_KEY=wJalr9EXAMPLEKEY/K7MDENG", "wJalr9EXAMPLEKEY/K7MDENG"},
+		{"client_secret=cs9value", "cs9value"},
+		{"access_token=at9value", "at9value"},
+		{"export API_TOKEN=tok9value", "tok9value"},
+		{"refresh_token: rt9value", "rt9value"},
+		{`"private_key": "pk9value"`, "pk9value"},
+	} {
+		out, _ := s.Scrub(c.in)
+		if strings.Contains(out, c.value) {
+			t.Errorf("%q leaked %q: out %q", c.in, c.value, out)
+		}
+	}
+	for _, in := range []string{"TOKEN_LIMIT=4000", "monkey=banana9"} {
+		if out, _ := s.Scrub(in); out != in {
+			t.Errorf("%q changed to %q", in, out)
+		}
+	}
+}

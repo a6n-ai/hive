@@ -30,11 +30,11 @@ var builtin = []rule{
 // Assignments (password=..., "api_key": "...") are found by assignKey and
 // their values measured by the scanner in assign.go, not by a regex: quoted
 // values that span lines cannot be bounded correctly by a regular expression.
-const secretKeys = `(?:password|passwd|secret|token|api[_\-]?key|auth|credential)`
+const secretKeys = `(?:password|passwd|secret|token|api[_\-]?key|auth|credential|secret[_\-]?access[_\-]?key|access[_\-]?key|secret[_\-]?key|private[_\-]?key|client[_\-]?secret|access[_\-]?token|refresh[_\-]?token|session[_\-]?token)`
 
 // assignKey matches a secret key and its separator; group 1 is a quote that
 // closes a quoted key (JSON, YAML). The value starts at the end of the match.
-var assignKey = regexp.MustCompile(`(?i)\b` + secretKeys + `s?\b(["']?)[ \t]*[:=][ \t]*`)
+var assignKey = regexp.MustCompile(`(?i)(?:^|[^\w.\-])[\w.\-]*` + secretKeys + `s?(["']?)[ \t]*[:=][ \t]*`)
 
 // blockIndicator matches a YAML block-scalar header value such as |, >-, |2+.
 var blockIndicator = regexp.MustCompile(`^[|>][0-9+\-]*$`)
