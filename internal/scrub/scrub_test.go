@@ -79,9 +79,9 @@ func TestNegativeCorpusUnchanged(t *testing.T) {
 func TestKindNames(t *testing.T) {
 	s := newScrubber(t)
 	cases := map[string]string{
-		anthropic:                                 "[REDACTED:anthropic_key]",
-		github:                                    "[REDACTED:github_token]",
-		"AK" + "IA" + "IOSFODNN7EXAMPL1":          "[REDACTED:aws_access_key]",
+		anthropic:                        "[REDACTED:anthropic_key]",
+		github:                           "[REDACTED:github_token]",
+		"AK" + "IA" + "IOSFODNN7EXAMPL1": "[REDACTED:aws_access_key]",
 	}
 	for in, want := range cases {
 		if out, _ := s.Scrub(in); out != want {
