@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/a6n-ai/hive/agent"
 	"github.com/a6n-ai/hive/agent/claudecode"
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/consolidate"
@@ -323,11 +324,33 @@ func TestBelowMinEventsSkips(t *testing.T) {
 }
 
 func TestHeadlessRunnerFakeScript(t *testing.T) {
+	fake, err := filepath.Abs("testdata/fake-agent.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	spec := claudecode.New().Headless("haiku")
-	spec.Command = []string{"./testdata/fake-agent.sh"}
+	spec.Command = []string{fake}
 	out, err := consolidate.Headless{Spec: spec, Timeout: 10 * time.Second}.Run(context.Background(), "prompt")
 	if err != nil || out != `{"ops":[]}` {
 		t.Errorf("out = %q, err = %v", out, err)
+	}
+}
+
+func TestHeadlessRunsInTempDir(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := agent.HeadlessSpec{Command: []string{"sh", "-c", "pwd"}, ParseOutput: func(b []byte) (string, error) { return strings.TrimSpace(string(b)), nil }}
+	dir, err := consolidate.Headless{Spec: spec, Timeout: 10 * time.Second}.Run(context.Background(), "prompt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir == wd || dir == "" {
+		t.Errorf("agent ran in %q, want a fresh temp dir (caller cwd is %q)", dir, wd)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("temp dir %q still exists after the run (stat err %v)", dir, err)
 	}
 }
 

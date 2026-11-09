@@ -141,10 +141,12 @@ func (a *Adapter) Capabilities() agent.Caps {
 
 func (a *Adapter) InstructionsFile() string { return "CLAUDE.md" }
 
-// Headless runs Claude Code in print mode with the given model.
+// Headless runs Claude Code in print mode with the given model and no tools, so
+// text from transcripts cannot make it act. It keeps its normal auth (no --bare).
 func (a *Adapter) Headless(model string) agent.HeadlessSpec {
 	return agent.HeadlessSpec{
-		Command:     []string{"claude", "-p", "--output-format", "json", "--model", model},
+		Command: []string{"claude", "-p", "--output-format", "json", "--model", model,
+			"--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--permission-mode", "dontAsk"},
 		ParseOutput: parseHeadless,
 	}
 }

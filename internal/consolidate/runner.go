@@ -44,6 +44,12 @@ func (h Headless) Run(ctx context.Context, prompt string) (string, error) {
 	defer cancel()
 	var out capped
 	cmd := exec.CommandContext(ctx, h.Spec.Command[0], h.Spec.Command[1:]...) //nolint:gosec // G204: the command comes from an adapter, not from input
+	dir, err := os.MkdirTemp("", "hive-headless-")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = &out
 	cmd.Env = append(os.Environ(), "HIVE_DISABLED=1")
