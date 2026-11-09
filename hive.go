@@ -174,6 +174,10 @@ func (h *Hive) Forget(ctx context.Context, id string, purge bool) error {
 		return tx.SetStatus(id, model.Forgotten)
 	})
 	h.afterWrite()
+	// A purged memory's terms must not stay on disk until Close.
+	if purge && err == nil && h.index != nil {
+		return h.saveIndex()
+	}
 	return err
 }
 

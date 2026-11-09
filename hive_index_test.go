@@ -1,6 +1,7 @@
 package hive
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -212,6 +213,43 @@ func TestSnapshotNewerThanStoreRebuilt(t *testing.T) {
 	defer func() { _ = h.Close() }()
 	if n := indexLen(t, h); n != 0 {
 		t.Fatalf("index holds %d memories from a snapshot newer than the store, want 0", n)
+	}
+}
+
+func TestPurgeRewritesSnapshot(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	h := openIndexed(t, home)
+	if _, err := h.Remember(ctx, "keep this deploy note", model.Note, model.ProjectScope, "/p"); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := h.Remember(ctx, "zqxjvwk token rotation", model.Note, model.ProjectScope, "/p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
+	snapPath := filepath.Join(home, indexFile)
+	before, err := os.ReadFile(snapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(before, []byte("zqxjvwk")) {
+		t.Fatal("snapshot does not hold the secret's term, so the test proves nothing")
+	}
+
+	h = openIndexed(t, home)
+	defer func() { _ = h.Close() }()
+	if err := h.Forget(ctx, secret, true); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(snapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(after, []byte("zqxjvwk")) {
+		t.Fatal("purged memory's term is still in index.snap before Close")
 	}
 }
 
