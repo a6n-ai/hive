@@ -47,6 +47,9 @@ func Validate(ops []Op, in Input, scrub func(string) string, find Finder) (valid
 	for i, op := range ops {
 		touches, reason := v.check(i, &op, scrub)
 		if reason == "" {
+			reason = v.guard(op, touches)
+		}
+		if reason == "" {
 			reason = v.claim(touches)
 		}
 		if reason != "" {
@@ -221,4 +224,22 @@ func scrubBody(body map[string]any, scrub func(string) string) map[string]any {
 		return nil
 	}
 	return out
+}
+
+// guard limits what an op may change: a memory in the session's scope, and a
+// global memory only by promote or reject while it is a candidate.
+func (v *validator) guard(op Op, ids []string) string {
+	for _, id := range ids {
+		m, ok := v.mems[id]
+		if !ok {
+			continue // claim reports unknown memories
+		}
+		if !inScope(m, v.project) {
+			return "memory is outside the session's project"
+		}
+		if m.ScopeKind == model.Global && (m.Status != model.Candidate || (op.Op != "promote" && op.Op != "reject")) {
+			return "a global memory changes only by promote or reject while a candidate"
+		}
+	}
+	return ""
 }

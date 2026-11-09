@@ -54,7 +54,7 @@ func BuildInput(st *store.Store, session string, fromEventID int64, budgetTokens
 		words.WriteString(ie.Text + " ")
 		in.MaxEventID = max(in.MaxEventID, e.ID)
 	}
-	if in.Memories, err = relatedMemories(st, ids, words.String()); err != nil {
+	if in.Memories, err = relatedMemories(st, ids, words.String(), in.Project); err != nil {
 		return Input{}, err
 	}
 	trimToBudget(&in, budgetTokens)
@@ -77,7 +77,7 @@ func render(e model.Event) string {
 
 // relatedMemories returns the memories that cite the events, then memories that
 // match the events' terms, without duplicates.
-func relatedMemories(st *store.Store, eventIDs []int64, words string) ([]model.Memory, error) {
+func relatedMemories(st *store.Store, eventIDs []int64, words, project string) ([]model.Memory, error) {
 	cited, err := st.MemoriesCitingEvents(eventIDs)
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func relatedMemories(st *store.Store, eventIDs []int64, words string) ([]model.M
 	seen := map[string]bool{}
 	var out []model.Memory
 	for _, m := range append(cited, found...) {
-		if !seen[m.ID] && (m.Status == model.Active || m.Status == model.Candidate) {
+		if !seen[m.ID] && (m.Status == model.Active || m.Status == model.Candidate) && inScope(m, project) {
 			seen[m.ID] = true
 			out = append(out, m)
 		}
@@ -115,3 +115,17 @@ func trimToBudget(in *Input, budgetTokens int) {
 }
 
 func eventSize(e InputEvent) int { return len(e.Text) + len(e.Kind) + len(e.Tool) + eventOverhead }
+
+// inScope reports whether a memory may be shown to a session in project: a global
+// memory, one scoped to the project, or a file under it.
+func inScope(m model.Memory, project string) bool {
+	switch m.ScopeKind {
+	case model.Global:
+		return true
+	case model.ProjectScope:
+		return m.Scope == project
+	case model.File:
+		return within(m.Scope, project)
+	}
+	return false
+}
