@@ -1,6 +1,7 @@
 package index
 
 import (
+	"errors"
 	"fmt"
 	"math"
 
@@ -24,6 +25,10 @@ func (ix *Index) normalize(v []float32) ([]float32, error) {
 	out := make([]float32, ix.dim)
 	var sq float64
 	for _, x := range v {
+		// An Inf component makes the norm Inf, and Inf*0 is NaN, which would be stored silently.
+		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
+			return nil, errors.New("index: vector has a non-finite value")
+		}
 		sq += float64(x) * float64(x)
 	}
 	if sq == 0 {

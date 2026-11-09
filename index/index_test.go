@@ -1,6 +1,7 @@
 package index
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -142,5 +143,15 @@ func TestTagsWithPrefix(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(got, []string{"file:/p/a.go", "file:/p/src/b.go"}) {
 		t.Fatalf("TagsWithPrefix = %v", got)
+	}
+}
+
+func TestNonFiniteVectorRejected(t *testing.T) {
+	for _, bad := range []float32{float32(math.Inf(1)), float32(math.NaN())} {
+		ix := New(textFields, 2)
+		err := ix.Upsert(Doc{ID: "v", Fields: map[string]string{"text": "deploy"}, Vector: []float32{1, bad}})
+		if err == nil || !strings.Contains(err.Error(), "index: vector has a non-finite value") {
+			t.Fatalf("Upsert with component %v: err = %v, want a non-finite value error", bad, err)
+		}
 	}
 }
