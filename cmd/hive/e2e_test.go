@@ -184,3 +184,19 @@ func TestRememberListWhyForget(t *testing.T) {
 		t.Fatalf("purged memory still listed: %q", list)
 	}
 }
+
+func TestCUJ3ErrorWithSecretStillRecalls(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	file := filepath.Join(proj, "auth.ts")
+	errAt := func(line int) string {
+		return fmt.Sprintf("Exit code 1\nTypeError: bad config password=hunter2abc at %s:%d:5\n    at next", file, line)
+	}
+	hookOK(t, home, bashPayload("PostToolUseFailure", "s5", proj, "go test ./...", errAt(12)), "PostToolUseFailure")
+	hookOK(t, home, map[string]any{"session_id": "s5", "cwd": proj, "hook_event_name": "PostToolUse", "tool_name": "Edit",
+		"tool_input": map[string]any{"file_path": file, "old_string": "a", "new_string": "b"}}, "PostToolUse")
+	hookOK(t, home, bashPayload("PostToolUse", "s5", proj, "go test ./...", ""), "PostToolUse")
+	out := hookOK(t, home, bashPayload("PostToolUseFailure", "s6", proj, "go test ./...", errAt(40)), "PostToolUseFailure")
+	if ctx := additionalContext(t, out); !strings.Contains(ctx, "auth.ts") {
+		t.Fatalf("additionalContext = %q", ctx)
+	}
+}

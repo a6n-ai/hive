@@ -76,6 +76,12 @@ func Open(o Options) (*Hive, error) {
 
 func (h *Hive) Close() error { return h.store.Close() }
 
+// Scrub returns s with secrets redacted, as the stored events and memories are.
+func (h *Hive) Scrub(s string) string {
+	out, _ := h.pipeline.Scrub.Scrub(s)
+	return out
+}
+
 // Capture stores e and what it implies. An event without a timestamp gets now.
 func (h *Hive) Capture(ctx context.Context, e Event) error {
 	if e.TS == 0 {

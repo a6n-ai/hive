@@ -69,7 +69,7 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := h.Capture(ctx, e); err != nil {
 		return err
 	}
-	q, ok := hookQuery(event, e)
+	q, ok := hookQuery(event, e, h.Scrub)
 	if !ok {
 		return nil
 	}
@@ -85,7 +85,7 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 
 // hookQuery picks what to recall for an event. ok is false when the event
 // should inject nothing.
-func hookQuery(event string, e hive.Event) (hive.Query, bool) {
+func hookQuery(event string, e hive.Event, scrub func(string) string) (hive.Query, bool) {
 	switch event {
 	case "SessionStart":
 		return hive.Query{Project: e.Project, Mode: recall.SessionStart}, true
@@ -96,7 +96,7 @@ func hookQuery(event string, e hive.Event) (hive.Query, bool) {
 		if errText == "" {
 			return hive.Query{}, false
 		}
-		return hive.Query{Project: e.Project, ErrorSignature: extract.Signature(errText), Mode: recall.PostToolError}, true
+		return hive.Query{Project: e.Project, ErrorSignature: extract.Signature(scrub(errText)), Mode: recall.PostToolError}, true
 	}
 	return hive.Query{}, false
 }
