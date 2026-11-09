@@ -6,6 +6,7 @@ import (
 
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/store"
+	"github.com/a6n-ai/hive/internal/text"
 	"github.com/a6n-ai/hive/model"
 )
 
@@ -43,7 +44,7 @@ func (x skillX) Extract(_ context.Context, e *model.Event, tx *store.Tx, cfg con
 		}
 		if slices.Contains(cfg.Skills.Enrich, "terms") {
 			terms := map[string]any{}
-			for _, t := range promptTerms(prompt) {
+			for _, t := range text.Terms(prompt) {
 				terms[t] = 1
 			}
 			body["terms"] = terms

@@ -46,6 +46,8 @@ type ListFilter struct {
 	Types    []model.MemoryType
 	Project  string
 	Statuses []model.Status
+	Key      string // exact key match when set
+	Limit    int    // 0 means no limit
 }
 
 // Open opens or creates the database at path. The parent directory is created
@@ -320,6 +322,10 @@ func filterSQL(a string, f ListFilter) (string, []any) {
 			args = append(args, string(s))
 		}
 	}
+	if f.Key != "" {
+		conds = append(conds, a+".key = ?")
+		args = append(args, f.Key)
+	}
 	if f.Project != "" {
 		conds = append(conds, "("+a+".scope_kind = 'global' OR "+a+".scope = ? OR ("+a+".scope_kind = 'file' AND "+a+".scope LIKE ? ESCAPE '\\'))")
 		args = append(args, f.Project, escapeLike(f.Project)+"/%")
@@ -347,7 +353,12 @@ func (s *Store) GetMemory(id string) (*model.Memory, error) {
 // ListMemories returns memories matching f, most recently seen first.
 func (s *Store) ListMemories(f ListFilter) ([]model.Memory, error) {
 	where, args := filterSQL("memories", f)
-	rows, err := s.db.Query(memorySelect+` WHERE 1=1`+where+` ORDER BY last_seen DESC`, args...)
+	q := memorySelect + ` WHERE 1=1` + where + ` ORDER BY last_seen DESC`
+	if f.Limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, f.Limit)
+	}
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -506,5 +517,18 @@ func (t *Tx) AddEvidence(memoryID string, eventID int64) error {
 // SetStatus changes a memory's status.
 func (t *Tx) SetStatus(memoryID string, s model.Status) error {
 	_, err := t.tx.Exec(`UPDATE memories SET status = ? WHERE id = ?`, string(s), memoryID)
+	return err
+}
+
+// TouchUsed sets last_used for the given memories.
+func (t *Tx) TouchUsed(ids []string, ts int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	args := []any{ts}
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	_, err := t.tx.Exec(`UPDATE memories SET last_used = ? WHERE id IN (`+placeholders(len(ids))+`)`, args...)
 	return err
 }

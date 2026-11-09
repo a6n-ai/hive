@@ -33,28 +33,6 @@ func Classify(prompt string) string {
 
 const maxTerms = 20
 
-var (
-	termRe    = regexp.MustCompile(`[\p{L}\p{N}_]{3,}`)
-	stopWords = map[string]bool{
-		"the": true, "and": true, "for": true, "this": true, "that": true, "with": true, "from": true,
-		"you": true, "can": true, "please": true, "into": true, "are": true, "was": true, "but": true,
-		"not": true, "all": true, "have": true, "use": true, "our": true, "now": true, "then": true,
-	}
-)
-
-// promptTerms returns lowercase content words in a prompt, each once.
-func promptTerms(prompt string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, w := range termRe.FindAllString(strings.ToLower(prompt), -1) {
-		if !stopWords[w] && !seen[w] {
-			seen[w] = true
-			out = append(out, w)
-		}
-	}
-	return out
-}
-
 // topCounts keeps the n highest counts (ties broken by key for stable output).
 func topCounts(m map[string]any, n int) map[string]any {
 	if len(m) <= n {
