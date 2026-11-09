@@ -36,6 +36,9 @@ const secretKeys = `(?:password|passwd|secret|token|api[_\-]?key|auth|credential
 // closes a quoted key (JSON, YAML). The value starts at the end of the match.
 var assignKey = regexp.MustCompile(`(?i)\b` + secretKeys + `s?\b(["']?)[ \t]*[:=][ \t]*`)
 
+// blockIndicator matches a YAML block-scalar header value such as |, >-, |2+.
+var blockIndicator = regexp.MustCompile(`^[|>][0-9+\-]*$`)
+
 // assignmentStart matches a line that begins any key: or key= assignment.
 var assignmentStart = regexp.MustCompile(`^[ \t]*["']?[A-Za-z_][\w.\-]*["']?[ \t]*[:=]`)
 

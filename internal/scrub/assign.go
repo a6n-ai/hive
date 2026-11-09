@@ -32,6 +32,7 @@ func redactAssignments(s string, findings *[]Finding) string {
 		if end <= start {
 			continue
 		}
+		end = yamlContinuation(s, loc[0], loc[1], start, end)
 		switch {
 		case spanStart >= 0 && start <= spanEnd:
 			spanEnd = max(spanEnd, end)
@@ -65,6 +66,49 @@ func valueStart(s string, i int) int {
 		return i // not indented, or a blank line: no value here
 	}
 	return k
+}
+
+// yamlContinuation extends a YAML value over the lines that belong to it: when
+// the value is a block-scalar indicator (| or > with modifiers) or started on
+// the line after its key, every following line indented deeper than the key
+// is part of the value. Other values are returned unchanged.
+func yamlContinuation(s string, keyStart, sepEnd, start, end int) int {
+	v := s[start:end]
+	nextLineValue := start > sepEnd && strings.ContainsRune(s[sepEnd:start], '\n')
+	if !nextLineValue && !blockIndicator.MatchString(v) {
+		return end
+	}
+	keyIndent := lineIndent(s, lineStart(s, keyStart))
+	for j := end; j < len(s); {
+		k := j
+		if s[k] == '\r' {
+			k++
+		}
+		if k >= len(s) || s[k] != '\n' {
+			return end
+		}
+		ls := k + 1
+		le := ls + len(nextLine(s, ls))
+		line := strings.TrimRight(s[ls:le], "\r")
+		if strings.TrimSpace(line) != "" && lineIndent(s, ls) <= keyIndent {
+			return end
+		}
+		if strings.TrimSpace(line) != "" {
+			end = ls + len(line)
+		}
+		j = le
+	}
+	return end
+}
+
+func lineStart(s string, i int) int { return strings.LastIndexByte(s[:i], '\n') + 1 }
+
+func lineIndent(s string, ls int) int {
+	n := 0
+	for ls+n < len(s) && (s[ls+n] == ' ' || s[ls+n] == '\t') {
+		n++
+	}
+	return n
 }
 
 // valueEnd returns the end of the value starting at i. After a quoted key

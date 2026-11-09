@@ -257,3 +257,22 @@ func TestRound6Bypasses(t *testing.T) {
 		t.Errorf("blank line after key must not pull in the next key: %q", out)
 	}
 }
+
+// Security review round 7: YAML block scalars and multi-line plain values.
+func TestYAMLMultilineValues(t *testing.T) {
+	s := newScrubber(t)
+	cases := []struct{ name, in string }{
+		{"literal block", "db:\n  password: |\n    line1tail9\n    line2tail9\n  host: x\n"},
+		{"folded block with chomp", "password: >-\n  line1tail9\n  line2tail9\nother: 1\n"},
+		{"plain continuation", "password:\n  line1tail9\n  line2tail9\nother: 1\n"},
+	}
+	for _, c := range cases {
+		out, _ := s.Scrub(c.in)
+		if strings.Contains(out, "line1tail9") || strings.Contains(out, "line2tail9") {
+			t.Errorf("%s leaked:\n in:  %q\n out: %q", c.name, c.in, out)
+		}
+		if !strings.Contains(out, "host: x") && !strings.Contains(out, "other: 1") {
+			t.Errorf("%s over-redacted the next key:\n out: %q", c.name, out)
+		}
+	}
+}
