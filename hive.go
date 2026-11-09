@@ -134,6 +134,11 @@ func (h *Hive) Capture(ctx context.Context, e Event) error {
 }
 
 func (h *Hive) Recall(ctx context.Context, q Query) ([]Line, error) {
+	if h.index != nil {
+		if err := h.syncIndex(); err != nil {
+			return nil, err
+		}
+	}
 	return recall.Recall(ctx, h.store, h.source(), h.cfg.Recall, q, time.Now())
 }
 

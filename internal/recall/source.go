@@ -1,6 +1,7 @@
 package recall
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/a6n-ai/hive/index"
@@ -44,7 +45,18 @@ func (s IndexSource) Candidates(terms []string, f store.ListFilter, limit int) (
 	for i, h := range hits {
 		ids[i] = h.ID
 	}
-	return s.Store.MemoriesByID(ids)
+	ms, err := s.Store.MemoriesByID(ids)
+	if err != nil {
+		return nil, err
+	}
+	// The index can lag the store, so a memory forgotten or superseded elsewhere may still be indexed as active.
+	return slices.DeleteFunc(ms, func(m model.Memory) bool { return !matches(m, f) }), nil
+}
+
+// matches re-checks the status and type filters on the rows the index returned.
+func matches(m model.Memory, f store.ListFilter) bool {
+	return (len(f.Statuses) == 0 || slices.Contains(f.Statuses, m.Status)) &&
+		(len(f.Types) == 0 || slices.Contains(f.Types, m.Type))
 }
 
 // anyOf translates a store filter into tag groups that must all match. A

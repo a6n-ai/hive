@@ -108,3 +108,29 @@ func TestIndexSurvivesReopen(t *testing.T) {
 		t.Fatalf("recall after reopen = %v, want %s and %s", ids, first, second)
 	}
 }
+
+func TestRecallSeesOtherProcessForget(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	h := openIndexed(t, home)
+	defer func() { _ = h.Close() }()
+	id, _ := h.Remember(ctx, "deploy via make", model.Note, model.ProjectScope, "/p")
+	if ids := promptIDs(t, h, "deploy"); !slices.Equal(ids, []string{id}) {
+		t.Fatalf("recall before forget = %v, want [%s]", ids, id)
+	}
+
+	other, err := Open(Options{Home: home, Caller: "hive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Forget(ctx, id, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := other.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if ids := promptIDs(t, h, "deploy"); len(ids) != 0 {
+		t.Fatalf("recall served a memory another process forgot: %v", ids)
+	}
+}
