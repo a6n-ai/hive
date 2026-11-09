@@ -459,6 +459,44 @@ func (s *Store) Evidence(memoryID string) ([]model.Event, error) {
 	return scanEvents(rows)
 }
 
+// QueryEvents returns events matching every non-zero filter, oldest first.
+func (s *Store) QueryEvents(session, project string, kinds []model.EventKind, since, until int64, limit int) ([]model.Event, error) {
+	var conds []string
+	var args []any
+	if session != "" {
+		conds, args = append(conds, "e.session = ?"), append(args, session)
+	}
+	if project != "" {
+		conds, args = append(conds, "e.project = ?"), append(args, project)
+	}
+	if len(kinds) > 0 {
+		conds = append(conds, "e.kind IN ("+placeholders(len(kinds))+")")
+		for _, k := range kinds {
+			args = append(args, string(k))
+		}
+	}
+	if since > 0 {
+		conds, args = append(conds, "e.ts >= ?"), append(args, since)
+	}
+	if until > 0 {
+		conds, args = append(conds, "e.ts <= ?"), append(args, until)
+	}
+	q := eventSelect
+	if len(conds) > 0 {
+		q += " WHERE " + strings.Join(conds, " AND ")
+	}
+	q += " ORDER BY e.ts, e.id"
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanEvents(rows)
+}
+
 // SessionEvents returns a session's events, oldest first.
 func (s *Store) SessionEvents(session string) ([]model.Event, error) {
 	rows, err := s.db.Query(eventSelect+` WHERE e.session = ? ORDER BY e.ts, e.id`, session)
@@ -517,6 +555,15 @@ func (t *Tx) AddEvidence(memoryID string, eventID int64) error {
 // SetStatus changes a memory's status.
 func (t *Tx) SetStatus(memoryID string, s model.Status) error {
 	_, err := t.tx.Exec(`UPDATE memories SET status = ? WHERE id = ?`, string(s), memoryID)
+	return err
+}
+
+// DeleteMemory removes a memory and the evidence links that point at it.
+func (t *Tx) DeleteMemory(id string) error {
+	if _, err := t.tx.Exec(`DELETE FROM memory_evidence WHERE memory_id = ?`, id); err != nil {
+		return err
+	}
+	_, err := t.tx.Exec(`DELETE FROM memories WHERE id = ?`, id)
 	return err
 }
 

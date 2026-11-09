@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"additionalContext":"[command] tests: go test ./...\n[preference] use rg not grep","hookEventName":"UserPromptSubmit"}}

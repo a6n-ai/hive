@@ -1,0 +1,181 @@
+package claudecode
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/a6n-ai/hive/internal/recall"
+	"github.com/a6n-ai/hive/model"
+)
+
+func fixture(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestParseGolden(t *testing.T) {
+	a := New()
+	cases := []struct {
+		file, event string
+		kind        model.EventKind
+		tool        string
+		payload     map[string]any
+		prompt      string
+	}{
+		{"SessionStart.json", "SessionStart", model.SessionStart, "", map[string]any{}, ""},
+		{"UserPromptSubmit.json", "UserPromptSubmit", model.Prompt, "", map[string]any{}, "fix the failing login test"},
+		{"PostToolUse_Bash.json", "PostToolUse", model.PostTool, "shell", map[string]any{"command": "go test ./...", "exit_code": 0}, ""},
+		{"PostToolUseFailure_Bash.json", "PostToolUseFailure", model.PostTool, "shell", map[string]any{"command": "go test ./...", "exit_code": 1,
+			"error": "TypeError: cannot read properties of undefined (reading 'map') at /tmp/hive-fixture-proj/auth.ts:12:5\n    at next"}, ""},
+		{"PostToolUse_Edit.json", "PostToolUse", model.PostTool, "edit", map[string]any{"path": "/tmp/hive-fixture-proj/auth.ts"}, ""},
+		{"PostToolUse_Skill.json", "PostToolUse", model.PostTool, "skill", map[string]any{"skill": "superpowers:brainstorming"}, ""},
+		{"Stop.json", "Stop", model.TurnEnd, "", map[string]any{}, ""},
+		{"SessionEnd.json", "SessionEnd", model.SessionEnd, "", map[string]any{}, ""},
+	}
+	for _, c := range cases {
+		e, err := a.Parse(c.event, fixture(t, c.file))
+		if err != nil {
+			t.Fatalf("%s: %v", c.file, err)
+		}
+		if e.Kind != c.kind || e.Tool != c.tool || e.Session != "sess-1" || e.Agent != "claude-code" || e.PromptText != c.prompt {
+			t.Errorf("%s: got kind=%s tool=%s session=%s agent=%s prompt=%q", c.file, e.Kind, e.Tool, e.Session, e.Agent, e.PromptText)
+		}
+		if e.Project == "" {
+			t.Errorf("%s: empty project", c.file)
+		}
+		if !reflect.DeepEqual(e.Payload, c.payload) {
+			t.Errorf("%s: payload = %v, want %v", c.file, e.Payload, c.payload)
+		}
+	}
+}
+
+func TestParseRejectsMalformed(t *testing.T) {
+	a := New()
+	for _, in := range []string{"", "{", "[]", `{"session_id": 3}`} {
+		if _, err := a.Parse("UserPromptSubmit", []byte(in)); err == nil {
+			t.Errorf("Parse(%q) accepted", in)
+		}
+	}
+	if _, err := a.Parse("NoSuchEvent", fixture(t, "Stop.json")); err == nil {
+		t.Error("unknown event accepted")
+	}
+}
+
+func TestReplyGolden(t *testing.T) {
+	a := New()
+	lines := []recall.Line{{Type: model.Command, Text: "tests: go test ./..."}, {Type: model.Preference, Text: "use rg not grep"}}
+	if got, want := string(a.Reply("UserPromptSubmit", lines)), string(fixture(t, "reply_prompt.golden")); got != want {
+		t.Fatalf("reply:\n got  %s\n want %s", got, want)
+	}
+	if got := a.Reply("UserPromptSubmit", nil); len(got) != 0 {
+		t.Fatalf("empty reply = %q", got)
+	}
+	if got := a.Reply("Stop", lines); len(got) != 0 {
+		t.Fatalf("Stop reply = %q, want nothing", got)
+	}
+}
+
+const bin = "/usr/local/bin/hive"
+
+func readJSON(t *testing.T, path string) map[string]any {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func hiveEntries(m map[string]any, event string) int {
+	hooks, _ := m["hooks"].(map[string]any)
+	groups, _ := hooks[event].([]any)
+	n := 0
+	for _, g := range groups {
+		for _, h := range g.(map[string]any)["hooks"].([]any) {
+			if strings.HasPrefix(h.(map[string]any)["command"].(string), bin+" hook --agent claude-code") {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestInstallIdempotentKeepsOthers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	original := `{"model":"opus","hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"other-tool check"}]}]}}`
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := New()
+	for i := 0; i < 2; i++ {
+		if err := a.Install(path, bin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := readJSON(t, path)
+	for _, ev := range installEvents {
+		if n := hiveEntries(m, ev); n != 1 {
+			t.Errorf("%s: %d hive entries, want 1", ev, n)
+		}
+	}
+	if !strings.Contains(string(mustRead(t, path)), "other-tool check") || m["model"] != "opus" {
+		t.Fatal("unrelated settings lost")
+	}
+	if err := a.Uninstall(path); err != nil {
+		t.Fatal(err)
+	}
+	var want map[string]any
+	_ = json.Unmarshal([]byte(original), &want)
+	if got := readJSON(t, path); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after uninstall:\n got  %v\n want %v", got, want)
+	}
+	if _, err := os.Stat(path + ".hive-backup"); err != nil {
+		t.Fatalf("no backup written: %v", err)
+	}
+}
+
+func mustRead(t *testing.T, p string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestInstallMissingFileCreates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sub", "settings.json")
+	if err := New().Install(path, bin); err != nil {
+		t.Fatal(err)
+	}
+	if n := hiveEntries(readJSON(t, path), "SessionStart"); n != 1 {
+		t.Fatalf("SessionStart entries = %d", n)
+	}
+}
+
+func TestInstallInvalidJSONRefuses(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	bad := []byte(`{"hooks": [oops`)
+	if err := os.WriteFile(path, bad, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := New().Install(path, bin)
+	if err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("err = %v, want one naming %s", err, path)
+	}
+	if got := mustRead(t, path); string(got) != string(bad) {
+		t.Fatal("invalid settings file was modified")
+	}
+}
