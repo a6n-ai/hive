@@ -84,11 +84,15 @@ func judge(raw string, runErr error, in Input, scrub func(string) string, find F
 }
 
 // commit applies the valid ops, moves the session's cursor, and records the run,
-// in one transaction. A failed run records only itself.
+// in one transaction. A failed run records itself and its attempt time only.
 func commit(ctx context.Context, st *store.Store, in Input, rec store.RunRecord, valid []Op) error {
 	now := time.Now().UnixMilli()
 	return st.Write(ctx, func(tx *store.Tx) error {
-		if rec.Status != "failed" {
+		if rec.Status == "failed" {
+			if err := tx.SetSessionAttempt(in.Session, now); err != nil {
+				return err
+			}
+		} else {
 			if err := applyTx(tx, rec.ID, valid, now); err != nil {
 				return err
 			}
