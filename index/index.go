@@ -31,6 +31,7 @@ type Query struct {
 	Vector []float32
 	Tags   []string
 	K      int
+	Fusion Fusion
 	Weight func(id string) float64
 }
 
@@ -45,17 +46,21 @@ type Hit struct {
 
 type Index struct {
 	fields   []Field
+	dim      int
 	ids      []string
-	lens     [][]int // ordinal -> token count per field
+	vecs     []float32 // ordinal-major, unit length; dim floats per ordinal
+	lens     [][]int   // ordinal -> token count per field
 	dict     [][]string
 	postings []map[string][]posting
 	totalLen []int
 	tags     map[string]*roaring.Bitmap
 }
 
-func New(fields []Field, _ int) *Index {
+// New makes an index over fields. dim 0 disables vectors.
+func New(fields []Field, dim int) *Index {
 	ix := &Index{
 		fields:   fields,
+		dim:      dim,
 		dict:     make([][]string, len(fields)),
 		postings: make([]map[string][]posting, len(fields)),
 		totalLen: make([]int, len(fields)),
@@ -68,8 +73,17 @@ func New(fields []Field, _ int) *Index {
 }
 
 func (ix *Index) Upsert(d Doc) error {
+	var vec []float32
+	if ix.dim > 0 {
+		v, err := ix.normalize(d.Vector)
+		if err != nil {
+			return err
+		}
+		vec = v
+	}
 	ord := len(ix.ids)
 	ix.ids = append(ix.ids, d.ID)
+	ix.vecs = append(ix.vecs, vec...)
 	ix.lens = append(ix.lens, make([]int, len(ix.fields)))
 	for fi, f := range ix.fields {
 		ix.addField(fi, ord, d.Fields[f.Name])
@@ -84,18 +98,21 @@ func (ix *Index) Upsert(d Doc) error {
 }
 
 func (ix *Index) Search(q Query) ([]Hit, error) {
-	terms := queryTerms(q.Text)
-	if len(terms) == 0 {
-		return nil, nil
+	qv, err := ix.queryVector(q.Vector)
+	if err != nil {
+		return nil, err
 	}
 	allowed := ix.tagFilter(q.Tags)
-	var hits []Hit
-	for ord, s := range ix.lexical(terms) {
-		if allowed != nil && !allowed.Contains(uint32(ord)) { //nolint:gosec // G115: see Upsert
-			continue
-		}
+	lex := ix.lexical(queryTerms(q.Text), allowed)
+	cos := ix.cosines(qv, allowed)
+	fused := lex
+	if qv != nil {
+		fused = ix.fuse(q.Fusion, lex, cos)
+	}
+	hits := make([]Hit, 0, len(fused))
+	for ord, f := range fused {
 		id := ix.ids[ord]
-		hits = append(hits, Hit{ID: id, BM25: s, Score: s * weightOf(q, id)})
+		hits = append(hits, Hit{ID: id, BM25: lex[ord], Cosine: cos[ord], Fused: f, Score: f * weightOf(q, id)})
 	}
 	slices.SortFunc(hits, func(a, b Hit) int {
 		if c := cmp.Compare(b.Score, a.Score); c != 0 {

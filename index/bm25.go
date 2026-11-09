@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/a6n-ai/hive/internal/text"
 )
 
@@ -59,7 +60,7 @@ func (ix *Index) addField(fi, ord int, s string) {
 
 // lexical scores every document that matches a query term, summing the
 // weighted BM25 of each field.
-func (ix *Index) lexical(terms []string) map[int]float64 {
+func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float64 {
 	scores := map[int]float64{}
 	n := float64(len(ix.ids))
 	for fi, f := range ix.fields {
@@ -75,6 +76,9 @@ func (ix *Index) lexical(terms []string) map[int]float64 {
 			}
 			idf := math.Log(1 + (n-df+0.5)/(df+0.5))
 			for ord, tf := range tfs {
+				if allowed != nil && !allowed.Contains(uint32(ord)) { //nolint:gosec // G115: see Upsert
+					continue
+				}
 				tfv := float64(tf)
 				norm := tfv * (k1 + 1) / (tfv + k1*(1-b+b*float64(ix.lens[ord][fi])/avg))
 				scores[ord] += f.Weight * idf * norm
