@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -110,10 +111,12 @@ func Load(home, project string) (Config, []string, error) {
 		warns = append(warns, unknownKeys(global, md)...)
 	}
 	if project != "" {
+		// A project file is untrusted and optional: its errors are warnings, and the
+		// global config still applies.
 		pw, err := overlayProject(&c, filepath.Join(project, ".hive.toml"))
 		warns = append(warns, pw...)
 		if err != nil {
-			return c, warns, err
+			warns = append(warns, err.Error()+" (project file ignored)")
 		}
 	}
 	return c, warns, validate(c)
@@ -141,6 +144,15 @@ func overlayProject(c *Config, file string) ([]string, error) {
 		return nil, fmt.Errorf("%s: %w", file, err)
 	}
 	warns := unknownKeys(file, md)
+	var valid []string
+	for _, re := range p.Scrub.Patterns {
+		if _, err := regexp.Compile(re); err != nil {
+			warns = append(warns, fmt.Sprintf("%s: ignored scrub pattern %q: %v", file, re, err))
+			continue
+		}
+		valid = append(valid, re)
+	}
+	p.Scrub.Patterns = valid
 	for _, k := range md.Keys() {
 		if len(k) < 2 {
 			continue

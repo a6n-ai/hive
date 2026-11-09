@@ -2,6 +2,9 @@ package hive
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/a6n-ai/hive/internal/recall"
@@ -62,5 +65,24 @@ func TestQueryEvents(t *testing.T) {
 	evs, err := h.QueryEvents(ctx, EventFilter{Session: "s", Kinds: []model.EventKind{model.Prompt}})
 	if err != nil || len(evs) != 2 {
 		t.Fatalf("QueryEvents = %d (%v), want 2", len(evs), err)
+	}
+}
+
+func TestBadProjectConfigIgnored(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	file := filepath.Join(proj, ".hive.toml")
+	for _, body := range []string{"this is [not toml", "[scrub]\npatterns = [\"(\"]\n"} {
+		if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		h, err := Open(Options{Home: home, Project: proj})
+		if err != nil {
+			t.Fatalf("Open with project config %q: %v", body, err)
+		}
+		_ = h.Close()
+	}
+	logged, err := os.ReadFile(filepath.Join(home, "hive.log"))
+	if err != nil || !strings.Contains(string(logged), file) {
+		t.Fatalf("hive.log does not warn about %s: %q (%v)", file, logged, err)
 	}
 }

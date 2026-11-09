@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -55,10 +57,11 @@ func Open(o Options) (*Hive, error) {
 	if home == "" {
 		home = config.Home()
 	}
-	cfg, _, err := config.Load(home, o.Project)
+	cfg, warns, err := config.Load(home, o.Project)
 	if err != nil {
 		return nil, err
 	}
+	logWarnings(home, warns)
 	sc, err := scrub.New(cfg.Scrub.Patterns)
 	if err != nil {
 		return nil, err
@@ -72,6 +75,22 @@ func Open(o Options) (*Hive, error) {
 		reg.Register(x)
 	}
 	return &Hive{store: st, pipeline: &capture.Pipeline{Store: st, Scrub: sc, Extract: reg, Cfg: cfg}, cfg: cfg}, nil
+}
+
+// logWarnings appends config warnings to hive.log under home, where a user
+// looks for them; a broken config never stops capture.
+func logWarnings(home string, warns []string) {
+	if len(warns) == 0 || os.MkdirAll(home, 0o700) != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(home, "hive.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: the log path is under the user's HIVE_HOME
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	for _, w := range warns {
+		fmt.Fprintf(f, "%s config: %s\n", time.Now().Format(time.RFC3339), w)
+	}
 }
 
 func (h *Hive) Close() error { return h.store.Close() }
