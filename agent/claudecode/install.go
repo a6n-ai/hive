@@ -133,7 +133,7 @@ func isHiveHook(h any) bool {
 func editSettings(path string, change func(map[string]any) (bool, error)) error {
 	m := map[string]any{}
 	mode := os.FileMode(0o600)
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // G304: the settings path is the user's own file, chosen on the command line
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
@@ -158,7 +158,7 @@ func editSettings(path string, change func(map[string]any) (bool, error)) error 
 	if raw != nil {
 		backup := path + ".hive-backup"
 		if _, err := os.Stat(backup); errors.Is(err, os.ErrNotExist) {
-			if err := os.WriteFile(backup, raw, mode); err != nil {
+			if err := os.WriteFile(backup, raw, mode); err != nil { //nolint:gosec // G703: the settings path is the user's own file, chosen on the command line
 				return err
 			}
 		}

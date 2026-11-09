@@ -5,3 +5,14 @@ linters:
     - errcheck
     - gosec
     - staticcheck
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters:
+          - gosec

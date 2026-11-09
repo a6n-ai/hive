@@ -58,7 +58,7 @@ func defaultSettings() (string, error) {
 // countHooks counts the Claude Code hook commands that run Hive and the ones
 // that run claude-mem. A missing settings file has none.
 func countHooks(settings string) (hive, claudeMem int, err error) {
-	raw, err := os.ReadFile(settings)
+	raw, err := os.ReadFile(settings) //nolint:gosec // G304: the settings path is the user's own file, chosen on the command line
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, 0, nil
 	}

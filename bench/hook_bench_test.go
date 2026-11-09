@@ -53,7 +53,12 @@ func BenchmarkHookPromptLocked(b *testing.B) {
 		})
 	}()
 	<-held
-	defer func() { close(release); _ = <-done }()
+	defer func() {
+		close(release)
+		if err := <-done; err != nil {
+			b.Error(err)
+		}
+	}()
 	b.ResetTimer()
 	measure(b, bin, home)
 }

@@ -59,11 +59,11 @@ func Open(path string, readOnly bool) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: 0700 is the intended mode for a directory
 		return nil, err
 	}
 	if !readOnly {
-		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: the database path comes from the user's HIVE_HOME
 		if err != nil {
 			return nil, err
 		}
@@ -370,7 +370,7 @@ func (s *Store) GetMemory(id string) (*model.Memory, error) {
 // ListMemories returns memories matching f, most recently seen first.
 func (s *Store) ListMemories(f ListFilter) ([]model.Memory, error) {
 	where, args := filterSQL("memories", f)
-	q := memorySelect + ` WHERE 1=1` + where + ` ORDER BY last_seen DESC`
+	q := memorySelect + ` WHERE 1=1` + where + ` ORDER BY last_seen DESC` //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	if f.Limit > 0 {
 		q += ` LIMIT ?`
 		args = append(args, f.Limit)
@@ -406,6 +406,7 @@ func (s *Store) SearchFTS(terms []string, f ListFilter, limit int) ([]model.Memo
 		return nil, nil, nil
 	}
 	where, args := filterSQL("m", f)
+	//nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	query := `SELECT m.id, m.type, m.scope_kind, m.scope, m.key, m.body, m.text, m.count, m.confidence, m.status,
 		m.superseded_by, m.first_seen, m.last_seen, m.last_used, bm25(memories_fts)
 		FROM memories_fts JOIN memories m ON m.rowid = memories_fts.rowid
@@ -593,6 +594,6 @@ func (t *Tx) TouchUsed(ids []string, ts int64) error {
 	for _, id := range ids {
 		args = append(args, id)
 	}
-	_, err := t.tx.Exec(`UPDATE memories SET last_used = ? WHERE id IN (`+placeholders(len(ids))+`)`, args...)
+	_, err := t.tx.Exec(`UPDATE memories SET last_used = ? WHERE id IN (`+placeholders(len(ids))+`)`, args...) //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	return err
 }

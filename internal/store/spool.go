@@ -32,7 +32,7 @@ func (s *Store) Spool(e *model.Event) error {
 	line = append(line, '\n')
 	path := filepath.Join(dir, fmt.Sprintf("%d.jsonl", os.Getpid()))
 	for attempt := 0; attempt < 5; attempt++ {
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600) //nolint:gosec // G304: spool paths are under the user's HIVE_HOME
 		if err != nil {
 			return err
 		}
@@ -126,7 +126,7 @@ func (t *Tx) drain() (int, []model.Event, error) {
 }
 
 func (t *Tx) importSpoolFile(path string) (int, []model.Event, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // G304: spool paths are under the user's HIVE_HOME
 	if err != nil {
 		return 0, nil, err
 	}

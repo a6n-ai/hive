@@ -107,7 +107,7 @@ func logLine(home, format string, args ...any) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(home, "hive.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(filepath.Join(home, "hive.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: the log path is under the user's HIVE_HOME
 	if err != nil {
 		return
 	}
