@@ -2,6 +2,7 @@ package recall
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -169,5 +170,46 @@ func TestRender(t *testing.T) {
 	got := Render([]Line{{Type: model.Command, Text: "tests: go test ./..."}, {Type: model.Note, Text: "x"}})
 	if got != "[command] tests: go test ./...\n[note] x" {
 		t.Fatalf("Render = %q", got)
+	}
+}
+
+func TestRecallSkipsMarkUsedAfterLock(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "hive.db")
+	st, err := store.Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	put(t, st, model.Memory{Type: model.Note, Key: "a", Text: "deploy with make deploy"})
+	holder, err := store.Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Close() }()
+	held, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- holder.Write(ctx, func(*store.Tx) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	if err := st.Write(ctx, func(*store.Tx) error { return nil }); !errors.Is(err, store.ErrLocked) {
+		t.Fatalf("Write err = %v, want ErrLocked", err)
+	}
+	start := time.Now()
+	lines, err := Recall(ctx, st, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt}, now)
+	elapsed := time.Since(start)
+	close(release)
+	if werr := <-done; werr != nil {
+		t.Fatal(werr)
+	}
+	if err != nil || len(lines) != 1 {
+		t.Fatalf("lines = %+v, err = %v", lines, err)
+	}
+	if elapsed >= 40*time.Millisecond {
+		t.Fatalf("Recall took %v after the lock was hit, want < 40ms", elapsed)
 	}
 }

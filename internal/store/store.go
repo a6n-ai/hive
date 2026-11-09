@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/a6n-ai/hive/model"
@@ -34,6 +35,7 @@ type Store struct {
 	path     string
 	readOnly bool
 	newer    bool
+	hitLock  atomic.Bool
 }
 
 type Tx struct {
@@ -113,6 +115,18 @@ func isBusy(err error) bool {
 // Write runs fn in one BEGIN IMMEDIATE transaction. It returns ErrLocked when
 // another writer holds the lock past busy_timeout.
 func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
+	err := s.write(ctx, fn)
+	if errors.Is(err, ErrLocked) {
+		s.hitLock.Store(true)
+	}
+	return err
+}
+
+// HitLock reports whether a write by this store has returned ErrLocked. A
+// process that has waited on the lock once should not wait on it again.
+func (s *Store) HitLock() bool { return s.hitLock.Load() }
+
+func (s *Store) write(ctx context.Context, fn func(*Tx) error) error {
 	if s.newer {
 		return ErrSchemaNewer
 	}

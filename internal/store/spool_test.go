@@ -160,3 +160,34 @@ func TestConcurrentHooksNoLoss(t *testing.T) {
 		t.Fatalf("captured events = %d, want 150", n)
 	}
 }
+
+func TestWriteRemembersLock(t *testing.T) {
+	st, path := openTemp(t)
+	fresh, err := Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = fresh.Close() }()
+	holder, err := Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Close() }()
+	release, done := holdLock(t, holder)
+	if st.HitLock() {
+		t.Fatal("HitLock true before any lock")
+	}
+	if err := st.Write(context.Background(), func(*Tx) error { return nil }); !errors.Is(err, ErrLocked) {
+		t.Fatalf("Write err = %v, want ErrLocked", err)
+	}
+	if !st.HitLock() {
+		t.Fatal("HitLock false after ErrLocked")
+	}
+	if fresh.HitLock() {
+		t.Fatal("fresh store reports HitLock")
+	}
+	release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

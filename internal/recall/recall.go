@@ -137,7 +137,7 @@ func firstNonZero(a, b int) int {
 // markUsed records that lines were injected. A locked database only skips the
 // bookkeeping; recall itself still succeeds.
 func markUsed(ctx context.Context, st *store.Store, lines []Line, now time.Time) error {
-	if len(lines) == 0 {
+	if len(lines) == 0 || st.HitLock() {
 		return nil
 	}
 	ids := make([]string, len(lines))
