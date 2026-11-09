@@ -1,0 +1,5 @@
+{"ops":[
+ {"op":"merge","keep":"MEM_A","drop":["MEM_B"]},
+ {"op":"add","type":"decision","scope_kind":"project","scope":"/p","key":"prefer-small-commits","text":"Prefer small commits.","body":{"source":"session"},"evidence":[EV_3]},
+ {"op":"reject","id":"MEM_C"}
+]}

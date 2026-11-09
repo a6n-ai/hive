@@ -14,6 +14,7 @@ import (
 
 	"github.com/a6n-ai/hive/internal/capture"
 	"github.com/a6n-ai/hive/internal/config"
+	"github.com/a6n-ai/hive/internal/consolidate"
 	"github.com/a6n-ai/hive/internal/extract"
 	"github.com/a6n-ai/hive/internal/importer"
 	"github.com/a6n-ai/hive/internal/recall"
@@ -170,6 +171,17 @@ func (h *Hive) Retention(ctx context.Context, dryRun bool) (retention.Report, er
 // reports whether it ran.
 func (h *Hive) AutoRetention(ctx context.Context) (bool, error) {
 	return retention.Auto(ctx, h.store, h.cfg.Retention, time.Now())
+}
+
+// Consolidate reviews a session's new events through runner. A dry run returns
+// the proposed ops without applying them.
+func (h *Hive) Consolidate(ctx context.Context, session string, runner consolidate.Runner, dryRun bool) (consolidate.RunReport, error) {
+	return consolidate.Run(ctx, h.store, h.cfg, h.Scrub, runner, session, dryRun)
+}
+
+// Undo reverses a consolidation run, leaving alone any memory changed since.
+func (h *Hive) Undo(ctx context.Context, runID string) (consolidate.UndoReport, error) {
+	return consolidate.Undo(ctx, h.store, runID)
 }
 
 // ImportReport is an import's summary plus what it added to the store.

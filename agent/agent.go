@@ -24,6 +24,14 @@ type Adapter interface {
 	Uninstall(settingsPath string) error
 	InstructionsFile() string
 	SkillDirs() []string
+	Headless(model string) HeadlessSpec
+}
+
+// HeadlessSpec describes a one-shot, non-interactive model call: the prompt is
+// written to Command's stdin, and ParseOutput extracts the reply text.
+type HeadlessSpec struct {
+	Command     []string
+	ParseOutput func([]byte) (string, error)
 }
 
 var registry = map[string]Adapter{}

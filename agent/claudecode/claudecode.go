@@ -141,6 +141,31 @@ func (a *Adapter) Capabilities() agent.Caps {
 
 func (a *Adapter) InstructionsFile() string { return "CLAUDE.md" }
 
+// Headless runs Claude Code in print mode with the given model.
+func (a *Adapter) Headless(model string) agent.HeadlessSpec {
+	return agent.HeadlessSpec{
+		Command:     []string{"claude", "-p", "--output-format", "json", "--model", model},
+		ParseOutput: parseHeadless,
+	}
+}
+
+func parseHeadless(out []byte) (string, error) {
+	var r struct {
+		IsError bool   `json:"is_error"`
+		Result  string `json:"result"`
+	}
+	if err := json.Unmarshal(out, &r); err != nil {
+		return "", fmt.Errorf("claude-code: headless output: %w", err)
+	}
+	if r.IsError {
+		return "", errors.New("claude-code: headless run reported an error")
+	}
+	if r.Result == "" {
+		return "", errors.New("claude-code: headless output has no result")
+	}
+	return r.Result, nil
+}
+
 func (a *Adapter) SkillDirs() []string {
 	home, _ := os.UserHomeDir()
 	return []string{filepath.Join(home, ".claude", "skills"), filepath.Join(home, ".claude", "plugins", "cache")}
