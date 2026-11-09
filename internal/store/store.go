@@ -69,7 +69,7 @@ func Open(path string, readOnly bool) (*Store, error) {
 		}
 		_ = f.Close()
 	}
-	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(50)&_pragma=foreign_keys(1)&_txlock=immediate"
+	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(20)&_pragma=foreign_keys(1)&_txlock=immediate"
 	if readOnly {
 		dsn += "&mode=ro"
 	}

@@ -52,7 +52,7 @@ func TestPragmas(t *testing.T) {
 	if err := st.db.QueryRow("PRAGMA foreign_keys").Scan(&fk); err != nil {
 		t.Fatal(err)
 	}
-	if mode != "wal" || busy != 50 || fk != 1 {
+	if mode != "wal" || busy != 20 || fk != 1 {
 		t.Fatalf("journal_mode=%s busy_timeout=%d foreign_keys=%d", mode, busy, fk)
 	}
 }
