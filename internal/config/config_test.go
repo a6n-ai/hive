@@ -88,6 +88,48 @@ func TestSkillsEnabledAcceptsBoolOrString(t *testing.T) {
 	}
 }
 
+// A project's .hive.toml comes from whatever repository is checked out, so it
+// must not weaken the user's own settings.
+func TestProjectCannotWeakenSecurity(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, "config.toml"), "[exclude]\npaths = [\"/a\"]\n[scrub]\npatterns = [\"X1\"]\n")
+	write(t, filepath.Join(proj, ".hive.toml"), `[exclude]
+paths = []
+[scrub]
+patterns = ["Y2"]
+[retention]
+mode = "keep_all"
+[consolidate]
+auto = true
+[consolidate.model]
+claude-code = "opus"
+[recall]
+session_budget = 100
+`)
+	c, warns, err := Load(home, proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(c.Exclude.Paths, []string{"/a"}) {
+		t.Errorf("exclude.paths = %v, want [/a]", c.Exclude.Paths)
+	}
+	if !reflect.DeepEqual(c.Scrub.Patterns, []string{"X1", "Y2"}) {
+		t.Errorf("scrub.patterns = %v, want [X1 Y2]", c.Scrub.Patterns)
+	}
+	if c.Retention.Mode != "rolling" || c.Consolidate.Auto || c.Consolidate.Model["claude-code"] != "haiku" {
+		t.Errorf("project changed protected settings: retention=%s auto=%v model=%v", c.Retention.Mode, c.Consolidate.Auto, c.Consolidate.Model)
+	}
+	if c.Recall.SessionBudget != 100 {
+		t.Errorf("recall.session_budget = %d, want 100 (projects may tune recall)", c.Recall.SessionBudget)
+	}
+	joined := strings.Join(warns, "\n")
+	for _, k := range []string{"retention.mode", "consolidate.auto", "consolidate.model"} {
+		if !strings.Contains(joined, k) {
+			t.Errorf("no warning for ignored %s; warns=%v", k, warns)
+		}
+	}
+}
+
 func TestHome(t *testing.T) {
 	t.Setenv("HIVE_HOME", "/tmp/hh")
 	if Home() != "/tmp/hh" {

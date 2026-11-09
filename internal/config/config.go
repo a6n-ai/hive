@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -91,27 +92,89 @@ func Home() string {
 }
 
 // Load returns the effective config for project (which may be ""), plus a
-// warning per unknown key.
+// warning per unknown or ignored key.
+//
+// A project's .hive.toml comes from whatever repository is checked out, so it
+// is untrusted: it may tune [recall] and [skills], may add to exclude.paths and
+// scrub.patterns, and nothing else.
 func Load(home, project string) (Config, []string, error) {
 	c := Defaults()
 	var warns []string
-	files := []string{filepath.Join(home, "config.toml")}
-	if project != "" {
-		files = append(files, filepath.Join(project, ".hive.toml"))
+	global := filepath.Join(home, "config.toml")
+	md, err := toml.DecodeFile(global, &c)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
+		return c, warns, fmt.Errorf("%s: %w", global, err)
+	default:
+		warns = append(warns, unknownKeys(global, md)...)
 	}
-	for _, f := range files {
-		md, err := toml.DecodeFile(f, &c)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
+	if project != "" {
+		pw, err := overlayProject(&c, filepath.Join(project, ".hive.toml"))
+		warns = append(warns, pw...)
 		if err != nil {
-			return c, warns, fmt.Errorf("%s: %w", f, err)
-		}
-		for _, k := range md.Undecoded() {
-			warns = append(warns, fmt.Sprintf("%s: unknown setting %s", f, k.String()))
+			return c, warns, err
 		}
 	}
 	return c, warns, validate(c)
+}
+
+func unknownKeys(file string, md toml.MetaData) []string {
+	var out []string
+	for _, k := range md.Undecoded() {
+		out = append(out, fmt.Sprintf("%s: unknown setting %s", file, k.String()))
+	}
+	return out
+}
+
+func overlayProject(c *Config, file string) ([]string, error) {
+	p := *c
+	p.Scrub.Patterns, p.Exclude.Paths = nil, nil
+	// Copy reference fields so decoding the project file cannot write into c.
+	p.Consolidate.Model = maps.Clone(c.Consolidate.Model)
+	p.Skills.Enrich = slices.Clone(c.Skills.Enrich)
+	md, err := toml.DecodeFile(file, &p)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", file, err)
+	}
+	warns := unknownKeys(file, md)
+	for _, k := range md.Keys() {
+		if len(k) < 2 {
+			continue
+		}
+		switch k[0] {
+		case "recall", "skills":
+		case "scrub":
+			if k[1] != "patterns" {
+				warns = append(warns, fmt.Sprintf("%s: ignored %s (projects may only add scrub.patterns)", file, k.String()))
+			}
+		case "exclude":
+			if k[1] != "paths" {
+				warns = append(warns, fmt.Sprintf("%s: ignored %s (projects may only add exclude.paths)", file, k.String()))
+			}
+		default:
+			if len(k) == 2 || k[0] == "consolidate" && k[1] == "model" && len(k) == 3 {
+				warns = append(warns, fmt.Sprintf("%s: ignored %s (only your global config.toml may set it)", file, k.String()))
+			}
+		}
+	}
+	c.Recall, c.Skills = p.Recall, p.Skills
+	c.Scrub.Patterns = union(c.Scrub.Patterns, p.Scrub.Patterns)
+	c.Exclude.Paths = union(c.Exclude.Paths, p.Exclude.Paths)
+	return warns, nil
+}
+
+func union(a, b []string) []string {
+	out := append([]string{}, a...)
+	for _, s := range b {
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func validate(c Config) error {
