@@ -54,7 +54,7 @@ func Run(ctx context.Context, st *store.Store, cfg config.Config, scrub func(str
 		Started: started.UnixMilli(), Ops: raw}
 	var rep RunReport
 	rep.RunID = in.RunID
-	rec.Status, rep.Valid, rep.Rejected, rec.Error = judge(raw, err, in, scrub)
+	rec.Status, rep.Valid, rep.Rejected, rec.Error = judge(raw, err, in, scrub, st.FindMemory)
 	rep.Status, rep.Error = rec.Status, rec.Error
 	if dryRun {
 		return rep, nil
@@ -64,7 +64,7 @@ func Run(ctx context.Context, st *store.Store, cfg config.Config, scrub func(str
 }
 
 // judge turns a runner result into a run status, the ops that may apply, and the rejections.
-func judge(raw string, runErr error, in Input, scrub func(string) string) (status string, valid []Op, rejected []Rejected, errText string) {
+func judge(raw string, runErr error, in Input, scrub func(string) string, find Finder) (status string, valid []Op, rejected []Rejected, errText string) {
 	if runErr != nil {
 		return "failed", nil, nil, runErr.Error()
 	}
@@ -72,7 +72,7 @@ func judge(raw string, runErr error, in Input, scrub func(string) string) (statu
 	if err != nil {
 		return "failed", nil, nil, err.Error()
 	}
-	valid, rejected = Validate(ops, in, scrub)
+	valid, rejected = Validate(ops, in, scrub, find)
 	if len(rejected) == 0 {
 		return "ok", valid, nil, ""
 	}

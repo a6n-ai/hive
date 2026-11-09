@@ -176,7 +176,7 @@ func TestHostileOpsDropped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid, rejected := consolidate.Validate(ops, consolidate.Input{Events: inputEvents(ids), Memories: memories(e, a, b, c)}, e.scrub)
+	valid, rejected := consolidate.Validate(ops, consolidate.Input{Events: inputEvents(ids), Memories: memories(e, a, b, c)}, e.scrub, noFind)
 	if len(valid) != 2 || len(rejected) != 6 {
 		t.Fatalf("valid = %d rejected = %d, want 2 and 6: %+v", len(valid), len(rejected), rejected)
 	}
@@ -198,7 +198,7 @@ func TestTooManyOpsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid, rejected := consolidate.Validate(parsed, consolidate.Input{Events: inputEvents(ids)}, e.scrub)
+	valid, rejected := consolidate.Validate(parsed, consolidate.Input{Events: inputEvents(ids)}, e.scrub, noFind)
 	if len(valid) != 50 || len(rejected) != 1 {
 		t.Errorf("valid = %d rejected = %d, want 50 and 1", len(valid), len(rejected))
 	}
@@ -338,6 +338,27 @@ func TestHeadlessOutputCap(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Errorf("err = %v, want output-too-large", err)
 	}
+}
+
+func TestAddOnExistingKeyRejected(t *testing.T) {
+	e := newEnv(t)
+	ids := e.events(2)
+	k := e.memory("k", 0) // outside the input: cites no input event
+	if err := e.st.Write(context.Background(), func(tx *store.Tx) error { return tx.SetStatus(k, model.Forgotten) }); err != nil {
+		t.Fatal(err)
+	}
+	out := fmt.Sprintf(`{"ops":[{"op":"add","type":"fix","scope_kind":"project","scope":"/p","key":"k","text":"revived","evidence":[%d]}]}`, ids[1])
+	rep := e.run(&fakeRunner{out: out}, false)
+	if len(rep.Valid) != 0 || len(rep.Rejected) != 1 {
+		t.Fatalf("valid = %d rejected = %d, want 0 and 1", len(rep.Valid), len(rep.Rejected))
+	}
+	if got := e.get(k); got.Status != model.Forgotten {
+		t.Errorf("forgotten memory status = %s after add, want forgotten", got.Status)
+	}
+}
+
+func noFind(model.MemoryType, model.ScopeKind, string, string) (*model.Memory, error) {
+	return nil, nil
 }
 
 func inputEvents(ids []int64) []consolidate.InputEvent {

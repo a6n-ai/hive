@@ -24,13 +24,18 @@ type validator struct {
 	mems    map[string]model.Memory
 	events  map[int64]bool
 	touched map[string]bool
+	find    Finder
 }
+
+// Finder looks up a memory by its key; nil means no memory has that key.
+type Finder func(model.MemoryType, model.ScopeKind, string, string) (*model.Memory, error)
 
 // Validate splits ops into those that may apply and those that may not. Memory
 // ids must come from the input, evidence must cite input events, no memory may
-// change twice in a run, and add text is scrubbed again and kept short.
-func Validate(ops []Op, in Input, scrub func(string) string) (valid []Op, rejected []Rejected) {
-	v := validator{mems: map[string]model.Memory{}, events: map[int64]bool{}, touched: map[string]bool{}}
+// change twice in a run, add text is scrubbed again and kept short, and an add
+// may not take a key that a memory outside the input already holds.
+func Validate(ops []Op, in Input, scrub func(string) string, find Finder) (valid []Op, rejected []Rejected) {
+	v := validator{mems: map[string]model.Memory{}, events: map[int64]bool{}, touched: map[string]bool{}, find: find}
 	for _, m := range in.Memories {
 		v.mems[m.ID] = m
 	}
@@ -72,7 +77,7 @@ func (v *validator) check(i int, op *Op, scrub func(string) string) ([]string, s
 		}
 		return []string{op.Old, op.New}, ""
 	case "add":
-		return nil, v.add(op, scrub)
+		return v.add(op, scrub)
 	}
 	return nil, "unknown op " + strconv.Quote(op.Op)
 }
@@ -102,29 +107,41 @@ func (v *validator) merge(op *Op) ([]string, string) {
 	return touches, ""
 }
 
-// add checks an added memory and scrubs its text and body in place.
-func (v *validator) add(op *Op, scrub func(string) string) string {
+// add checks an added memory, scrubs its text and body in place, and returns
+// the existing memory it changes, if any. An existing memory must be in the input.
+func (v *validator) add(op *Op, scrub func(string) string) ([]string, string) {
 	switch {
 	case !slices.Contains(memoryTypes, model.MemoryType(op.Type)):
-		return "unknown type " + strconv.Quote(op.Type)
+		return nil, "unknown type " + strconv.Quote(op.Type)
 	case !slices.Contains(scopeKinds, model.ScopeKind(op.ScopeKind)):
-		return "unknown scope_kind"
+		return nil, "unknown scope_kind"
 	case op.Key == "":
-		return "add needs a key"
+		return nil, "add needs a key"
 	case len(op.Evidence) == 0:
-		return "add needs evidence"
+		return nil, "add needs evidence"
 	}
 	for _, id := range op.Evidence {
 		if !v.events[id] {
-			return fmt.Sprintf("evidence %d is outside the input", id)
+			return nil, fmt.Sprintf("evidence %d is outside the input", id)
 		}
+	}
+	existing, err := v.find(model.MemoryType(op.Type), model.ScopeKind(op.ScopeKind), op.Scope, op.Key)
+	if err != nil {
+		return nil, "key lookup failed: " + err.Error()
+	}
+	var touches []string
+	if existing != nil {
+		if _, in := v.mems[existing.ID]; !in {
+			return nil, "key exists; use merge or promote"
+		}
+		touches = []string{existing.ID}
 	}
 	op.Text = scrub(op.Text)
 	if op.Text == "" || utf8.RuneCountInString(op.Text) > maxTextRunes {
-		return fmt.Sprintf("text must be 1 to %d runes", maxTextRunes)
+		return nil, fmt.Sprintf("text must be 1 to %d runes", maxTextRunes)
 	}
 	op.Body = scrubBody(op.Body, scrub)
-	return ""
+	return touches, ""
 }
 
 // claim marks the memories an op changes. It fails when one is not in the input,
