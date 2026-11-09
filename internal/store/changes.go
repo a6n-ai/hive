@@ -8,6 +8,13 @@ import (
 	"github.com/a6n-ai/hive/model"
 )
 
+// LatestChange is the newest memory update or deletion time, or 0 for an empty store.
+func (s *Store) LatestChange() (int64, error) {
+	var ts int64
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(t), 0) FROM (SELECT MAX(updated_at) AS t FROM memories UNION ALL SELECT MAX(ts) FROM memory_deletions)`).Scan(&ts)
+	return ts, err
+}
+
 // ChangesSince returns the memories changed after ms, oldest first, the ids of
 // memories deleted after ms, and the next cursor. Both reads share one snapshot,
 // so a write by another process cannot fall between them.

@@ -19,8 +19,17 @@ func (h *Hive) openIndex() error {
 	if err != nil {
 		return err
 	}
-	h.stamp = index.Stamp{Schema: schema, Fields: index.MemoryFields}
-	if ix, got, ok := loadSnapshot(filepath.Join(h.home, indexFile), h.stamp); ok {
+	dbid, _, err := h.store.GetMeta("db_id")
+	if err != nil {
+		return err
+	}
+	latest, err := h.store.LatestChange()
+	if err != nil {
+		return err
+	}
+	h.stamp = index.Stamp{Schema: schema, Fields: index.MemoryFields, DBID: dbid}
+	// A cursor past the newest change means the database went back in time, as a restore does.
+	if ix, got, ok := loadSnapshot(filepath.Join(h.home, indexFile), h.stamp); ok && got.Cursor <= latest {
 		h.index, h.stamp.Cursor = ix, got.Cursor
 	} else {
 		h.index = index.New(index.MemoryFields, 0)

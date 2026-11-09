@@ -2,7 +2,12 @@ package hive
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -134,6 +139,79 @@ func TestRecallSeesOtherProcessForget(t *testing.T) {
 
 	if ids := promptIDs(t, h, "deploy"); len(ids) != 0 {
 		t.Fatalf("recall served a memory another process forgot: %v", ids)
+	}
+}
+
+func TestSnapshotFromOtherDatabaseRebuilt(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	h := openIndexed(t, home)
+	for i := range 60 {
+		if _, err := h.Remember(ctx, fmt.Sprintf("note %d about deploys", i), model.Note, model.ProjectScope, "/p"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
+	oldSnap, err := os.ReadFile(filepath.Join(home, indexFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, f := range []string{"hive.db", "hive.db-wal", "hive.db-shm"} {
+		if err := os.Remove(filepath.Join(home, f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			t.Fatal(err)
+		}
+	}
+	fresh, err := Open(Options{Home: home, Caller: "hive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fresh.Remember(ctx, "one fresh note", model.Note, model.ProjectScope, "/p"); err != nil {
+		t.Fatal(err)
+	}
+	if err := fresh.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, indexFile), oldSnap, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	h = openIndexed(t, home)
+	defer func() { _ = h.Close() }()
+	if n := indexLen(t, h); n != 1 {
+		t.Fatalf("index holds %d memories after the database was replaced, want 1", n)
+	}
+}
+
+func TestSnapshotNewerThanStoreRebuilt(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	h := openIndexed(t, home)
+	if _, err := h.Remember(ctx, "deploy via make", model.Note, model.ProjectScope, "/p"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Restoring an older copy of the database leaves the snapshot's cursor ahead of every change.
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(home, "hive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`DELETE FROM memories; UPDATE memory_deletions SET ts = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	h = openIndexed(t, home)
+	defer func() { _ = h.Close() }()
+	if n := indexLen(t, h); n != 0 {
+		t.Fatalf("index holds %d memories from a snapshot newer than the store, want 0", n)
 	}
 }
 

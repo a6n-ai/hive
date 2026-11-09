@@ -66,8 +66,8 @@ func TestMigration0002AppliesOnV1Database(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	defer func() { _ = st.Close() }()
-	if v, err := st.SchemaVersion(); err != nil || v != 2 {
-		t.Fatalf("SchemaVersion = %d, %v; want 2", v, err)
+	if v, err := st.SchemaVersion(); err != nil || v != latestVersion() {
+		t.Fatalf("SchemaVersion = %d, %v; want %d", v, err, latestVersion())
 	}
 	var updated int64
 	if err := st.db.QueryRow(`SELECT updated_at FROM memories WHERE id = 'm1'`).Scan(&updated); err != nil {

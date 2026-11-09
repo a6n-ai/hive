@@ -28,6 +28,8 @@ type Stamp struct {
 	Cursor int64
 	Fields []Field
 	Dim    int
+	// DBID is the database the snapshot was built from; a snapshot of another database is stale.
+	DBID string
 }
 
 // body is the gob payload: the live state of a compacted index.
@@ -103,7 +105,7 @@ func Load(r io.Reader, want Stamp) (*Index, Stamp, error) {
 		return nil, Stamp{}, fmt.Errorf("%w: %v", ErrCorrupt, err)
 	}
 	got := b.Stamp
-	if got.Schema != want.Schema || got.Dim != want.Dim || !slices.Equal(got.Fields, want.Fields) {
+	if got.Schema != want.Schema || got.Dim != want.Dim || got.DBID != want.DBID || !slices.Equal(got.Fields, want.Fields) {
 		return nil, got, ErrStale
 	}
 	ix, err := fromBody(b)
