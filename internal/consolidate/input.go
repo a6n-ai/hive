@@ -29,6 +29,7 @@ type Input struct {
 	RunID      string
 	Session    string
 	Agent      string
+	Project    string
 	Events     []InputEvent
 	Memories   []model.Memory
 	MaxEventID int64
@@ -48,7 +49,7 @@ func BuildInput(st *store.Store, session string, fromEventID int64, budgetTokens
 	for _, e := range evs {
 		ie := InputEvent{ID: e.ID, Kind: string(e.Kind), Tool: e.Tool, Text: scrub(render(e))}
 		in.Events = append(in.Events, ie)
-		in.Agent = e.Agent
+		in.Agent, in.Project = e.Agent, e.Project
 		ids = append(ids, e.ID)
 		words.WriteString(ie.Text + " ")
 		in.MaxEventID = max(in.MaxEventID, e.ID)
@@ -91,7 +92,7 @@ func relatedMemories(st *store.Store, eventIDs []int64, words string) ([]model.M
 	seen := map[string]bool{}
 	var out []model.Memory
 	for _, m := range append(cited, found...) {
-		if !seen[m.ID] {
+		if !seen[m.ID] && (m.Status == model.Active || m.Status == model.Candidate) {
 			seen[m.ID] = true
 			out = append(out, m)
 		}

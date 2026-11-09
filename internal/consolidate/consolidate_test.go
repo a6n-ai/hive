@@ -357,6 +357,35 @@ func TestAddOnExistingKeyRejected(t *testing.T) {
 	}
 }
 
+func TestPromoteRules(t *testing.T) {
+	const project = "/proj"
+	mem := func(st model.Status, sk model.ScopeKind, scope string) model.Memory {
+		return model.Memory{ID: "m1", Type: model.Fix, Key: "k", ScopeKind: sk, Scope: scope, Status: st}
+	}
+	cases := []struct {
+		name string
+		mem  model.Memory
+		op   consolidate.Op
+		ok   bool
+	}{
+		{"active is not promotable", mem(model.Active, model.ProjectScope, project), consolidate.Op{Op: "promote", ID: "m1"}, false},
+		{"forgotten is not promotable", mem(model.Forgotten, model.ProjectScope, project), consolidate.Op{Op: "promote", ID: "m1"}, false},
+		{"candidate is promotable", mem(model.Candidate, model.ProjectScope, project), consolidate.Op{Op: "promote", ID: "m1"}, true},
+		{"global to project", mem(model.Candidate, model.Global, ""), consolidate.Op{Op: "promote", ID: "m1", ScopeKind: "project", Scope: project}, true},
+		{"project to global", mem(model.Candidate, model.ProjectScope, project), consolidate.Op{Op: "promote", ID: "m1", ScopeKind: "global"}, false},
+		{"file outside the session project", mem(model.Candidate, model.Global, ""), consolidate.Op{Op: "promote", ID: "m1", ScopeKind: "file", Scope: "/elsewhere/x.go"}, false},
+		{"file inside the session project", mem(model.Candidate, model.Global, ""), consolidate.Op{Op: "promote", ID: "m1", ScopeKind: "file", Scope: project + "/x.go"}, true},
+	}
+	identity := func(s string) string { return s }
+	for _, c := range cases {
+		in := consolidate.Input{Project: project, Memories: []model.Memory{c.mem}}
+		valid, _ := consolidate.Validate([]consolidate.Op{c.op}, in, identity, noFind)
+		if got := len(valid) == 1; got != c.ok {
+			t.Errorf("%s: valid = %v, want %v", c.name, got, c.ok)
+		}
+	}
+}
+
 func noFind(model.MemoryType, model.ScopeKind, string, string) (*model.Memory, error) {
 	return nil, nil
 }

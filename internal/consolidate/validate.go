@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/a6n-ai/hive/model"
@@ -21,6 +22,7 @@ var (
 // validator holds what an op may refer to: the run's memories and events, and
 // the memories earlier valid ops already changed.
 type validator struct {
+	project string
 	mems    map[string]model.Memory
 	events  map[int64]bool
 	touched map[string]bool
@@ -35,7 +37,7 @@ type Finder func(model.MemoryType, model.ScopeKind, string, string) (*model.Memo
 // change twice in a run, add text is scrubbed again and kept short, and an add
 // may not take a key that a memory outside the input already holds.
 func Validate(ops []Op, in Input, scrub func(string) string, find Finder) (valid []Op, rejected []Rejected) {
-	v := validator{mems: map[string]model.Memory{}, events: map[int64]bool{}, touched: map[string]bool{}, find: find}
+	v := validator{project: in.Project, mems: map[string]model.Memory{}, events: map[int64]bool{}, touched: map[string]bool{}, find: find}
 	for _, m := range in.Memories {
 		v.mems[m.ID] = m
 	}
@@ -65,10 +67,7 @@ func (v *validator) check(i int, op *Op, scrub func(string) string) ([]string, s
 	case "merge":
 		return v.merge(op)
 	case "promote":
-		if op.ScopeKind != "" && !slices.Contains(scopeKinds, model.ScopeKind(op.ScopeKind)) {
-			return nil, "unknown scope_kind"
-		}
-		return []string{op.ID}, ""
+		return v.promote(op)
 	case "reject", "stale":
 		return []string{op.ID}, ""
 	case "supersede":
@@ -80,6 +79,43 @@ func (v *validator) check(i int, op *Op, scrub func(string) string) ([]string, s
 		return v.add(op, scrub)
 	}
 	return nil, "unknown op " + strconv.Quote(op.Op)
+}
+
+// scopeRank orders scopes from widest to narrowest; a promotion may only narrow.
+var scopeRank = map[model.ScopeKind]int{model.Global: 0, model.ProjectScope: 1, model.File: 2}
+
+// promote needs a candidate. Its scope may only narrow, and a narrower scope must stay in the session's project.
+func (v *validator) promote(op *Op) ([]string, string) {
+	m, ok := v.mems[op.ID]
+	if !ok {
+		return nil, unknown(op.ID)
+	}
+	if m.Status != model.Candidate {
+		return nil, "only a candidate can be promoted"
+	}
+	kind, scope := m.ScopeKind, m.Scope
+	if op.ScopeKind != "" {
+		kind = model.ScopeKind(op.ScopeKind)
+	}
+	if op.Scope != "" {
+		scope = op.Scope
+	}
+	if _, known := scopeRank[kind]; !known {
+		return nil, "unknown scope_kind"
+	}
+	if scopeRank[kind] < scopeRank[m.ScopeKind] {
+		return nil, "scope may only narrow"
+	}
+	changed := kind != m.ScopeKind || scope != m.Scope
+	if changed && kind != model.Global && !within(scope, v.project) {
+		return nil, "scope must be inside the session's project"
+	}
+	return []string{op.ID}, ""
+}
+
+// within reports whether path is project or lies under it. An empty project matches nothing.
+func within(path, project string) bool {
+	return project != "" && (path == project || strings.HasPrefix(path, project+"/"))
 }
 
 func (v *validator) merge(op *Op) ([]string, string) {
