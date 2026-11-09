@@ -33,6 +33,8 @@ type Query struct {
 	Tags   []string
 	K      int
 	Fusion Fusion
+	// AnyOf is a list of tag groups: each group matches a document carrying any of its tags, and every group must match.
+	AnyOf  [][]string
 	Weight func(id string) float64
 }
 
@@ -132,7 +134,7 @@ func (ix *Index) Search(q Query) ([]Hit, error) {
 	if err != nil {
 		return nil, err
 	}
-	allowed := ix.tagFilter(q.Tags)
+	allowed := ix.tagFilter(q.Tags, q.AnyOf)
 	lex := ix.lexical(queryTerms(q.Text), allowed)
 	cos := ix.cosines(qv, allowed)
 	fused := lex

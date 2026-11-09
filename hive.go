@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/a6n-ai/hive/index"
 	"github.com/a6n-ai/hive/internal/capture"
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/consolidate"
@@ -38,6 +39,8 @@ type (
 type Options struct {
 	Home, Caller, Project string
 	ReadOnly              bool
+	// Index serves prompt recall from the in-memory index, kept in sync with the store.
+	Index bool
 }
 
 // EventFilter selects events; zero values mean no filter.
@@ -52,6 +55,10 @@ type Hive struct {
 	store    *store.Store
 	pipeline *capture.Pipeline
 	cfg      config.Config
+	index    *index.Index
+	stamp    index.Stamp
+	home     string
+	readOnly bool
 }
 
 // Open opens the Hive database under o.Home with the config for o.Project.
@@ -77,7 +84,14 @@ func Open(o Options) (*Hive, error) {
 	for _, x := range extract.Defaults(o.Caller == "scout") {
 		reg.Register(x)
 	}
-	return &Hive{store: st, pipeline: &capture.Pipeline{Store: st, Scrub: sc, Extract: reg, Cfg: cfg}, cfg: cfg}, nil
+	h := &Hive{store: st, pipeline: &capture.Pipeline{Store: st, Scrub: sc, Extract: reg, Cfg: cfg}, cfg: cfg, home: home, readOnly: o.ReadOnly}
+	if o.Index {
+		if err := h.openIndex(); err != nil {
+			_ = st.Close()
+			return nil, err
+		}
+	}
+	return h, nil
 }
 
 // logWarnings appends config warnings to hive.log under home, where a user
@@ -96,7 +110,9 @@ func logWarnings(home string, warns []string) {
 	}
 }
 
-func (h *Hive) Close() error { return h.store.Close() }
+func (h *Hive) Close() error {
+	return errors.Join(h.closeIndex(), h.store.Close())
+}
 
 // Scrub returns s with secrets redacted, as the stored events and memories are.
 func (h *Hive) Scrub(s string) string {
@@ -109,11 +125,13 @@ func (h *Hive) Capture(ctx context.Context, e Event) error {
 	if e.TS == 0 {
 		e.TS = time.Now().UnixMilli()
 	}
-	return h.pipeline.Capture(ctx, e)
+	err := h.pipeline.Capture(ctx, e)
+	h.afterWrite()
+	return err
 }
 
 func (h *Hive) Recall(ctx context.Context, q Query) ([]Line, error) {
-	return recall.Recall(ctx, h.store, h.cfg.Recall, q, time.Now())
+	return recall.Recall(ctx, h.store, h.source(), h.cfg.Recall, q, time.Now())
 }
 
 // Remember stores text as a memory and returns its ID.
@@ -138,12 +156,14 @@ func (h *Hive) Remember(ctx context.Context, text string, t MemoryType, scope Sc
 
 // Forget marks a memory forgotten, or deletes it outright when purge is set.
 func (h *Hive) Forget(ctx context.Context, id string, purge bool) error {
-	return h.store.Write(ctx, func(tx *store.Tx) error {
+	err := h.store.Write(ctx, func(tx *store.Tx) error {
 		if purge {
 			return tx.DeleteMemory(id)
 		}
 		return tx.SetStatus(id, model.Forgotten)
 	})
+	h.afterWrite()
+	return err
 }
 
 // Why returns the events that evidence a memory, oldest first.
@@ -164,19 +184,25 @@ func (h *Hive) QueryEvents(_ context.Context, f EventFilter) ([]Event, error) {
 // Retention prunes stored data under the [retention] settings. A dry run reports
 // the counts and changes nothing.
 func (h *Hive) Retention(ctx context.Context, dryRun bool) (retention.Report, error) {
-	return retention.Apply(ctx, h.store, h.cfg.Retention, time.Now(), dryRun)
+	rep, err := retention.Apply(ctx, h.store, h.cfg.Retention, time.Now(), dryRun)
+	h.afterWrite()
+	return rep, err
 }
 
 // AutoRetention prunes when a prune is due and the settings are not paused. It
 // reports whether it ran.
 func (h *Hive) AutoRetention(ctx context.Context) (bool, error) {
-	return retention.Auto(ctx, h.store, h.cfg.Retention, time.Now())
+	ran, err := retention.Auto(ctx, h.store, h.cfg.Retention, time.Now())
+	h.afterWrite()
+	return ran, err
 }
 
 // Consolidate reviews a session's new events through runner. A dry run returns
 // the proposed ops without applying them.
 func (h *Hive) Consolidate(ctx context.Context, session string, runner consolidate.Runner, dryRun bool) (consolidate.RunReport, error) {
-	return consolidate.Run(ctx, h.store, h.cfg, h.Scrub, runner, session, dryRun)
+	rep, err := consolidate.Run(ctx, h.store, h.cfg, h.Scrub, runner, session, dryRun)
+	h.afterWrite()
+	return rep, err
 }
 
 // Consolidation returns the consolidation settings in effect.
@@ -189,7 +215,9 @@ func (h *Hive) DueConsolidations(agent string, now time.Time) ([]string, error) 
 
 // Undo reverses a consolidation run, leaving alone any memory changed since.
 func (h *Hive) Undo(ctx context.Context, runID string) (consolidate.UndoReport, error) {
-	return consolidate.Undo(ctx, h.store, runID)
+	rep, err := consolidate.Undo(ctx, h.store, runID)
+	h.afterWrite()
+	return rep, err
 }
 
 // ImportReport is an import's summary plus what it added to the store.

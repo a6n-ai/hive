@@ -69,7 +69,7 @@ func TestSessionStartRespectsBudget(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		put(t, st, model.Memory{Type: model.Command, Key: fmt.Sprint(i), Text: fmt.Sprintf("tests: run suite number %02d now", i)})
 	}
-	lines, err := Recall(context.Background(), st, cfg(), Query{Project: "/p", Mode: SessionStart}, now)
+	lines, err := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Mode: SessionStart}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestSessionStartRespectsBudget(t *testing.T) {
 func TestPromptSilentBelowThreshold(t *testing.T) {
 	st := newStore(t)
 	put(t, st, model.Memory{Type: model.Command, Key: "k", Text: "tests: go test ./..."})
-	lines, _ := Recall(context.Background(), st, cfg(), Query{Project: "/p", Text: "what time is it", Mode: Prompt}, now)
+	lines, _ := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "what time is it", Mode: Prompt}, now)
 	if len(lines) != 0 {
 		t.Fatalf("lines = %+v", lines)
 	}
@@ -97,7 +97,7 @@ func TestPromptMaxThreeLines(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		put(t, st, model.Memory{Type: model.Note, Key: fmt.Sprint(i), Text: fmt.Sprintf("deploy step %d", i)})
 	}
-	lines, _ := Recall(context.Background(), st, cfg(), Query{Project: "/p", Text: "how do we deploy", Mode: Prompt}, now)
+	lines, _ := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "how do we deploy", Mode: Prompt}, now)
 	if len(lines) != 3 {
 		t.Fatalf("lines = %d, want 3", len(lines))
 	}
@@ -108,7 +108,7 @@ func TestCandidatesAndForgottenNeverReturned(t *testing.T) {
 	put(t, st, model.Memory{Type: model.Note, Key: "a", Text: "deploy with make", Status: model.Candidate})
 	put(t, st, model.Memory{Type: model.Note, Key: "b", Text: "deploy with ship", Status: model.Forgotten})
 	for _, q := range []Query{{Project: "/p", Mode: SessionStart}, {Project: "/p", Text: "deploy", Mode: Prompt}} {
-		if lines, _ := Recall(context.Background(), st, cfg(), q, now); len(lines) != 0 {
+		if lines, _ := Recall(context.Background(), st, nil, cfg(), q, now); len(lines) != 0 {
 			t.Fatalf("mode %d returned %+v", q.Mode, lines)
 		}
 	}
@@ -118,7 +118,7 @@ func TestPostToolErrorBySignature(t *testing.T) {
 	st := newStore(t)
 	put(t, st, model.Memory{Type: model.Fix, Key: "sigS", Text: "TypeError … → edited auth.ts → tests green", Confidence: 0.5})
 	put(t, st, model.Memory{Type: model.Fix, Key: "other", Text: "something else"})
-	lines, _ := Recall(context.Background(), st, cfg(), Query{Project: "/p", ErrorSignature: "sigS", Mode: PostToolError}, now)
+	lines, _ := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", ErrorSignature: "sigS", Mode: PostToolError}, now)
 	if len(lines) != 1 || !strings.Contains(lines[0].Text, "auth.ts") {
 		t.Fatalf("lines = %+v", lines)
 	}
@@ -127,7 +127,7 @@ func TestPostToolErrorBySignature(t *testing.T) {
 func TestRecallUpdatesLastUsed(t *testing.T) {
 	st := newStore(t)
 	m := put(t, st, model.Memory{Type: model.Note, Key: "a", Text: "deploy with make deploy"})
-	if _, err := Recall(context.Background(), st, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt}, now); err != nil {
+	if _, err := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt}, now); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := st.GetMemory(m.ID)
@@ -139,7 +139,7 @@ func TestRecallUpdatesLastUsed(t *testing.T) {
 func TestCJKTermFound(t *testing.T) {
 	st := newStore(t)
 	put(t, st, model.Memory{Type: model.Note, Key: "a", Text: "部署命令: make deploy"})
-	lines, _ := Recall(context.Background(), st, cfg(), Query{Project: "/p", Text: "部署", Mode: Prompt}, now)
+	lines, _ := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "部署", Mode: Prompt}, now)
 	if len(lines) != 1 {
 		t.Fatalf("lines = %+v", lines)
 	}
@@ -150,7 +150,7 @@ func TestInjectFalseReturnsNothing(t *testing.T) {
 	put(t, st, model.Memory{Type: model.Note, Key: "a", Text: "deploy with make deploy"})
 	c := cfg()
 	c.Inject = false
-	if lines, _ := Recall(context.Background(), st, c, Query{Project: "/p", Mode: SessionStart}, now); len(lines) != 0 {
+	if lines, _ := Recall(context.Background(), st, nil, c, Query{Project: "/p", Mode: SessionStart}, now); len(lines) != 0 {
 		t.Fatalf("lines = %+v", lines)
 	}
 }
@@ -160,7 +160,7 @@ func TestOldMemoriesRankLower(t *testing.T) {
 	old := now.Add(-90 * 24 * time.Hour).UnixMilli()
 	put(t, st, model.Memory{Type: model.Note, Key: "old", Text: "deploy old way", FirstSeen: old, LastSeen: old})
 	put(t, st, model.Memory{Type: model.Note, Key: "new", Text: "deploy new way"})
-	lines, _ := Recall(context.Background(), st, cfg(), Query{Project: "/p", Mode: SessionStart}, now)
+	lines, _ := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Mode: SessionStart}, now)
 	if len(lines) < 1 || !strings.Contains(lines[0].Text, "new way") {
 		t.Fatalf("lines = %+v", lines)
 	}
@@ -200,7 +200,7 @@ func TestRecallSkipsMarkUsedAfterLock(t *testing.T) {
 		t.Fatalf("Write err = %v, want ErrLocked", err)
 	}
 	start := time.Now()
-	lines, err := Recall(ctx, st, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt}, now)
+	lines, err := Recall(ctx, st, nil, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt}, now)
 	elapsed := time.Since(start)
 	close(release)
 	if werr := <-done; werr != nil {
@@ -218,12 +218,12 @@ func TestCJKUnspacedRecall(t *testing.T) {
 	ctx := context.Background()
 	st := newStore(t)
 	put(t, st, model.Memory{Type: model.Note, Key: "a", Text: "部署命令: make deploy"})
-	if lines, _ := Recall(ctx, st, cfg(), Query{Project: "/p", Text: "如何部署", Mode: Prompt}, now); len(lines) != 1 {
+	if lines, _ := Recall(ctx, st, nil, cfg(), Query{Project: "/p", Text: "如何部署", Mode: Prompt}, now); len(lines) != 1 {
 		t.Fatalf("部署 inside 如何部署: lines = %+v, want 1", lines)
 	}
 	st2 := newStore(t)
 	put(t, st2, model.Memory{Type: model.Note, Key: "b", Text: "命令行工具"})
-	if lines, _ := Recall(ctx, st2, cfg(), Query{Project: "/p", Text: "命令", Mode: Prompt}, now); len(lines) != 1 {
+	if lines, _ := Recall(ctx, st2, nil, cfg(), Query{Project: "/p", Text: "命令", Mode: Prompt}, now); len(lines) != 1 {
 		t.Fatalf("命令 inside 命令行工具: lines = %+v, want 1", lines)
 	}
 }

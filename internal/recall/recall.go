@@ -43,10 +43,13 @@ type Line struct {
 	Score    float64
 }
 
-// Recall returns ranked lines for q, and marks them used.
-func Recall(ctx context.Context, st *store.Store, cfg config.RecallCfg, q Query, now time.Time) ([]Line, error) {
+// Recall returns ranked lines for q, and marks them used. A nil src reads the store.
+func Recall(ctx context.Context, st *store.Store, src Source, cfg config.RecallCfg, q Query, now time.Time) ([]Line, error) {
 	if !cfg.Inject {
 		return nil, nil
+	}
+	if src == nil {
+		src = StoreSource{st}
 	}
 	filter := store.ListFilter{Types: q.Types, Project: q.Project, Statuses: []model.Status{model.Active}}
 	var lines []Line
@@ -54,14 +57,14 @@ func Recall(ctx context.Context, st *store.Store, cfg config.RecallCfg, q Query,
 	switch q.Mode {
 	case SessionStart:
 		filter.Limit = sessionCandidates
-		lines, err = scoreAll(st, filter, cfg, q, now, nil, nil)
+		lines, err = scoreAll(src, filter, cfg, q, now, nil, nil)
 		lines = withinBudget(lines, firstNonZero(q.Budget, cfg.SessionBudget), 0)
 	case Prompt:
 		groups := text.Groups(q.Text)
 		if len(groups) == 0 {
 			return nil, nil
 		}
-		lines, err = scoreAll(st, filter, cfg, q, now, groups, flatten(groups))
+		lines, err = scoreAll(src, filter, cfg, q, now, groups, flatten(groups))
 		lines = aboveThreshold(lines, cfg.PromptThreshold)
 		lines = withinBudget(lines, q.Budget, cfg.PromptMaxLines)
 	case PostToolError:
@@ -69,7 +72,7 @@ func Recall(ctx context.Context, st *store.Store, cfg config.RecallCfg, q Query,
 			return nil, nil
 		}
 		filter.Types, filter.Key = []model.MemoryType{model.Fix}, q.ErrorSignature
-		lines, err = scoreAll(st, filter, cfg, q, now, nil, nil)
+		lines, err = scoreAll(src, filter, cfg, q, now, nil, nil)
 		lines = withinBudget(lines, 0, cfg.PromptMaxLines)
 	}
 	if err != nil {
@@ -78,15 +81,9 @@ func Recall(ctx context.Context, st *store.Store, cfg config.RecallCfg, q Query,
 	return lines, markUsed(ctx, st, lines, now)
 }
 
-// scoreAll fetches candidates (FTS when terms are given) and scores them.
-func scoreAll(st *store.Store, f store.ListFilter, cfg config.RecallCfg, q Query, now time.Time, groups [][]string, terms []string) ([]Line, error) {
-	var ms []model.Memory
-	var err error
-	if terms != nil {
-		ms, _, err = st.SearchFTS(terms, f, promptCandidates)
-	} else {
-		ms, err = st.ListMemories(f)
-	}
+// scoreAll fetches candidates from src and scores them.
+func scoreAll(src Source, f store.ListFilter, cfg config.RecallCfg, q Query, now time.Time, groups [][]string, terms []string) ([]Line, error) {
+	ms, err := src.Candidates(terms, f, promptCandidates)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +96,12 @@ func scoreAll(st *store.Store, f store.ListFilter, cfg config.RecallCfg, q Query
 		score := rel * m.Confidence * recency(m, now, cfg.HalfLifeDays) * scopeWeight(m, q.Files)
 		lines = append(lines, Line{MemoryID: m.ID, Type: m.Type, Text: m.Text, Score: score})
 	}
-	sort.SliceStable(lines, func(i, j int) bool { return lines[i].Score > lines[j].Score })
+	sort.Slice(lines, func(i, j int) bool {
+		if lines[i].Score != lines[j].Score {
+			return lines[i].Score > lines[j].Score
+		}
+		return lines[i].MemoryID < lines[j].MemoryID // ties must not depend on the candidate source's order
+	})
 	return lines, nil
 }
 

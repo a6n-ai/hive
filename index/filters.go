@@ -1,20 +1,52 @@
 package index
 
-import "github.com/RoaringBitmap/roaring/v2"
+import (
+	"strings"
 
-// tagFilter returns the ordinals that carry every tag, or nil when no tags
-// are asked for.
-func (ix *Index) tagFilter(tags []string) *roaring.Bitmap {
-	var out *roaring.Bitmap
+	"github.com/RoaringBitmap/roaring/v2"
+)
+
+// tagFilter returns the ordinals that carry every tag and match every AnyOf
+// group, or nil when neither is asked for.
+func (ix *Index) tagFilter(tags []string, anyOf [][]string) *roaring.Bitmap {
+	if len(tags) == 0 && len(anyOf) == 0 {
+		return nil
+	}
+	var sets []*roaring.Bitmap
 	for _, t := range tags {
 		bm, ok := ix.tags[t]
 		if !ok {
 			return roaring.New()
 		}
-		if out == nil {
-			out = bm.Clone()
-		} else {
-			out.And(bm)
+		sets = append(sets, bm)
+	}
+	for _, g := range anyOf {
+		u := roaring.New()
+		for _, t := range g {
+			if bm, ok := ix.tags[t]; ok {
+				u.Or(bm)
+			}
+		}
+		if u.IsEmpty() {
+			return roaring.New()
+		}
+		sets = append(sets, u)
+	}
+	out := sets[0].Clone()
+	for _, s := range sets[1:] {
+		out.And(s)
+	}
+	return out
+}
+
+// TagsWithPrefix returns every tag that starts with prefix.
+func (ix *Index) TagsWithPrefix(prefix string) []string {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	var out []string
+	for t := range ix.tags {
+		if strings.HasPrefix(t, prefix) {
+			out = append(out, t)
 		}
 	}
 	return out

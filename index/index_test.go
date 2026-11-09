@@ -118,3 +118,29 @@ func TestWeightMultiplier(t *testing.T) {
 		t.Fatalf("Score = %v, want BM25 %v x 0.5", hits[1].Score, hits[1].BM25)
 	}
 }
+
+func TestAnyOfGroups(t *testing.T) {
+	ix := New(textFields, 0)
+	mustUpsert(t, ix, Doc{ID: "a", Tags: []string{"project:/p", "type:note"}, Fields: map[string]string{"text": "deploy"}})
+	mustUpsert(t, ix, Doc{ID: "b", Tags: []string{"project:/q", "type:note"}, Fields: map[string]string{"text": "deploy"}})
+	mustUpsert(t, ix, Doc{ID: "c", Tags: []string{"scope:global", "type:command"}, Fields: map[string]string{"text": "deploy"}})
+
+	hits := search(t, ix, Query{Text: "deploy", K: 10,
+		AnyOf: [][]string{{"project:/p", "scope:global"}, {"type:note", "type:command"}}})
+	if got := hitIDs(hits); !slices.Equal(got, []string{"a", "c"}) {
+		t.Fatalf("AnyOf hits = %v, want [a c]", got)
+	}
+}
+
+func TestTagsWithPrefix(t *testing.T) {
+	ix := New(textFields, 0)
+	mustUpsert(t, ix, Doc{ID: "a", Tags: []string{"file:/p/a.go"}})
+	mustUpsert(t, ix, Doc{ID: "b", Tags: []string{"file:/p/src/b.go", "status:active"}})
+	mustUpsert(t, ix, Doc{ID: "c", Tags: []string{"file:/q/c.go"}})
+
+	got := ix.TagsWithPrefix("file:/p/")
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"file:/p/a.go", "file:/p/src/b.go"}) {
+		t.Fatalf("TagsWithPrefix = %v", got)
+	}
+}
