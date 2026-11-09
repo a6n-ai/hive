@@ -31,8 +31,7 @@ type Backend interface {
 	AuditRows(runID string) ([]AuditRow, error)
 	IdleSessions(agent string, after, before int64) ([]string, error)
 	SessionAttempted(session string) (int64, error)
-	MemoriesChangedSince(ms int64) ([]model.Memory, int64, error)
-	DeletedMemoryIDsSince(ms int64) ([]string, int64, error)
+	ChangesSince(ms int64) ([]model.Memory, []string, int64, error)
 }
 
 var _ Backend = (*Store)(nil)

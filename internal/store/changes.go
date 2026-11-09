@@ -1,16 +1,39 @@
 package store
 
 import (
+	"context"
+	"database/sql"
 	"strings"
 
 	"github.com/a6n-ai/hive/model"
 )
 
-// MemoriesChangedSince returns memories whose updated_at is after ms, oldest
-// first, and the largest updated_at seen (the next cursor).
-func (s *Store) MemoriesChangedSince(ms int64) ([]model.Memory, int64, error) {
+// ChangesSince returns the memories changed after ms, oldest first, the ids of
+// memories deleted after ms, and the next cursor. Both reads share one snapshot,
+// so a write by another process cannot fall between them.
+func (s *Store) ChangesSince(ms int64) ([]model.Memory, []string, int64, error) {
+	tx, err := s.db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, nil, ms, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	changed, next, err := memoriesSince(tx, ms)
+	if err != nil {
+		return nil, nil, ms, err
+	}
+	if s.betweenReads != nil {
+		s.betweenReads()
+	}
+	deleted, dnext, err := deletionsSince(tx, ms)
+	if err != nil {
+		return nil, nil, ms, err
+	}
+	return changed, deleted, max(next, dnext), nil
+}
+
+func memoriesSince(tx *sql.Tx, ms int64) ([]model.Memory, int64, error) {
 	q := strings.Replace(memorySelect, " FROM memories", ", updated_at FROM memories", 1) + ` WHERE updated_at > ? ORDER BY updated_at` //nolint:gosec // G202: constant SQL; the cursor is bound
-	rows, err := s.db.Query(q, ms)
+	rows, err := tx.Query(q, ms)
 	if err != nil {
 		return nil, ms, err
 	}
@@ -29,10 +52,8 @@ func (s *Store) MemoriesChangedSince(ms int64) ([]model.Memory, int64, error) {
 	return out, next, rows.Err()
 }
 
-// DeletedMemoryIDsSince returns the ids of memories deleted after ms and the
-// largest deletion time seen (the next cursor).
-func (s *Store) DeletedMemoryIDsSince(ms int64) ([]string, int64, error) {
-	rows, err := s.db.Query(`SELECT id, ts FROM memory_deletions WHERE ts > ? ORDER BY ts`, ms)
+func deletionsSince(tx *sql.Tx, ms int64) ([]string, int64, error) {
+	rows, err := tx.Query(`SELECT id, ts FROM memory_deletions WHERE ts > ? ORDER BY ts`, ms)
 	if err != nil {
 		return nil, ms, err
 	}

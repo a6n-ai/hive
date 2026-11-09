@@ -45,12 +45,14 @@ func loadSnapshot(path string, want index.Stamp) (*index.Index, index.Stamp, boo
 // write in that millisecond after the last sync would otherwise be skipped.
 // The cursor moves only after both are applied.
 func (h *Hive) syncIndex() error {
-	from := h.stamp.Cursor - 1
-	ms, next, err := h.store.MemoriesChangedSince(from)
+	changed, gone, next, err := h.store.ChangesSince(h.stamp.Cursor - 1)
 	if err != nil {
 		return err
 	}
-	for _, m := range ms {
+	for _, id := range gone {
+		h.index.Delete(id)
+	}
+	for _, m := range changed {
 		if m.Status != model.Active && m.Status != model.Candidate {
 			h.index.Delete(m.ID)
 			continue
@@ -59,14 +61,7 @@ func (h *Hive) syncIndex() error {
 			return err
 		}
 	}
-	gone, deleted, err := h.store.DeletedMemoryIDsSince(from)
-	if err != nil {
-		return err
-	}
-	for _, id := range gone {
-		h.index.Delete(id)
-	}
-	h.stamp.Cursor = max(h.stamp.Cursor, next, deleted)
+	h.stamp.Cursor = max(h.stamp.Cursor, next)
 	return nil
 }
 

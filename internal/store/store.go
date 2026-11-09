@@ -37,6 +37,8 @@ type Store struct {
 	readOnly bool
 	newer    bool
 	hitLock  atomic.Bool
+	// betweenReads is a test seam: it runs between the memory and deletion reads.
+	betweenReads func()
 }
 
 type Tx struct {

@@ -82,7 +82,7 @@ func TestChangedSinceSeesInsertUpdateStatus(t *testing.T) {
 	st, _ := openTemp(t)
 	id := upsertOne(t, st, changeTestMemory("a"))
 
-	ms, cur, err := st.MemoriesChangedSince(0)
+	ms, _, cur, err := st.ChangesSince(0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestChangedSinceSeesInsertUpdateStatus(t *testing.T) {
 	if err := st.Write(context.Background(), func(tx *Tx) error { return tx.SetStatus(id, model.Candidate) }); err != nil {
 		t.Fatal(err)
 	}
-	ms, next, err := st.MemoriesChangedSince(cur)
+	ms, _, next, err := st.ChangesSince(cur)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestChangedSinceSeesInsertUpdateStatus(t *testing.T) {
 	if err := st.Write(context.Background(), func(tx *Tx) error { return tx.TouchUsed([]string{id}, 99) }); err != nil {
 		t.Fatal(err)
 	}
-	ms, next, err = st.MemoriesChangedSince(cur)
+	ms, _, next, err = st.ChangesSince(cur)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestDeletedSince(t *testing.T) {
 	if err := st.Write(context.Background(), func(tx *Tx) error { return tx.DeleteMemory(gone) }); err != nil {
 		t.Fatal(err)
 	}
-	ids, cur, err := st.DeletedMemoryIDsSince(0)
+	_, ids, cur, err := st.ChangesSince(0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,5 +132,50 @@ func TestDeletedSince(t *testing.T) {
 	}
 	if slices.Contains(ids, keep) {
 		t.Fatal("live memory reported as deleted")
+	}
+}
+
+func TestSyncInsertAndDeleteBetweenReads(t *testing.T) {
+	ctx := context.Background()
+	st, path := openTemp(t)
+	gone := upsertOne(t, st, changeTestMemory("gone"))
+	_, _, from, err := st.ChangesSince(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(3 * time.Millisecond)
+
+	other, err := Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = other.Close() }()
+	var added string
+	st.betweenReads = func() {
+		st.betweenReads = nil
+		added = upsertOne(t, other, changeTestMemory("added"))
+		time.Sleep(3 * time.Millisecond)
+		if err := other.Write(ctx, func(tx *Tx) error { return tx.DeleteMemory(gone) }); err != nil {
+			t.Error(err)
+		}
+	}
+
+	first, deleted, next, err := st.ChangesSince(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, deletedLater, _, err := st.ChangesSince(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var changedIDs []string
+	for _, m := range append(first, second...) {
+		changedIDs = append(changedIDs, m.ID)
+	}
+	if !slices.Contains(changedIDs, added) {
+		t.Fatalf("memory inserted between the reads was lost: changed %v, cursor %d", changedIDs, next)
+	}
+	if !slices.Contains(append(deleted, deletedLater...), gone) {
+		t.Fatalf("deletion between the reads was lost: deleted %v", append(deleted, deletedLater...))
 	}
 }
