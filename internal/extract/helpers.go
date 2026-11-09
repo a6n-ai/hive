@@ -65,7 +65,8 @@ func isEdit(e *model.Event) (string, bool) {
 	return p, p != ""
 }
 
-// Defaults returns the built-in extractors for this plan's memory types.
-func Defaults() []Extractor {
-	return []Extractor{NewProject(), NewCommand(), NewFix(), NewCochange(), NewNote()}
+// Defaults returns the built-in extractors. callerIsScout turns skill memory
+// on when skills.enabled is "auto".
+func Defaults(callerIsScout bool) []Extractor {
+	return []Extractor{NewProject(), NewCommand(), NewFix(), NewCochange(), NewNote(), NewPreference(), NewSkill(callerIsScout)}
 }

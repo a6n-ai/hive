@@ -200,8 +200,8 @@ func newID() string {
 	return "m_" + hex.EncodeToString(b)
 }
 
-// shallowMerge overlays next onto prev.
-func shallowMerge(prev, next map[string]any) map[string]any {
+// ShallowMerge overlays next onto prev; it is UpsertMemory's default merge.
+func ShallowMerge(prev, next map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range prev {
 		out[k] = v
@@ -218,7 +218,7 @@ func shallowMerge(prev, next map[string]any) map[string]any {
 // evidence event when evidenceEventID > 0.
 func (t *Tx) UpsertMemory(m *model.Memory, merge func(prev, next map[string]any) map[string]any, evidenceEventID int64) (*model.Memory, error) {
 	if merge == nil {
-		merge = shallowMerge
+		merge = ShallowMerge
 	}
 	existing, err := scanMemory(t.tx.QueryRow(memorySelect+` WHERE type=? AND scope_kind=? AND scope=? AND key=?`,
 		string(m.Type), string(m.ScopeKind), m.Scope, m.Key))
