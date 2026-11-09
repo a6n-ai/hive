@@ -144,15 +144,33 @@ func TestReviewRegressionsRedacted(t *testing.T) {
 	}
 }
 
+// Many entropy candidates in a large string must not rescan the prefix for
+// every candidate. Compares growth, not wall time, so -race does not flake it:
+// 10x input should cost about 10x, not about 100x.
 func TestLargeInputLinearTime(t *testing.T) {
 	s := newScrubber(t)
-	// Many entropy candidates in a large string: must not rescan the prefix
-	// for every candidate.
-	in := strings.Repeat("q8Zr2Lm7Vx4Kp9Tn3Wc6Hb1Fs5Gd0Jy2Ue8Ra4Xo ", 50000) // ~2 MB
-	start := time.Now()
-	s.Scrub(in)
-	if d := time.Since(start); d > 3*time.Second {
-		t.Fatalf("Scrub on 2 MB took %v, want < 3s", d)
+	unit := "q8Zr2Lm7Vx4Kp9Tn3Wc6Hb1Fs5Gd0Jy2Ue8Ra4Xo "
+	timeFor := func(n int) time.Duration {
+		in := strings.Repeat(unit, n)
+		start := time.Now()
+		s.Scrub(in)
+		return time.Since(start)
+	}
+	small, large := timeFor(1000), timeFor(10000)
+	if ratio := float64(large) / float64(small); ratio > 30 {
+		t.Fatalf("10x input took %.1fx longer (%v vs %v), want roughly linear", ratio, large, small)
+	}
+}
+
+func TestQuotedValueDoesNotCrossLines(t *testing.T) {
+	s := newScrubber(t)
+	in := "password=\"first9value\napi_key=\"second9value\"\n"
+	out, _ := s.Scrub(in)
+	if strings.Contains(out, "first9value") || strings.Contains(out, "second9value") {
+		t.Fatalf("leaked:\n in:  %q\n out: %q", in, out)
+	}
+	if strings.Count(out, "[REDACTED:assignment]") != 2 {
+		t.Fatalf("want two separate assignment redactions, got %q", out)
 	}
 }
 

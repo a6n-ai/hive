@@ -35,8 +35,9 @@ const secretKeys = `(?:password|passwd|secret|token|api[_\-]?key|auth|credential
 
 // quotedValue prefers an escape-aware quoted string, then falls back to a
 // plain one that may end in a backslash or never close (redacted to end of
-// line), so no quoted form escapes redaction.
-const quotedValue = `"(?:[^"\\]|\\.)*"|"[^"\n]*"?|'(?:[^'\\]|\\.)*'|'[^'\n]*'?`
+// line), so no quoted form escapes redaction. No form crosses a newline, so an
+// unterminated value cannot swallow the next line's opening quote.
+const quotedValue = `"(?:[^"\\\n]|\\[^\n])*"|"[^"\n]*"?|'(?:[^'\\\n]|\\[^\n])*'|'[^'\n]*'?`
 
 // entropyCandidate finds runs that may be random secrets.
 var entropyCandidate = regexp.MustCompile(`[A-Za-z0-9_=+\-]{32,}`)
