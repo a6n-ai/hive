@@ -28,31 +28,48 @@ func (a *Adapter) Uninstall(settingsPath string) error {
 }
 
 func installHooks(m map[string]any, hiveBin string) (bool, error) {
+	if hm, ok := m["hooks"].(map[string]any); ok {
+		for _, ev := range installEvents {
+			if v, ok := hm[ev]; ok && v != nil {
+				if _, isArr := v.([]any); !isArr {
+					return false, fmt.Errorf("hooks.%s is not an array", ev)
+				}
+			}
+		}
+	} else if m["hooks"] != nil {
+		return false, errors.New("hooks is not an object")
+	}
+	before, err := json.Marshal(m)
+	if err != nil {
+		return false, err
+	}
+	// Any existing Hive hook goes first, so a reinstall from another binary
+	// path replaces the old command rather than adding a second one.
+	removeHooks(m)
 	hooks, ok := m["hooks"].(map[string]any)
 	if !ok {
-		if m["hooks"] != nil {
-			return false, errors.New("hooks is not an object")
-		}
 		hooks = map[string]any{}
 	}
-	prefix := hiveBin + hookMarker
-	changed := false
+	cmdPrefix := shellQuote(hiveBin) + hookMarker
 	for _, ev := range installEvents {
-		groups, ok := hooks[ev].([]any)
-		if !ok && hooks[ev] != nil {
-			return false, fmt.Errorf("hooks.%s is not an array", ev)
-		}
-		if hasHook(groups, func(c string) bool { return strings.HasPrefix(c, prefix) }) {
-			continue
-		}
-		hook := map[string]any{"type": "command", "command": prefix + " " + ev}
+		groups, _ := hooks[ev].([]any)
+		hook := map[string]any{"type": "command", "command": cmdPrefix + " " + ev}
 		hooks[ev] = append(groups, map[string]any{"hooks": []any{hook}})
-		changed = true
 	}
-	if changed {
-		m["hooks"] = hooks
+	m["hooks"] = hooks
+	after, err := json.Marshal(m)
+	if err != nil {
+		return false, err
 	}
-	return changed, nil
+	return !bytes.Equal(before, after), nil
+}
+
+// shellQuote quotes a binary path for the shell that runs hook commands.
+func shellQuote(p string) string {
+	if p != "" && strings.Trim(p, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-") == "" {
+		return p
+	}
+	return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
 }
 
 // removeHooks deletes every Hive hook, and the groups, events and hooks key
@@ -107,20 +124,6 @@ func removeHooks(m map[string]any) bool {
 		delete(m, "hooks")
 	}
 	return changed
-}
-
-func hasHook(groups []any, match func(command string) bool) bool {
-	for _, g := range groups {
-		gm, _ := g.(map[string]any)
-		hs, _ := gm["hooks"].([]any)
-		for _, h := range hs {
-			hm, _ := h.(map[string]any)
-			if c, _ := hm["command"].(string); match(c) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func isHiveHook(h any) bool {

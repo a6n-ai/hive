@@ -228,3 +228,39 @@ func TestInstallKeepsOtherCommandsVerbatim(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallQuotesBinaryWithSpace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := New().Install(path, "/Applications/My Tools/hive"); err != nil {
+		t.Fatal(err)
+	}
+	cmd := readJSON(t, path)["hooks"].(map[string]any)["SessionStart"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"].(string)
+	if want := "'/Applications/My Tools/hive' hook --agent claude-code"; !strings.HasPrefix(cmd, want) {
+		t.Fatalf("command = %q, want prefix %q", cmd, want)
+	}
+}
+
+func TestReinstallFromNewPathReplaces(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := New().Install(path, "/a/hive"); err != nil {
+		t.Fatal(err)
+	}
+	if err := New().Install(path, "/b/hive"); err != nil {
+		t.Fatal(err)
+	}
+	m := readJSON(t, path)
+	for _, ev := range installEvents {
+		groups := m["hooks"].(map[string]any)[ev].([]any)
+		var cmds []string
+		for _, g := range groups {
+			for _, h := range g.(map[string]any)["hooks"].([]any) {
+				if c := h.(map[string]any)["command"].(string); strings.Contains(c, " hook --agent claude-code ") {
+					cmds = append(cmds, c)
+				}
+			}
+		}
+		if len(cmds) != 1 || cmds[0] != "/b/hive hook --agent claude-code "+ev {
+			t.Errorf("%s: hive commands = %v, want exactly /b/hive", ev, cmds)
+		}
+	}
+}
