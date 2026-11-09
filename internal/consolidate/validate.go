@@ -175,11 +175,13 @@ func (v *validator) add(op *Op, scrub func(string) string) ([]string, string) {
 		return nil, "key lookup failed: " + err.Error()
 	}
 	var touches []string
+	op.ID = "" // only the validator sets this: it names the memory an add updates
 	if existing != nil {
 		if _, in := v.mems[existing.ID]; !in {
 			return nil, "key exists; use merge or promote"
 		}
 		touches = []string{existing.ID}
+		op.ID = existing.ID
 	}
 	op.Text = scrub(op.Text)
 	if op.Text == "" || utf8.RuneCountInString(op.Text) > maxTextRunes {

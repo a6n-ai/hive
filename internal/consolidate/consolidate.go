@@ -60,7 +60,12 @@ func Run(ctx context.Context, st *store.Store, cfg config.Config, scrub func(str
 		return rep, nil
 	}
 	rec.Finished = time.Now().UnixMilli()
-	return rep, commit(ctx, st, in, rec, rep.Valid)
+	skipped, err := commit(ctx, st, in, &rec, rep.Valid)
+	if len(skipped) > 0 {
+		rep.Rejected = append(rep.Rejected, skipped...)
+		rep.Status, rep.Error = rec.Status, rec.Error
+	}
+	return rep, err
 }
 
 // judge turns a runner result into a run status, the ops that may apply, and the rejections.
@@ -76,32 +81,42 @@ func judge(raw string, runErr error, in Input, scrub func(string) string, find F
 	if len(rejected) == 0 {
 		return "ok", valid, nil, ""
 	}
-	reasons := make([]string, 0, len(rejected))
-	for _, r := range rejected {
-		reasons = append(reasons, r.Reason)
-	}
-	return "partial", valid, rejected, strings.Join(reasons, "; ")
+	return "partial", valid, rejected, reasonsOf(rejected)
 }
 
 // commit applies the valid ops, moves the session's cursor, and records the run,
 // in one transaction. A failed run records itself and its attempt time only.
-func commit(ctx context.Context, st *store.Store, in Input, rec store.RunRecord, valid []Op) error {
+func commit(ctx context.Context, st *store.Store, in Input, rec *store.RunRecord, valid []Op) ([]Rejected, error) {
 	now := time.Now().UnixMilli()
-	return st.Write(ctx, func(tx *store.Tx) error {
+	var skipped []Rejected
+	err := st.Write(ctx, func(tx *store.Tx) error {
 		if rec.Status == "failed" {
 			if err := tx.SetSessionAttempt(in.Session, now); err != nil {
 				return err
 			}
 		} else {
-			if err := applyTx(tx, rec.ID, valid, now); err != nil {
+			var err error
+			if skipped, err = applyTx(tx, rec.ID, valid, now); err != nil {
 				return err
+			}
+			if len(skipped) > 0 {
+				rec.Status, rec.Error = "partial", reasonsOf(skipped)
 			}
 			if err := tx.SetSessionCursor(in.Session, in.MaxEventID, now); err != nil {
 				return err
 			}
 		}
-		return tx.InsertRun(rec)
+		return tx.InsertRun(*rec)
 	})
+	return skipped, err
+}
+
+func reasonsOf(rejected []Rejected) string {
+	reasons := make([]string, 0, len(rejected))
+	for _, r := range rejected {
+		reasons = append(reasons, r.Reason)
+	}
+	return strings.Join(reasons, "; ")
 }
 
 func newRunID() string {

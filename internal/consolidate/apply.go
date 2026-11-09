@@ -40,21 +40,31 @@ func snapshotJSON(tx *store.Tx, m *model.Memory) (string, error) {
 	return string(b), err
 }
 
-// Apply makes the valid ops' changes in one transaction, with one audit row per changed memory.
-func Apply(ctx context.Context, st *store.Store, runID string, valid []Op) error {
-	return st.Write(ctx, func(tx *store.Tx) error {
-		return applyTx(tx, runID, valid, time.Now().UnixMilli())
+// Apply makes the valid ops' changes in one transaction, with one audit row per
+// changed memory. It returns the ops skipped because the state changed since review.
+func Apply(ctx context.Context, st *store.Store, runID string, valid []Op) ([]Rejected, error) {
+	var skipped []Rejected
+	err := st.Write(ctx, func(tx *store.Tx) error {
+		var err error
+		skipped, err = applyTx(tx, runID, valid, time.Now().UnixMilli())
+		return err
 	})
+	return skipped, err
 }
 
-func applyTx(tx *store.Tx, runID string, ops []Op, now int64) error {
+func applyTx(tx *store.Tx, runID string, ops []Op, now int64) ([]Rejected, error) {
 	a := applier{tx: tx, runID: runID, now: now}
+	var skipped []Rejected
 	for _, op := range ops {
-		if err := a.apply(op); err != nil {
-			return fmt.Errorf("consolidate: %s: %w", op.Op, err)
+		reason, err := a.apply(op)
+		if err != nil {
+			return skipped, fmt.Errorf("consolidate: %s: %w", op.Op, err)
+		}
+		if reason != "" {
+			skipped = append(skipped, Rejected{Op: op, Reason: reason})
 		}
 	}
-	return nil
+	return skipped, nil
 }
 
 type applier struct {
@@ -63,7 +73,42 @@ type applier struct {
 	now   int64
 }
 
-func (a applier) apply(op Op) error {
+// apply makes one op's change. A non-empty reason with a nil error means the op
+// was skipped: the memory changed since the review.
+func (a applier) apply(op Op) (string, error) {
+	reason, err := a.recheck(op)
+	if reason != "" || err != nil {
+		return reason, err
+	}
+	return "", a.dispatch(op)
+}
+
+// recheck re-reads, inside the transaction, what the review relied on.
+func (a applier) recheck(op Op) (string, error) {
+	switch op.Op {
+	case "promote":
+		m, err := a.tx.GetMemory(op.ID)
+		switch {
+		case err != nil:
+			return "", err
+		case m == nil:
+			return "memory no longer exists", nil
+		case m.Status != model.Candidate:
+			return "memory is no longer a candidate", nil
+		}
+	case "add":
+		existing, err := a.tx.MemoryByKey(model.MemoryType(op.Type), model.ScopeKind(op.ScopeKind), op.Scope, op.Key)
+		if err != nil {
+			return "", err
+		}
+		if existing != nil && existing.ID != op.ID {
+			return "key was created after the review", nil
+		}
+	}
+	return "", nil
+}
+
+func (a applier) dispatch(op Op) error {
 	switch op.Op {
 	case "merge":
 		return a.merge(op)
