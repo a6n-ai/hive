@@ -97,10 +97,11 @@ func (t *Tx) DropReplayBefore(cutoff int64) (int64, error) {
 }
 
 // DeleteOldEvents deletes up to limit events older than cutoff that no active or
-// superseded memory cites as evidence. It returns how many were deleted.
+// superseded memory cites as evidence and whose prompt text is already cleared,
+// so a prompt is always sampled before its event goes. It returns how many were deleted.
 func (t *Tx) DeleteOldEvents(cutoff int64, limit int) (int64, error) {
 	res, err := t.tx.Exec(`DELETE FROM events WHERE id IN (
-		SELECT e.id FROM events e WHERE e.ts < ? AND NOT EXISTS (
+		SELECT e.id FROM events e WHERE e.ts < ? AND e.prompt_text IS NULL AND NOT EXISTS (
 			SELECT 1 FROM memory_evidence me JOIN memories m ON m.id = me.memory_id
 			WHERE me.event_id = e.id AND m.status <> 'forgotten')
 		ORDER BY e.id LIMIT ?)`, cutoff, limit)
