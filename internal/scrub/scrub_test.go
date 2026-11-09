@@ -110,6 +110,23 @@ func TestScrubAnyNested(t *testing.T) {
 	}
 }
 
+// Bypasses reported by the security review.
+func TestReviewBypassesRedacted(t *testing.T) {
+	s := newScrubber(t)
+	cases := []struct{ in, secret string }{
+		{`{"password": "` + "hunter2json" + `"}`, "hunter2json"},
+		{`{'api_key': '` + "zz9singleq" + `'}`, "zz9singleq"},
+		{`"token":"` + `ab\"cd9escaped` + `"`, `cd9escaped`},
+		{"https://user:" + "p@ss9word" + "@db.example.com/x", "ss9word"},
+		{"blob base64," + "q8Zr2Lm7Vx4Kp9Tn3Wc6Hb1Fs5Gd0Jy2Ue8Ra4Xo", "q8Zr2Lm7Vx4Kp9Tn3Wc6Hb1Fs5Gd0Jy2Ue8Ra4Xo"},
+	}
+	for _, c := range cases {
+		if out, _ := s.Scrub(c.in); strings.Contains(out, c.secret) {
+			t.Errorf("leaked:\n in:  %s\n out: %s", c.in, out)
+		}
+	}
+}
+
 func TestExtraPatterns(t *testing.T) {
 	s, err := New([]string{`ACME-[0-9]{6}`})
 	if err != nil {

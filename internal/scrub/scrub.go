@@ -75,7 +75,7 @@ func scrubEntropy(s string, findings *[]Finding) string {
 	last := 0
 	for _, loc := range locs {
 		tok := s[loc[0]:loc[1]]
-		if !looksSecret(tok) || strings.HasSuffix(s[:loc[0]], "base64,") {
+		if !looksSecret(tok) || dataURIPrefix.MatchString(s[:loc[0]]) {
 			continue
 		}
 		b.WriteString(s[last:loc[0]])

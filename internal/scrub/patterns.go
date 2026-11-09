@@ -22,9 +22,17 @@ var builtin = []rule{
 	{"google_api_key", regexp.MustCompile(`\bAIza[0-9A-Za-z_\-]{35}`), 0},
 	{"stripe_key", regexp.MustCompile(`\b(?:sk|rk)_live_[0-9A-Za-z]{20,}`), 0},
 	{"jwt", regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}`), 0},
-	{"url_credentials", regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.\-]*://([^/\s:@]+:[^/\s@]+)@`), 1},
-	{"assignment", regexp.MustCompile(`(?i)\b(?:password|passwd|secret|token|api[_\-]?key|auth|credential)s?\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s'"]+)`), 1},
+	// Greedy up to the last '@' before the host, so a password containing '@'
+	// is redacted whole.
+	{"url_credentials", regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.\-]*://([^\s:/@]+:[^\s/]*)@[^\s@/]+`), 1},
+	// An optional closing quote after the key covers JSON and YAML forms;
+	// quoted values allow escaped quotes.
+	{"assignment", regexp.MustCompile(`(?i)\b(?:password|passwd|secret|token|api[_\-]?key|auth|credential)s?\b["']?\s*[:=]\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s'",}]+)`), 1},
 }
 
 // entropyCandidate finds runs that may be random secrets.
 var entropyCandidate = regexp.MustCompile(`[A-Za-z0-9_=+\-]{32,}`)
+
+// dataURIPrefix matches a media data URI right before a base64 payload; only
+// those payloads skip the entropy rule.
+var dataURIPrefix = regexp.MustCompile(`data:[a-zA-Z0-9.+\-]+/[a-zA-Z0-9.+\-]+;base64,$`)
