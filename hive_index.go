@@ -45,6 +45,8 @@ func loadSnapshot(path string, want index.Stamp) (*index.Index, index.Stamp, boo
 // write in that millisecond after the last sync would otherwise be skipped.
 // The cursor moves only after both are applied.
 func (h *Hive) syncIndex() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	changed, gone, next, err := h.store.ChangesSince(h.stamp.Cursor - 1)
 	if err != nil {
 		return err
@@ -76,6 +78,8 @@ func (h *Hive) afterWrite() {
 // saveIndex writes the snapshot through a temp file, so a crash never leaves a
 // half-written one.
 func (h *Hive) saveIndex() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	tmp, err := os.CreateTemp(h.home, indexFile+".*")
 	if err != nil {
 		return err

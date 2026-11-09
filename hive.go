@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/a6n-ai/hive/index"
@@ -62,6 +63,8 @@ type Hive struct {
 	stamp    index.Stamp
 	home     string
 	readOnly bool
+	// mu serializes index sync and snapshot save, which share stamp.
+	mu sync.Mutex
 }
 
 // Open opens the Hive database under o.Home with the config for o.Project.

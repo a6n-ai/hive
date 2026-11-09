@@ -2,7 +2,9 @@ package hive
 
 import (
 	"context"
+	"fmt"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/a6n-ai/hive/internal/recall"
@@ -133,4 +135,30 @@ func TestRecallSeesOtherProcessForget(t *testing.T) {
 	if ids := promptIDs(t, h, "deploy"); len(ids) != 0 {
 		t.Fatalf("recall served a memory another process forgot: %v", ids)
 	}
+}
+
+func TestConcurrentSyncAndRecallRace(t *testing.T) {
+	ctx := context.Background()
+	h := openIndexed(t, t.TempDir())
+	defer func() { _ = h.Close() }()
+
+	var wg sync.WaitGroup
+	for g := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range 20 {
+				// Lock contention between writers is not under test; only the index's state is.
+				id, _ := h.Remember(ctx, fmt.Sprintf("deploy step %d-%d via make", g, i), model.Note, model.ProjectScope, "/p")
+				if i%3 == 0 && id != "" {
+					_ = h.Forget(ctx, id, false)
+				}
+				if _, err := h.Recall(ctx, recall.Query{Project: "/p", Text: "deploy", Mode: recall.Prompt}); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
