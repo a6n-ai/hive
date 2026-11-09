@@ -25,6 +25,12 @@ var builtin = []rule{
 	// Greedy up to the last '@' before the host, so a password containing '@'
 	// is redacted whole.
 	{"url_credentials", regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.\-]*://([^\s:/@]+:[^\s/]*)@[^\s@/]+`), 1},
+	// Passwords given on a command line. Each pattern is scoped to the tool or
+	// flag that takes the value, so -p in mkdir -p is left alone.
+	{"cli_password", regexp.MustCompile(`\bmysql(?:dump)?\b[^\n]*?\s-p('[^']*'|"[^"]*"|\S+)`), 1},
+	{"cli_password", regexp.MustCompile(`\b(?:docker|podman|helm|oras)\s+login\b[^\n]*?\s-p\s+(\S+)`), 1},
+	{"cli_password", regexp.MustCompile(`--password(?:=|\s+)('[^']*'|"[^"]*"|[^\s-]\S*)`), 1},
+	{"cli_password", regexp.MustCompile(`(?:\s-u|\s--user)\s+[^\s:]+:(\S+)`), 1},
 }
 
 // Assignments (password=..., "api_key": "...") are found by assignKey and

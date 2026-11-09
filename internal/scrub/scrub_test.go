@@ -330,3 +330,26 @@ func TestSecretKeysInsideIdentifiers(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIPasswordArgs(t *testing.T) {
+	s := newScrubber(t)
+	for _, in := range []string{
+		"mysql -uroot -pmy9pass db",
+		"mysqldump -p'my9pass' db",
+		"docker login -u me -p my9pass reg.io",
+		"podman login --password my9pass",
+		"psql --password=my9pass",
+		"curl -u user:my9pass https://x",
+		"curl --user user:my9pass https://x",
+	} {
+		out, _ := s.Scrub(in)
+		if strings.Contains(out, "my9pass") {
+			t.Errorf("%q leaked: out %q", in, out)
+		}
+	}
+	for _, in := range []string{"git log -p", "docker login --password-stdin", "mkdir -p build/out"} {
+		if out, _ := s.Scrub(in); out != in {
+			t.Errorf("%q changed to %q", in, out)
+		}
+	}
+}
