@@ -1,0 +1,124 @@
+package scrub
+
+import (
+	"strings"
+	"testing"
+)
+
+// Secrets are assembled from pieces so repository secret scanners do not flag
+// the test corpus. None of these are real credentials.
+func rep(s string, n int) string { return strings.Repeat(s, n) }
+
+var anthropic = "sk-" + "ant-" + "api03-" + rep("Ab9x", 8)
+var github = "gh" + "p_" + rep("A1b2", 9)
+
+var positive = []struct{ in, secret string }{
+	{"key " + anthropic, anthropic},
+	{"openai " + "sk-" + "proj-" + rep("Qw3r", 8), "sk-" + "proj-" + rep("Qw3r", 8)},
+	{"token " + github, github},
+	{"oauth " + "gh" + "o_" + rep("Z9y8", 9), "gh" + "o_" + rep("Z9y8", 9)},
+	{"server " + "gh" + "s_" + rep("K7j6", 9), "gh" + "s_" + rep("K7j6", 9)},
+	{"pat " + "github_" + "pat_" + rep("11AB", 10), "github_" + "pat_" + rep("11AB", 10)},
+	{"aws " + "AK" + "IA" + "IOSFODNN7EXAMPL1", "AK" + "IA" + "IOSFODNN7EXAMPL1"},
+	{"sts " + "AS" + "IA" + "IOSFODNN7EXAMPL2", "AS" + "IA" + "IOSFODNN7EXAMPL2"},
+	{"slack " + "xo" + "xb-" + "1234567890-" + rep("ab12", 6), "xo" + "xb-" + "1234567890-" + rep("ab12", 6)},
+	{"slack " + "xo" + "xp-" + "1234567890-" + rep("cd34", 6), "xo" + "xp-" + "1234567890-" + rep("cd34", 6)},
+	{"google " + "AI" + "za" + "Sy" + rep("D1e2", 8) + "x", "AI" + "za" + "Sy" + rep("D1e2", 8) + "x"},
+	{"stripe " + "sk" + "_live_" + rep("4eC3", 6), "sk" + "_live_" + rep("4eC3", 6)},
+	{"stripe " + "rk" + "_live_" + rep("9fD2", 6), "rk" + "_live_" + rep("9fD2", 6)},
+	{"jwt " + "eyJ" + "hbGciOiJIUzI1NiJ9" + "." + "eyJzdWIiOiIxMjM0NTY3ODkwIn0" + "." + "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+		"dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"},
+	{"-----BEGIN RSA " + "PRIVATE KEY-----\\nMIIEowIBAAKCAQEA7x\\n-----END RSA " + "PRIVATE KEY-----", "MIIEowIBAAKCAQEA7x"},
+	{"db https://admin:" + "hunter2pass@db.example.com/x", "hunter2pass"},
+	{"password=" + "correcthorse", "correcthorse"},
+	{"api_key: " + "zz-local-value-9", "zz-local-value-9"},
+	{"export TOKEN=" + "abcd1234efgh", "abcd1234efgh"},
+	{"blob " + "q8Zr2Lm7Vx4Kp9Tn3Wc6Hb1Fs5Gd0Jy2Ue8Ra4Xo", "q8Zr2Lm7Vx4Kp9Tn3Wc6Hb1Fs5Gd0Jy2Ue8Ra4Xo"},
+}
+
+var negative = []string{
+	"commit 3ffc179ddb6d3ec3b953576443cb3098d0c1689c",
+	"id 123e4567-e89b-12d3-a456-426614174000",
+	"go test ./...",
+	"/Users/lawbringr/IdeaProjects/a6n-ai/hive/internal/store/store.go",
+	"see https://github.com/a6n-ai/hive/pull/12",
+	"send the Bearer header as documented",
+	`img := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="`,
+	"TOKEN_LIMIT=4000",
+	"sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+}
+
+func newScrubber(t *testing.T) *Scrubber {
+	t.Helper()
+	s, err := New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestPositiveCorpusAllRedacted(t *testing.T) {
+	s := newScrubber(t)
+	for _, c := range positive {
+		out, findings := s.Scrub(c.in)
+		if !strings.Contains(out, "[REDACTED:") || strings.Contains(out, c.secret) || len(findings) == 0 {
+			t.Errorf("not redacted:\n in:  %s\n out: %s", c.in, out)
+		}
+	}
+}
+
+func TestNegativeCorpusUnchanged(t *testing.T) {
+	s := newScrubber(t)
+	for _, in := range negative {
+		if out, _ := s.Scrub(in); out != in {
+			t.Errorf("changed:\n in:  %s\n out: %s", in, out)
+		}
+	}
+}
+
+func TestKindNames(t *testing.T) {
+	s := newScrubber(t)
+	cases := map[string]string{
+		anthropic:                                 "[REDACTED:anthropic_key]",
+		github:                                    "[REDACTED:github_token]",
+		"AK" + "IA" + "IOSFODNN7EXAMPL1":          "[REDACTED:aws_access_key]",
+	}
+	for in, want := range cases {
+		if out, _ := s.Scrub(in); out != want {
+			t.Errorf("Scrub(%q) = %q, want %q", in[:6], out, want)
+		}
+	}
+}
+
+func TestScrubAnyNested(t *testing.T) {
+	s := newScrubber(t)
+	in := map[string]any{
+		"command": "curl -H 'x-api-key: " + anthropic + "'",
+		"list":    []any{"ok", map[string]any{"deep": github}},
+		"n":       3,
+	}
+	out := s.ScrubAny(in).(map[string]any)
+	if strings.Contains(out["command"].(string), anthropic) {
+		t.Fatal("command not scrubbed")
+	}
+	deep := out["list"].([]any)[1].(map[string]any)["deep"].(string)
+	if deep != "[REDACTED:github_token]" {
+		t.Fatalf("deep = %q", deep)
+	}
+	if out["n"] != 3 || out["list"].([]any)[0] != "ok" {
+		t.Fatal("non-secret values changed")
+	}
+}
+
+func TestExtraPatterns(t *testing.T) {
+	s, err := New([]string{`ACME-[0-9]{6}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := s.Scrub("ticket ACME-123456"); out != "ticket [REDACTED:custom]" {
+		t.Fatalf("custom = %q", out)
+	}
+	if _, err := New([]string{"("}); err == nil {
+		t.Fatal("invalid user pattern accepted")
+	}
+}
