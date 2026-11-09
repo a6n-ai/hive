@@ -1,9 +1,11 @@
 package claudecode
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,6 +133,11 @@ func isHiveHook(h any) bool {
 // only when change reports a change, keeps the file's mode, backs up the
 // original once, and refuses to touch a file it cannot parse.
 func editSettings(path string, change func(map[string]any) (bool, error)) error {
+	// A symlinked settings file (dotfiles managers) is edited where it points,
+	// so the link survives and the target is the file that changes.
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		path = r
+	}
 	m := map[string]any{}
 	mode := os.FileMode(0o600)
 	raw, err := os.ReadFile(path) //nolint:gosec // G304: the settings path is the user's own file, chosen on the command line
@@ -144,7 +151,7 @@ func editSettings(path string, change func(map[string]any) (bool, error)) error 
 			return err
 		}
 		mode = info.Mode().Perm()
-		if err := json.Unmarshal(raw, &m); err != nil {
+		if err := decodeSettings(raw, &m); err != nil {
 			return fmt.Errorf("%s: not valid JSON, left unchanged: %w", path, err)
 		}
 		if m == nil {
@@ -163,14 +170,31 @@ func editSettings(path string, change func(map[string]any) (bool, error)) error 
 			}
 		}
 	}
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(m); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return writeAtomic(path, append(data, '\n'), mode)
+	return writeAtomic(path, buf.Bytes(), mode)
+}
+
+// decodeSettings parses one JSON object. Numbers stay as written, so a large
+// value in another tool's settings is not rounded.
+func decodeSettings(raw []byte, m *map[string]any) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(m); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("trailing data after the JSON object")
+	}
+	return nil
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) (err error) {

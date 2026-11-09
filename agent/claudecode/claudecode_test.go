@@ -179,3 +179,52 @@ func TestInstallInvalidJSONRefuses(t *testing.T) {
 		t.Fatal("invalid settings file was modified")
 	}
 }
+
+func TestInstallFollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(`{"model":"opus"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "settings.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := New().Install(link, bin); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("settings.json is no longer a symlink: %v", err)
+	}
+	if n := hiveEntries(readJSON(t, target), "SessionStart"); n != 1 {
+		t.Fatalf("target has %d hive entries, want 1", n)
+	}
+}
+
+func TestInstallKeepsOtherCommandsVerbatim(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	original := `{"count":12345678901234567890,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo a 2>&1 > /tmp/x && true"}]}]}}`
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []string{"install", "uninstall"} {
+		var err error
+		if step == "install" {
+			err = New().Install(path, bin)
+		} else {
+			err = New().Uninstall(path)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := string(mustRead(t, path))
+		for _, want := range []string{"12345678901234567890", "echo a 2>&1 > /tmp/x && true"} {
+			if !strings.Contains(raw, want) {
+				t.Fatalf("after %s, %q is not byte-for-byte in:\n%s", step, want, raw)
+			}
+		}
+	}
+}
