@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/a6n-ai/hive/internal/config"
@@ -25,6 +26,8 @@ type Pipeline struct {
 	Scrub   *scrub.Scrubber
 	Extract *extract.Registry
 	Cfg     config.Config
+	// Redactions counts the secrets replaced in events prepared so far.
+	Redactions atomic.Int64
 }
 
 // Digest identifies an event for idempotent inserts.
@@ -78,10 +81,15 @@ func hashString(s string) string {
 // Prepare scrubs e, applies the storage policy, and sets its digest.
 func (p *Pipeline) Prepare(e *model.Event) {
 	ApplyPolicy(e) // truncate first, so scrubbing never scans more than the store keeps
+	n := 0
 	if e.Payload != nil {
-		e.Payload, _ = p.Scrub.ScrubAny(e.Payload).(map[string]any)
+		var v any
+		v, n = p.Scrub.ScrubAnyCount(e.Payload)
+		e.Payload, _ = v.(map[string]any)
 	}
-	e.PromptText, _ = p.Scrub.Scrub(e.PromptText)
+	var findings []scrub.Finding
+	e.PromptText, findings = p.Scrub.Scrub(e.PromptText)
+	p.Redactions.Add(int64(n + len(findings)))
 	if e.Digest == "" {
 		e.Digest = Digest(e)
 	}

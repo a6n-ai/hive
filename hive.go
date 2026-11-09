@@ -15,6 +15,7 @@ import (
 	"github.com/a6n-ai/hive/internal/capture"
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/extract"
+	"github.com/a6n-ai/hive/internal/importer"
 	"github.com/a6n-ai/hive/internal/recall"
 	"github.com/a6n-ai/hive/internal/scrub"
 	"github.com/a6n-ai/hive/internal/store"
@@ -156,4 +157,29 @@ func (h *Hive) RegisterExtractor(x extract.Extractor) { h.pipeline.Extract.Regis
 
 func (h *Hive) QueryEvents(_ context.Context, f EventFilter) ([]Event, error) {
 	return h.store.QueryEvents(f.Session, f.Project, f.Kinds, f.Since, f.Until, f.Limit)
+}
+
+// ImportReport is an import's summary plus what it added to the store.
+type ImportReport struct {
+	importer.Summary
+	NewEvents, NewMemories, Redactions int
+}
+
+// ImportClaudeCode backfills events and memories from Claude Code transcripts.
+func (h *Hive) ImportClaudeCode(ctx context.Context, o importer.Options) (ImportReport, error) {
+	evBefore, memBefore, err := h.store.Counts()
+	if err != nil {
+		return ImportReport{}, err
+	}
+	redBefore := h.pipeline.Redactions.Load()
+	sum, err := importer.ClaudeCode(ctx, o, h.Capture)
+	if err != nil {
+		return ImportReport{Summary: sum}, err
+	}
+	evAfter, memAfter, err := h.store.Counts()
+	if err != nil {
+		return ImportReport{Summary: sum}, err
+	}
+	return ImportReport{Summary: sum, NewEvents: evAfter - evBefore, NewMemories: memAfter - memBefore,
+		Redactions: int(h.pipeline.Redactions.Load() - redBefore)}, nil
 }

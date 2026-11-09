@@ -388,6 +388,12 @@ func (s *Store) GetMemory(id string) (*model.Memory, error) {
 	return scanMemory(s.db.QueryRow(memorySelect+` WHERE id = ?`, id))
 }
 
+// Counts returns the number of events and memories stored.
+func (s *Store) Counts() (events, memories int, err error) {
+	err = s.db.QueryRow(`SELECT (SELECT count(*) FROM events), (SELECT count(*) FROM memories)`).Scan(&events, &memories)
+	return events, memories, err
+}
+
 // ListMemories returns memories matching f, most recently seen first.
 func (s *Store) ListMemories(f ListFilter) ([]model.Memory, error) {
 	where, args := filterSQL("memories", f)

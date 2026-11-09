@@ -200,3 +200,18 @@ func TestCUJ3ErrorWithSecretStillRecalls(t *testing.T) {
 		t.Fatalf("additionalContext = %q", ctx)
 	}
 }
+
+func TestImportCommand(t *testing.T) {
+	home := t.TempDir()
+	root := "../../internal/importer/testdata/projects"
+	out := runOK(t, home, "", "import", "claude-code", "--root", root)
+	for _, want := range []string{"files=1", "skipped=3", "new_memories="} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output %q missing %q", out, want)
+		}
+	}
+	again := runOK(t, home, "", "import", "claude-code", "--root", root)
+	if !strings.Contains(again, "new_events=0") {
+		t.Errorf("second import output %q, want new_events=0", again)
+	}
+}

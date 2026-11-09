@@ -126,29 +126,44 @@ func entropy(s string) float64 {
 // ScrubAny returns a copy of v with every string inside maps and slices
 // scrubbed. Other values are returned unchanged.
 func (sc *Scrubber) ScrubAny(v any) any {
+	out, _ := sc.ScrubAnyCount(v)
+	return out
+}
+
+// ScrubAnyCount is ScrubAny that also returns how many secrets were redacted.
+func (sc *Scrubber) ScrubAnyCount(v any) (any, int) {
 	switch x := v.(type) {
 	case string:
-		out, _ := sc.Scrub(x)
-		return out
+		out, findings := sc.Scrub(x)
+		return out, len(findings)
 	case map[string]any:
 		out := make(map[string]any, len(x))
+		n := 0
 		for k, val := range x {
-			out[k] = sc.ScrubAny(val)
+			var c int
+			out[k], c = sc.ScrubAnyCount(val)
+			n += c
 		}
-		return out
+		return out, n
 	case []any:
 		out := make([]any, len(x))
+		n := 0
 		for i, val := range x {
-			out[i] = sc.ScrubAny(val)
+			var c int
+			out[i], c = sc.ScrubAnyCount(val)
+			n += c
 		}
-		return out
+		return out, n
 	case []string:
 		out := make([]string, len(x))
+		n := 0
 		for i, val := range x {
-			out[i], _ = sc.Scrub(val)
+			var findings []Finding
+			out[i], findings = sc.Scrub(val)
+			n += len(findings)
 		}
-		return out
+		return out, n
 	default:
-		return v
+		return v, 0
 	}
 }
