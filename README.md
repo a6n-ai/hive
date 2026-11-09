@@ -31,6 +31,20 @@ Hive's hooks.
 Data lives in `$HIVE_HOME/hive.db` (default `~/.hive`). Hooks never fail the
 agent: errors are appended to `$HIVE_HOME/hive.log`.
 
+### Index and writer mode
+
+`hive.Options{Index: true}` serves prompt recall from `hive/index`, an in-memory
+index of the active and candidate memories (weighted text fields, tag bitmaps
+for project, scope, type, and status). SQLite stays the source of truth: the
+index is rebuilt from it when needed. It is saved to `$HIVE_HOME/index.snap` on
+`Close`, and a snapshot that is missing, stale, or damaged is rebuilt. Writes
+through `Hive` keep it current.
+
+`hive.Options{Writer: true}` marks the one process that batches capture (for
+example, a gateway). It implies `Index`. `Hive.CaptureBatch` stores a batch in
+one transaction; a locked database spools the whole batch, and an event that
+fails processing is quarantined in `spool/bad` while the rest commit.
+
 ## CLI
 
     hive recall [--project P] [--query Q] [--budget N]
