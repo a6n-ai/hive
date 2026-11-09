@@ -6,6 +6,7 @@ package index
 import (
 	"cmp"
 	"slices"
+	"sync"
 
 	"github.com/RoaringBitmap/roaring/v2"
 )
@@ -45,6 +46,7 @@ type Hit struct {
 }
 
 type Index struct {
+	mu       sync.RWMutex
 	fields   []Field
 	dim      int
 	ids      []string
@@ -52,8 +54,11 @@ type Index struct {
 	lens     [][]int   // ordinal -> token count per field
 	dict     [][]string
 	postings []map[string][]posting
-	totalLen []int
+	totalLen []int // live documents only
 	tags     map[string]*roaring.Bitmap
+	byID     map[string]int // id -> live ordinal
+	tomb     *roaring.Bitmap
+	live     int
 }
 
 // New makes an index over fields. dim 0 disables vectors.
@@ -65,6 +70,8 @@ func New(fields []Field, dim int) *Index {
 		postings: make([]map[string][]posting, len(fields)),
 		totalLen: make([]int, len(fields)),
 		tags:     map[string]*roaring.Bitmap{},
+		byID:     map[string]int{},
+		tomb:     roaring.New(),
 	}
 	for i := range ix.postings {
 		ix.postings[i] = map[string][]posting{}
@@ -72,6 +79,7 @@ func New(fields []Field, dim int) *Index {
 	return ix
 }
 
+// Upsert adds d, replacing any live document with the same id.
 func (ix *Index) Upsert(d Doc) error {
 	var vec []float32
 	if ix.dim > 0 {
@@ -81,6 +89,18 @@ func (ix *Index) Upsert(d Doc) error {
 		}
 		vec = v
 	}
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
+	if old, ok := ix.byID[d.ID]; ok {
+		ix.kill(old)
+	}
+	ix.byID[d.ID] = ix.add(d, vec)
+	ix.maybeCompact()
+	return nil
+}
+
+// add appends d as a new ordinal and returns it. The caller holds the write lock.
+func (ix *Index) add(d Doc, vec []float32) int {
 	ord := len(ix.ids)
 	ix.ids = append(ix.ids, d.ID)
 	ix.vecs = append(ix.vecs, vec...)
@@ -94,10 +114,20 @@ func (ix *Index) Upsert(d Doc) error {
 		}
 		ix.tags[t].Add(uint32(ord)) //nolint:gosec // G115: a corpus never reaches 2^32 documents
 	}
-	return nil
+	ix.live++
+	return ord
+}
+
+// Len returns the number of live documents.
+func (ix *Index) Len() int {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	return ix.live
 }
 
 func (ix *Index) Search(q Query) ([]Hit, error) {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
 	qv, err := ix.queryVector(q.Vector)
 	if err != nil {
 		return nil, err

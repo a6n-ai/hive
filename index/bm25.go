@@ -62,7 +62,7 @@ func (ix *Index) addField(fi, ord int, s string) {
 // weighted BM25 of each field.
 func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float64 {
 	scores := map[int]float64{}
-	n := float64(len(ix.ids))
+	n := float64(ix.live)
 	for fi, f := range ix.fields {
 		if ix.totalLen[fi] == 0 {
 			continue
@@ -76,7 +76,7 @@ func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float6
 			}
 			idf := math.Log(1 + (n-df+0.5)/(df+0.5))
 			for ord, tf := range tfs {
-				if allowed != nil && !allowed.Contains(uint32(ord)) { //nolint:gosec // G115: see Upsert
+				if !ix.visible(ord, allowed) {
 					continue
 				}
 				tfv := float64(tf)
@@ -95,7 +95,9 @@ func (ix *Index) prefixTF(fi int, prefix string) map[int]int {
 	d := ix.dict[fi]
 	for i := sort.SearchStrings(d, prefix); i < len(d) && strings.HasPrefix(d[i], prefix); i++ {
 		for _, p := range ix.postings[fi][d[i]] {
-			out[p.ord] += p.tf
+			if ix.visible(p.ord, nil) {
+				out[p.ord] += p.tf
+			}
 		}
 	}
 	return out

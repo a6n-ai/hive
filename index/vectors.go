@@ -44,7 +44,7 @@ func (ix *Index) cosines(q []float32, allowed *roaring.Bitmap) map[int]float64 {
 		return out
 	}
 	for ord := range ix.ids {
-		if allowed != nil && !allowed.Contains(uint32(ord)) { //nolint:gosec // G115: see Upsert
+		if !ix.visible(ord, allowed) {
 			continue
 		}
 		v := ix.vecs[ord*ix.dim : (ord+1)*ix.dim]

@@ -19,3 +19,10 @@ func (ix *Index) tagFilter(tags []string) *roaring.Bitmap {
 	}
 	return out
 }
+
+// visible reports whether ord is live and carries every tag in allowed (nil
+// means no tag filter).
+func (ix *Index) visible(ord int, allowed *roaring.Bitmap) bool {
+	u := uint32(ord) //nolint:gosec // G115: a corpus never reaches 2^32 documents
+	return !ix.tomb.Contains(u) && (allowed == nil || allowed.Contains(u))
+}
