@@ -485,3 +485,26 @@ func (t *Tx) LastEvent(session string, beforeID int64) (*model.Event, error) {
 	}
 	return &evs[0], nil
 }
+
+// RecentEvents returns up to limit of the session's events with id below
+// beforeID, newest first. Extractors use it to look back without scanning a
+// whole session.
+func (t *Tx) RecentEvents(session string, beforeID int64, limit int) ([]model.Event, error) {
+	rows, err := t.tx.Query(eventSelect+` WHERE e.session = ? AND e.id < ? ORDER BY e.id DESC LIMIT ?`, session, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scanEvents(rows)
+}
+
+// AddEvidence links an event to a memory; duplicates are ignored.
+func (t *Tx) AddEvidence(memoryID string, eventID int64) error {
+	_, err := t.tx.Exec(`INSERT OR IGNORE INTO memory_evidence(memory_id, event_id) VALUES (?, ?)`, memoryID, eventID)
+	return err
+}
+
+// SetStatus changes a memory's status.
+func (t *Tx) SetStatus(memoryID string, s model.Status) error {
+	_, err := t.tx.Exec(`UPDATE memories SET status = ? WHERE id = ?`, string(s), memoryID)
+	return err
+}
