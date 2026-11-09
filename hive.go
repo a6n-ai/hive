@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/a6n-ai/hive/index"
@@ -41,6 +42,8 @@ type Options struct {
 	ReadOnly              bool
 	// Index serves prompt recall from the in-memory index, kept in sync with the store.
 	Index bool
+	// Writer marks the gateway process that batches capture; it implies Index.
+	Writer bool
 }
 
 // EventFilter selects events; zero values mean no filter.
@@ -85,7 +88,7 @@ func Open(o Options) (*Hive, error) {
 		reg.Register(x)
 	}
 	h := &Hive{store: st, pipeline: &capture.Pipeline{Store: st, Scrub: sc, Extract: reg, Cfg: cfg}, cfg: cfg, home: home, readOnly: o.ReadOnly}
-	if o.Index {
+	if o.Index || o.Writer {
 		if err := h.openIndex(); err != nil {
 			_ = st.Close()
 			return nil, err
@@ -243,4 +246,18 @@ func (h *Hive) ImportClaudeCode(ctx context.Context, o importer.Options) (Import
 	}
 	return ImportReport{Summary: sum, NewEvents: evAfter - evBefore, NewMemories: memAfter - memBefore,
 		Redactions: int(h.pipeline.Redactions.Load() - redBefore)}, nil
+}
+
+// CaptureBatch stores evs in one transaction, as Capture does for each. An
+// event without a timestamp gets now.
+func (h *Hive) CaptureBatch(ctx context.Context, evs []Event) error {
+	batch := slices.Clone(evs)
+	for i := range batch {
+		if batch[i].TS == 0 {
+			batch[i].TS = time.Now().UnixMilli()
+		}
+	}
+	err := h.pipeline.CaptureBatch(ctx, batch)
+	h.afterWrite()
+	return err
 }

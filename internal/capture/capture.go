@@ -104,19 +104,8 @@ func (p *Pipeline) Capture(ctx context.Context, e model.Event) error {
 	}
 	p.Prepare(&e)
 	err := p.Store.Write(ctx, func(tx *store.Tx) error {
-		drained, err := tx.DrainSpoolEvents()
-		if err != nil {
+		if err := p.drainSpool(ctx, tx, excluded); err != nil {
 			return err
-		}
-		for i := range drained {
-			if underAny(drained[i].Project, excluded) {
-				continue
-			}
-			if err := tx.Savepoint(func() error { return p.process(ctx, tx, &drained[i]) }); err != nil {
-				if err := quarantine(p.Store.Path(), &drained[i]); err != nil {
-					return err
-				}
-			}
 		}
 		inserted, err := tx.InsertEvent(&e)
 		if err != nil || !inserted {
@@ -129,6 +118,75 @@ func (p *Pipeline) Capture(ctx context.Context, e model.Event) error {
 		return p.Store.Spool(&e)
 	}
 	return err
+}
+
+// CaptureBatch stores evs in one write transaction. An event whose processing
+// fails is quarantined alone and the rest commit. When the write fails, every
+// event is spooled instead.
+func (p *Pipeline) CaptureBatch(ctx context.Context, evs []model.Event) error {
+	excluded := normalizeExcludes(p.Cfg.Exclude.Paths)
+	kept := make([]model.Event, 0, len(evs))
+	for _, e := range evs {
+		if underAny(e.Project, excluded) {
+			continue
+		}
+		p.Prepare(&e)
+		kept = append(kept, e)
+	}
+	err := p.Store.Write(ctx, func(tx *store.Tx) error {
+		if err := p.drainSpool(ctx, tx, excluded); err != nil {
+			return err
+		}
+		for i := range kept {
+			if err := p.storeIsolated(ctx, tx, &kept[i]); err != nil {
+				if err := quarantine(p.Store.Path(), &kept[i]); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err == nil || errors.Is(err, store.ErrSchemaNewer) || errors.Is(err, store.ErrReadOnly) {
+		return err
+	}
+	for i := range kept {
+		if err := p.Store.Spool(&kept[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// drainSpool imports spooled events inside tx and processes each one. A
+// spooled event that keeps failing is quarantined.
+func (p *Pipeline) drainSpool(ctx context.Context, tx *store.Tx, excluded []string) error {
+	drained, err := tx.DrainSpoolEvents()
+	if err != nil {
+		return err
+	}
+	for i := range drained {
+		if underAny(drained[i].Project, excluded) {
+			continue
+		}
+		if err := tx.Savepoint(func() error { return p.process(ctx, tx, &drained[i]) }); err != nil {
+			if err := quarantine(p.Store.Path(), &drained[i]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// storeIsolated inserts and processes e inside a savepoint, so a failure
+// undoes only this event.
+func (p *Pipeline) storeIsolated(ctx context.Context, tx *store.Tx, e *model.Event) error {
+	return tx.Savepoint(func() error {
+		inserted, err := tx.InsertEvent(e)
+		if err != nil || !inserted {
+			return err
+		}
+		return p.process(ctx, tx, e)
+	})
 }
 
 // quarantine keeps an event whose processing always fails in spool/bad, so it
