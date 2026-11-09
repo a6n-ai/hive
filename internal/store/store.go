@@ -38,6 +38,7 @@ type Store struct {
 
 type Tx struct {
 	tx          *sql.Tx
+	spoolDir    string
 	afterCommit []func()
 }
 
@@ -120,7 +121,7 @@ func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
 		}
 		return err
 	}
-	tx := &Tx{tx: sqlTx}
+	tx := &Tx{tx: sqlTx, spoolDir: s.spoolDir()}
 	if err := fn(tx); err != nil {
 		_ = sqlTx.Rollback()
 		if isBusy(err) {
