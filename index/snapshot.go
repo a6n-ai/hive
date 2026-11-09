@@ -76,7 +76,7 @@ func (ix *Index) snapshotPostings() [][][]snapPosting {
 	for fi := range ix.fields {
 		out[fi] = make([][]snapPosting, len(ix.dict[fi]))
 		for i, term := range ix.dict[fi] {
-			for _, p := range ix.postings[fi][term] {
+			for _, p := range ix.postings[fi][term].list {
 				out[fi][i] = append(out[fi][i], snapPosting{Ord: p.ord, TF: p.tf})
 			}
 		}
@@ -123,14 +123,14 @@ func fromBody(b body) (*Index, error) {
 		}
 		ix.dict[fi] = b.Dict[fi]
 		for i, term := range b.Dict[fi] {
-			ps := make([]posting, 0, len(b.Postings[fi][i]))
+			tp := newTermPostings()
 			for _, p := range b.Postings[fi][i] {
 				if p.Ord < 0 || p.Ord >= n {
 					return nil, ErrCorrupt
 				}
-				ps = append(ps, posting{ord: p.Ord, tf: p.TF})
+				tp.add(p.Ord, p.TF)
 			}
-			ix.postings[fi][term] = ps
+			ix.postings[fi][term] = tp
 		}
 	}
 	for _, l := range b.Lens {

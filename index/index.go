@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/RoaringBitmap/roaring/v2"
 )
@@ -56,7 +57,8 @@ type Index struct {
 	lens     [][]int    // ordinal -> token count per field
 	dict     [][]string // sorted terms per field; valid when !dirty
 	dirty    bool
-	postings []map[string][]posting
+	scored   atomic.Int64 // postings scored by searches; tests read it
+	postings []map[string]*termPostings
 	totalLen []int // live documents only
 	tags     map[string]*roaring.Bitmap
 	byID     map[string]int // id -> live ordinal
@@ -70,14 +72,14 @@ func New(fields []Field, dim int) *Index {
 		fields:   fields,
 		dim:      dim,
 		dict:     make([][]string, len(fields)),
-		postings: make([]map[string][]posting, len(fields)),
+		postings: make([]map[string]*termPostings, len(fields)),
 		totalLen: make([]int, len(fields)),
 		tags:     map[string]*roaring.Bitmap{},
 		byID:     map[string]int{},
 		tomb:     roaring.New(),
 	}
 	for i := range ix.postings {
-		ix.postings[i] = map[string][]posting{}
+		ix.postings[i] = map[string]*termPostings{}
 	}
 	return ix
 }

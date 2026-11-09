@@ -71,18 +71,18 @@ func (ix *Index) compact() {
 }
 
 // rebuildPostings keeps the postings of surviving ordinals, renumbered by remap.
-func (ix *Index) rebuildPostings(remap map[int]int) []map[string][]posting {
-	postings := make([]map[string][]posting, len(ix.fields))
+func (ix *Index) rebuildPostings(remap map[int]int) []map[string]*termPostings {
+	postings := make([]map[string]*termPostings, len(ix.fields))
 	for fi := range ix.fields {
-		postings[fi] = map[string][]posting{}
-		for term, ps := range ix.postings[fi] {
-			var kept []posting
-			for _, p := range ps {
+		postings[fi] = map[string]*termPostings{}
+		for term, tp := range ix.postings[fi] {
+			kept := newTermPostings()
+			for _, p := range tp.list {
 				if n, ok := remap[p.ord]; ok {
-					kept = append(kept, posting{ord: n, tf: p.tf})
+					kept.add(n, p.tf)
 				}
 			}
-			if len(kept) > 0 {
+			if len(kept.list) > 0 {
 				postings[fi][term] = kept
 			}
 		}

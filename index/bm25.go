@@ -20,6 +20,29 @@ type posting struct {
 	tf  int
 }
 
+// termPostings lists a term's postings in ordinal order, and the same ordinals
+// as a bitmap for set algebra.
+type termPostings struct {
+	list []posting
+	ords *roaring.Bitmap
+}
+
+func newTermPostings() *termPostings { return &termPostings{ords: roaring.New()} }
+
+func (tp *termPostings) add(ord, tf int) {
+	tp.list = append(tp.list, posting{ord: ord, tf: tf})
+	tp.ords.Add(uint32(ord)) //nolint:gosec // G115: a corpus never reaches 2^32 documents
+}
+
+// tf returns the term frequency of ord, or 0 when the term does not occur in it.
+func (tp *termPostings) tf(ord int) int {
+	i := sort.Search(len(tp.list), func(i int) bool { return tp.list[i].ord >= ord })
+	if i < len(tp.list) && tp.list[i].ord == ord {
+		return tp.list[i].tf
+	}
+	return 0
+}
+
 // queryTerms returns the distinct terms of s, tokenized like memory text.
 func queryTerms(s string) []string {
 	var out []string
@@ -51,15 +74,20 @@ func (ix *Index) addField(fi, ord int, s string) {
 		counts[t]++
 	}
 	for t, n := range counts {
-		if _, ok := ix.postings[fi][t]; !ok {
+		tp, ok := ix.postings[fi][t]
+		if !ok {
+			tp = newTermPostings()
+			ix.postings[fi][t] = tp
 			ix.dirty = true
 		}
-		ix.postings[fi][t] = append(ix.postings[fi][t], posting{ord: ord, tf: n})
+		tp.add(ord, n)
 	}
 }
 
-// lexical scores every document that matches a query term, summing the
-// weighted BM25 of each field.
+// lexical scores the documents that match a query term and pass allowed. Idf
+// and average length come from all live documents, so a filter changes which
+// documents are scored, not how they are scored. The filter is applied before
+// scoring: only documents in the intersection are visited.
 func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float64 {
 	scores := map[int]float64{}
 	n := float64(ix.live)
@@ -69,16 +97,25 @@ func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float6
 		}
 		avg := float64(ix.totalLen[fi]) / n
 		for _, term := range terms {
-			tfs := ix.prefixTF(fi, term)
-			df := float64(len(tfs))
+			matched := ix.prefixPostings(fi, term)
+			docs := ix.liveDocs(matched)
+			df := float64(docs.GetCardinality())
 			if df == 0 {
 				continue
 			}
 			idf := math.Log(1 + (n-df+0.5)/(df+0.5))
-			for ord, tf := range tfs {
-				if !ix.visible(ord, allowed) {
-					continue
+			cands := docs
+			if allowed != nil {
+				cands = roaring.And(docs, allowed)
+			}
+			it := cands.Iterator()
+			for it.HasNext() {
+				ord := int(it.Next()) //nolint:gosec // G115: see add
+				tf := 0
+				for _, tp := range matched {
+					tf += tp.tf(ord)
 				}
+				ix.scored.Add(1)
 				tfv := float64(tf)
 				norm := tfv * (k1 + 1) / (tfv + k1*(1-b+b*float64(ix.lens[ord][fi])/avg))
 				scores[ord] += f.Weight * idf * norm
@@ -88,17 +125,23 @@ func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float6
 	return scores
 }
 
-// prefixTF sums term frequencies per document over every dictionary term of
-// field fi that starts with prefix.
-func (ix *Index) prefixTF(fi int, prefix string) map[int]int {
-	out := map[int]int{}
+// prefixPostings returns the postings of every dictionary term of field fi that
+// starts with prefix.
+func (ix *Index) prefixPostings(fi int, prefix string) []*termPostings {
+	var out []*termPostings
 	d := ix.dict[fi]
 	for i := sort.SearchStrings(d, prefix); i < len(d) && strings.HasPrefix(d[i], prefix); i++ {
-		for _, p := range ix.postings[fi][d[i]] {
-			if ix.visible(p.ord, nil) {
-				out[p.ord] += p.tf
-			}
-		}
+		out = append(out, ix.postings[fi][d[i]])
 	}
 	return out
+}
+
+// liveDocs returns the ordinals that contain any of the terms and are not tombstoned.
+func (ix *Index) liveDocs(matched []*termPostings) *roaring.Bitmap {
+	u := roaring.New()
+	for _, tp := range matched {
+		u.Or(tp.ords)
+	}
+	u.AndNot(ix.tomb)
+	return u
 }
