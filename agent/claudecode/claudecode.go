@@ -72,37 +72,39 @@ func (a *Adapter) Parse(event string, stdin []byte) (model.Event, error) {
 	case model.Prompt:
 		e.PromptText = p.Prompt
 	case model.PostTool:
-		e.Tool, e.Payload = normalizeTool(event, p)
+		e.Tool, e.Payload = NormalizeTool(p.ToolName, p.ToolInput, event == "PostToolUseFailure", p.Error)
 	}
 	return e, nil
 }
 
-func normalizeTool(event string, p hookPayload) (string, map[string]any) {
-	if p.ToolName == "Bash" {
-		return "shell", shellPayload(event, p)
+// NormalizeTool maps a Claude Code tool call to Hive's canonical tool name and
+// payload. errText is the failure text when failed is true.
+func NormalizeTool(name string, input map[string]any, failed bool, errText string) (string, map[string]any) {
+	if name == "Bash" {
+		return "shell", shellPayload(input, failed, errText)
 	}
 	out := map[string]any{}
-	tool := p.ToolName
-	if f, ok := toolFields[p.ToolName]; ok {
+	tool := name
+	if f, ok := toolFields[name]; ok {
 		tool = f.tool
-		out[f.key], _ = p.ToolInput[f.input].(string)
+		out[f.key], _ = input[f.input].(string)
 	}
-	if event == "PostToolUseFailure" {
-		out["error"] = p.Error
+	if failed {
+		out["error"] = errText
 	}
 	return tool, out
 }
 
 // shellPayload reads the exit code from a failure's "Exit code N" first line.
 // shortcut: a failure without that line keeps the whole text as error and no exit code.
-func shellPayload(event string, p hookPayload) map[string]any {
-	cmd, _ := p.ToolInput["command"].(string)
+func shellPayload(input map[string]any, failed bool, errText string) map[string]any {
+	cmd, _ := input["command"].(string)
 	out := map[string]any{"command": cmd}
-	if event != "PostToolUseFailure" {
+	if !failed {
 		out["exit_code"] = 0
 		return out
 	}
-	head, rest, _ := strings.Cut(p.Error, "\n")
+	head, rest, _ := strings.Cut(errText, "\n")
 	if code, ok := strings.CutPrefix(head, "Exit code "); ok {
 		if n, err := strconv.Atoi(code); err == nil {
 			out["exit_code"] = n
@@ -110,7 +112,7 @@ func shellPayload(event string, p hookPayload) map[string]any {
 			return out
 		}
 	}
-	out["error"] = p.Error
+	out["error"] = errText
 	return out
 }
 
