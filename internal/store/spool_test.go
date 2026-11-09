@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -189,5 +190,133 @@ func TestWriteRemembersLock(t *testing.T) {
 	release()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func writeSpoolFile(t *testing.T, dir, name string, mtime time.Time, evs ...*model.Event) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "spool"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var b []byte
+	for _, e := range evs {
+		line, _ := json.Marshal(e)
+		b = append(append(b, line...), '\n')
+	}
+	path := filepath.Join(dir, "spool", name)
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestDrainToleratesClaimedFileVanishing(t *testing.T) {
+	st, path := openTemp(t)
+	claimed := writeSpoolFile(t, filepath.Dir(path), "1.jsonl.draining-x-1", time.Now().Add(-2*time.Hour), event("vanish"))
+	saved := openSpool
+	t.Cleanup(func() { openSpool = saved })
+	openSpool = func(name string) (*os.File, error) {
+		_ = os.Remove(name)
+		return saved(name)
+	}
+	if err := st.Write(context.Background(), func(tx *Tx) error {
+		if _, err := tx.DrainSpool(); err != nil {
+			return err
+		}
+		_, err := tx.InsertEvent(event("own"))
+		return err
+	}); err != nil {
+		t.Fatalf("Write after the claimed file vanished: %v", err)
+	}
+	if _, err := os.Stat(claimed); !os.IsNotExist(err) {
+		t.Fatalf("claimed file still present: %v", err)
+	}
+	var n int
+	_ = st.db.QueryRow("SELECT COUNT(*) FROM events WHERE digest = 'own'").Scan(&n)
+	if n != 1 {
+		t.Fatalf("own event stored %d times, want 1", n)
+	}
+}
+
+func TestDrainSkipsFreshClaim(t *testing.T) {
+	st, path := openTemp(t)
+	claimed := writeSpoolFile(t, filepath.Dir(path), "2.jsonl.draining-y-1", time.Now(), event("live"))
+	if err := st.Write(context.Background(), func(tx *Tx) error {
+		_, err := tx.DrainSpool()
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(claimed); err != nil {
+		t.Fatalf("fresh claim was taken over: %v", err)
+	}
+	var n int
+	_ = st.db.QueryRow("SELECT COUNT(*) FROM events WHERE digest = 'live'").Scan(&n)
+	if n != 0 {
+		t.Fatalf("fresh claim imported %d times, want 0", n)
+	}
+}
+
+func TestUnreadableSpoolFileDoesNotWedge(t *testing.T) {
+	st, path := openTemp(t)
+	bad := writeSpoolFile(t, filepath.Dir(path), "3.jsonl", time.Now().Add(-2*time.Hour), event("unreadable"))
+	if err := os.Chmod(bad, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(context.Background(), func(tx *Tx) error {
+		if _, err := tx.DrainSpool(); err != nil {
+			return err
+		}
+		_, err := tx.InsertEvent(event("after"))
+		return err
+	}); err != nil {
+		t.Fatalf("Write with an unreadable spool file: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "spool", "bad")); err != nil {
+		t.Fatalf("no spool/bad directory: %v", err)
+	}
+}
+
+func TestConcurrentDrainersNoLoss(t *testing.T) {
+	holder, path := openTemp(t)
+	release, done := holdLock(t, holder)
+	go func() { time.Sleep(300 * time.Millisecond); release() }()
+	var wg sync.WaitGroup
+	errs := make(chan error, 200)
+	for g := 0; g < 3; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			st, err := Open(path, false)
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer func() { _ = st.Close() }()
+			for i := 0; i < 14; i++ {
+				if err := captureOrSpool(st, event(fmt.Sprintf("d%d-%d", g, i))); err != nil {
+					errs <- err
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if err := holder.Write(context.Background(), func(tx *Tx) error { _, err := tx.DrainSpool(); return err }); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = holder.db.QueryRow("SELECT COUNT(*) FROM events WHERE digest LIKE 'd%'").Scan(&n)
+	if n != 42 {
+		t.Fatalf("captured events = %d, want 42", n)
 	}
 }

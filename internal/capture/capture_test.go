@@ -3,6 +3,8 @@ package capture
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -190,5 +192,25 @@ func TestSpooledEventsAreExtractedOnDrain(t *testing.T) {
 	}
 	if ce.n != 1 {
 		t.Fatalf("extractor ran %d times on drained command_result, want 1", ce.n)
+	}
+}
+
+type failingExtractor struct{}
+
+func (failingExtractor) Kinds() []model.EventKind { return []model.EventKind{model.Prompt} }
+func (failingExtractor) Extract(context.Context, *model.Event, *store.Tx, config.Config) error {
+	return errors.New("boom")
+}
+
+func TestCaptureSpoolsWhenWriteFails(t *testing.T) {
+	p, path := newPipeline(t)
+	p.Extract.Register(failingExtractor{})
+	e := model.Event{TS: 1000, Agent: "claude-code", Session: "s1", Project: "/p", Kind: model.Prompt, PromptText: "hi"}
+	if err := p.Capture(context.Background(), e); err != nil {
+		t.Fatalf("Capture returned %v; a failed write must spool the event", err)
+	}
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(path), "spool", fmt.Sprintf("%d.jsonl", os.Getpid())))
+	if err != nil || !bytes.Contains(b, []byte(`"prompt"`)) {
+		t.Fatalf("spool = %q, err %v", b, err)
 	}
 }

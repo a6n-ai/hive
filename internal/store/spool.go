@@ -3,7 +3,9 @@ package store
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,13 @@ import (
 
 	"github.com/a6n-ai/hive/model"
 )
+
+// openSpool opens a claimed spool file; a seam so tests can simulate a file that vanishes.
+var openSpool = os.Open
+
+// claimTTL is how long a .draining- claim belongs to the process that made it.
+// A claim older than this was left by a crashed drainer and may be adopted.
+const claimTTL = 60 * time.Second
 
 // shortcut: uses syscall.Flock, so spooling is unix-only (macOS, Linux); add a
 // Windows locking path if Windows becomes a tested platform.
@@ -104,7 +113,11 @@ func (t *Tx) drain() (int, []model.Event, error) {
 		}
 		src := filepath.Join(t.spoolDir, name)
 		claimed := src
-		if !strings.Contains(name, ".draining-") {
+		if strings.Contains(name, ".draining-") {
+			if info, err := ent.Info(); err == nil && time.Since(info.ModTime()) < claimTTL {
+				continue
+			}
+		} else {
 			claimed = fmt.Sprintf("%s.draining-%d-%d", src, os.Getpid(), time.Now().UnixNano())
 			if err := os.Rename(src, claimed); err != nil {
 				if os.IsNotExist(err) {
@@ -112,6 +125,7 @@ func (t *Tx) drain() (int, []model.Event, error) {
 				}
 				return total, inserted, err
 			}
+			_ = os.Chtimes(claimed, time.Now(), time.Now())
 		}
 		n, evs, err := t.importSpoolFile(claimed)
 		if err != nil {
@@ -125,10 +139,26 @@ func (t *Tx) drain() (int, []model.Event, error) {
 	return total, inserted, nil
 }
 
+// quarantine moves an unreadable spool file to spool/bad so that it cannot fail
+// every later write. The file is kept for inspection.
+func (t *Tx) quarantine(path string) error {
+	bad := filepath.Join(t.spoolDir, "bad")
+	if err := os.MkdirAll(bad, 0o700); err != nil {
+		return err
+	}
+	if err := os.Rename(path, filepath.Join(bad, filepath.Base(path))); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func (t *Tx) importSpoolFile(path string) (int, []model.Event, error) {
-	f, err := os.Open(path) //nolint:gosec // G304: spool paths are under the user's HIVE_HOME
-	if err != nil {
-		return 0, nil, err
+	f, err := openSpool(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return 0, nil, nil
+	case err != nil:
+		return 0, nil, t.quarantine(path)
 	}
 	defer func() { _ = f.Close() }()
 	// Wait for any append that opened the file before it was renamed.

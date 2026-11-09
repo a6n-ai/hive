@@ -110,7 +110,8 @@ func (p *Pipeline) Capture(ctx context.Context, e model.Event) error {
 		}
 		return p.process(ctx, tx, &e)
 	})
-	if errors.Is(err, store.ErrLocked) {
+	if err != nil && !errors.Is(err, store.ErrSchemaNewer) && !errors.Is(err, store.ErrReadOnly) {
+		// Spool on any failure so a bad drain never drops the current event.
 		return p.Store.Spool(&e)
 	}
 	return err
