@@ -179,6 +179,14 @@ func (h *Hive) Consolidate(ctx context.Context, session string, runner consolida
 	return consolidate.Run(ctx, h.store, h.cfg, h.Scrub, runner, session, dryRun)
 }
 
+// Consolidation returns the consolidation settings in effect.
+func (h *Hive) Consolidation() config.ConsolidateCfg { return h.cfg.Consolidate }
+
+// DueConsolidations lists the agent's idle sessions that have enough new events to review.
+func (h *Hive) DueConsolidations(agent string, now time.Time) ([]string, error) {
+	return consolidate.Due(h.store, h.cfg, agent, now)
+}
+
 // Undo reverses a consolidation run, leaving alone any memory changed since.
 func (h *Hive) Undo(ctx context.Context, runID string) (consolidate.UndoReport, error) {
 	return consolidate.Undo(ctx, h.store, runID)

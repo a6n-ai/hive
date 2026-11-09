@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/a6n-ai/hive"
 	"github.com/a6n-ai/hive/model"
+	_ "modernc.org/sqlite"
 )
 
 var binPath string
@@ -240,5 +242,140 @@ func TestRetentionApplyYes(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output %q missing %q", out, want)
 		}
+	}
+}
+
+// fakeAgent is the headless test double; no test calls a real model.
+func fakeAgent(t *testing.T) string {
+	t.Helper()
+	p, err := filepath.Abs("../../internal/consolidate/testdata/fake-agent.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// seedSession stores n prompts through the library, so tests start no hook processes.
+func seedSession(t *testing.T, home, session string, n int) {
+	t.Helper()
+	h, err := hive.Open(hive.Options{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range n {
+		e := hive.Event{TS: time.Now().UnixMilli() + int64(i), Agent: "claude-code", Session: session, Project: "/p",
+			Kind: model.Prompt, PromptText: fmt.Sprintf("prompt %d about deploys", i)}
+		if err := h.Capture(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runRows(t *testing.T, home string) int {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(home, "hive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM consolidation_runs`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// sessionEnd sends a SessionEnd hook for session, with the test agent in the environment.
+func sessionEnd(t *testing.T, home, session, agentPath string) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{"session_id": session, "cwd": "/p", "hook_event_name": "SessionEnd"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, errOut, code := runCLI(t, home, string(payload), []string{"HIVE_TEST_HEADLESS=" + agentPath}, "hook", "--agent", "claude-code", "SessionEnd"); code != 0 {
+		t.Fatalf("hook exit %d: %s", code, errOut)
+	}
+}
+
+func fieldValue(out, key string) string {
+	for _, f := range strings.Fields(out) {
+		if v, ok := strings.CutPrefix(f, key); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+func TestCUJ5ConsolidateAndUndo(t *testing.T) {
+	home := t.TempDir()
+	seedSession(t, home, "cuj5", 60)
+	out, errOut, code := runCLI(t, home, "", []string{"HIVE_TEST_HEADLESS=" + fakeAgent(t), "FAKE_ADD=1"},
+		"consolidate", "--session", "cuj5", "--agent", "claude-code")
+	if code != 0 || !strings.Contains(out, "status=ok applied=1") {
+		t.Fatalf("consolidate: exit %d, out %q, err %q", code, out, errOut)
+	}
+	runID := fieldValue(out, "run=")
+	if !strings.Contains(runOK(t, home, "", "list"), "prefer small commits") {
+		t.Fatal("consolidation did not add the decision")
+	}
+	if undo := runOK(t, home, "", "undo", runID); !strings.Contains(undo, "restored=1 skipped=0") {
+		t.Fatalf("undo output %q", undo)
+	}
+	if strings.Contains(runOK(t, home, "", "list"), "prefer small commits") {
+		t.Error("undo left the decision")
+	}
+}
+
+func TestTwoConsolidationsOneRuns(t *testing.T) {
+	home := t.TempDir()
+	seedSession(t, home, "race", 25)
+	env := append(os.Environ(), "HIVE_HOME="+home, "HIVE_TEST_HEADLESS="+fakeAgent(t), "FAKE_SLEEP=1")
+	var outs [2]bytes.Buffer
+	var cmds []*exec.Cmd
+	for i := range outs {
+		cmd := exec.Command(binPath, "consolidate", "--session", "race", "--agent", "claude-code")
+		cmd.Env, cmd.Stdout = env, &outs[i]
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		cmds = append(cmds, cmd)
+	}
+	for _, cmd := range cmds {
+		if err := cmd.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	both := outs[0].String() + outs[1].String()
+	if ok, locked := strings.Count(both, "status=ok"), strings.Count(both, "status=locked"); ok != 1 || locked != 1 {
+		t.Errorf("status=ok %d, status=locked %d, want 1 and 1; output %q", ok, locked, both)
+	}
+}
+
+func TestSessionEndSpawnsWhenAuto(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("[consolidate]\nauto = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	seedSession(t, home, "end1", 25)
+	sessionEnd(t, home, "end1", fakeAgent(t))
+	deadline := time.Now().Add(5 * time.Second)
+	for runRows(t, home) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no consolidation run within 5 s of the session end")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestSessionEndNoSpawnWhenAutoOff(t *testing.T) {
+	home := t.TempDir()
+	seedSession(t, home, "end2", 25)
+	sessionEnd(t, home, "end2", fakeAgent(t))
+	time.Sleep(1500 * time.Millisecond)
+	if n := runRows(t, home); n != 0 {
+		t.Errorf("runs = %d with consolidate.auto off, want 0", n)
 	}
 }

@@ -69,6 +69,9 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := h.Capture(ctx, e); err != nil {
 		return err
 	}
+	if err := followUps(event, e, h.Consolidation().Auto); err != nil {
+		logLine(config.Home(), "follow-up: %v", err)
+	}
 	q, ok := hookQuery(event, e, h.Scrub)
 	if !ok {
 		return nil
@@ -81,6 +84,24 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 		_, err = stdout.Write(out)
 	}
 	return err
+}
+
+// followUps starts the background work an event implies. The hook never waits for it.
+func followUps(event string, e hive.Event, auto bool) error {
+	switch event {
+	case "SessionStart":
+		if err := spawnDetached("retention", "auto"); err != nil {
+			return err
+		}
+		if auto {
+			return spawnDetached("consolidate", "--catch-up", "--agent", e.Agent)
+		}
+	case "SessionEnd":
+		if auto {
+			return spawnDetached("consolidate", "--session", e.Session, "--agent", e.Agent)
+		}
+	}
+	return nil
 }
 
 // hookQuery picks what to recall for an event. ok is false when the event

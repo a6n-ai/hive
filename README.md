@@ -39,6 +39,21 @@ agent: errors are appended to `$HIVE_HOME/hive.log`.
     hive why ID
     hive list [--type T] [--project P] [--status S]
     hive doctor
+    hive import claude-code [--since YYYY-MM-DD] [--project P] [--root DIR]
+    hive retention apply [--yes]
+    hive consolidate (--session S | --catch-up) [--agent A] [--dry-run]
+    hive undo RUN_ID
+
+`import` backfills events and memories from `~/.claude/projects`; running it
+again adds nothing. `retention apply` shows a dry-run count and asks before
+deleting; the default `rolling` mode clears prompt text after 30 days and
+deletes events after 180 days unless a memory cites them.
+
+Consolidation is opt-in: set `consolidate.auto = true` in `config.toml`. At
+session end, your own agent (Claude Code, run as `claude -p` with `haiku`) reviews
+the session's new events and proposes merges, promotions, rejections, and
+decisions. Each run costs one model call. Every change is audited, and
+`hive undo RUN_ID` reverses a run, leaving alone any memory changed since.
 
 `doctor` reports installed hooks, the database and schema version, a scrubber
 self-test, and pending spool files. It warns when claude-mem hooks are still in
