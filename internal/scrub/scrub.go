@@ -75,7 +75,9 @@ func scrubEntropy(s string, findings *[]Finding) string {
 	last := 0
 	for _, loc := range locs {
 		tok := s[loc[0]:loc[1]]
-		if !looksSecret(tok) || dataURIPrefix.MatchString(s[:loc[0]]) {
+		// Only a bounded window before the token is checked, so large inputs
+		// with many candidates stay linear.
+		if !looksSecret(tok) || dataURIPrefix.MatchString(s[max(0, loc[0]-128):loc[0]]) {
 			continue
 		}
 		b.WriteString(s[last:loc[0]])

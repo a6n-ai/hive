@@ -25,10 +25,18 @@ var builtin = []rule{
 	// Greedy up to the last '@' before the host, so a password containing '@'
 	// is redacted whole.
 	{"url_credentials", regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.\-]*://([^\s:/@]+:[^\s/]*)@[^\s@/]+`), 1},
-	// An optional closing quote after the key covers JSON and YAML forms;
-	// quoted values allow escaped quotes.
-	{"assignment", regexp.MustCompile(`(?i)\b(?:password|passwd|secret|token|api[_\-]?key|auth|credential)s?\b["']?\s*[:=]\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s'",}]+)`), 1},
+	// A quoted key (JSON, YAML) may end its unquoted value at ',' or '}'.
+	{"assignment", regexp.MustCompile(`(?i)\b` + secretKeys + `s?\b["']\s*[:=]\s*(` + quotedValue + `|[^\s'",}]+)`), 1},
+	// A bare key (shell, env, .ini) keeps the whole token after it.
+	{"assignment", regexp.MustCompile(`(?i)\b` + secretKeys + `s?\b\s*[:=]\s*(` + quotedValue + `|[^\s'"]+)`), 1},
 }
+
+const secretKeys = `(?:password|passwd|secret|token|api[_\-]?key|auth|credential)`
+
+// quotedValue prefers an escape-aware quoted string, then falls back to a
+// plain one that may end in a backslash or never close (redacted to end of
+// line), so no quoted form escapes redaction.
+const quotedValue = `"(?:[^"\\]|\\.)*"|"[^"\n]*"?|'(?:[^'\\]|\\.)*'|'[^'\n]*'?`
 
 // entropyCandidate finds runs that may be random secrets.
 var entropyCandidate = regexp.MustCompile(`[A-Za-z0-9_=+\-]{32,}`)

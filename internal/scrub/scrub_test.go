@@ -3,6 +3,7 @@ package scrub
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // Secrets are assembled from pieces so repository secret scanners do not flag
@@ -124,6 +125,34 @@ func TestReviewBypassesRedacted(t *testing.T) {
 		if out, _ := s.Scrub(c.in); strings.Contains(out, c.secret) {
 			t.Errorf("leaked:\n in:  %s\n out: %s", c.in, out)
 		}
+	}
+}
+
+// Second security review round.
+func TestReviewRegressionsRedacted(t *testing.T) {
+	s := newScrubber(t)
+	cases := []struct{ in, secret string }{
+		{`password="` + `C:\vault9key\` + `"`, `vault9key`},
+		{`password="` + "unterminated9value", "unterminated9value"},
+		{"password=" + "abc9def,ghi9jkl", "ghi9jkl"},
+		{"secret=" + "part1}part2tail", "part2tail"},
+	}
+	for _, c := range cases {
+		if out, _ := s.Scrub(c.in); strings.Contains(out, c.secret) {
+			t.Errorf("leaked:\n in:  %s\n out: %s", c.in, out)
+		}
+	}
+}
+
+func TestLargeInputLinearTime(t *testing.T) {
+	s := newScrubber(t)
+	// Many entropy candidates in a large string: must not rescan the prefix
+	// for every candidate.
+	in := strings.Repeat("q8Zr2Lm7Vx4Kp9Tn3Wc6Hb1Fs5Gd0Jy2Ue8Ra4Xo ", 50000) // ~2 MB
+	start := time.Now()
+	s.Scrub(in)
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("Scrub on 2 MB took %v, want < 3s", d)
 	}
 }
 
