@@ -98,6 +98,9 @@ func (s *Store) Close() error { return s.db.Close() }
 // Path is the database file path.
 func (s *Store) Path() string { return s.path }
 
+// SchemaVersion is the migration level the database is at.
+func (s *Store) SchemaVersion() (int, error) { return schemaVersion(s.db) }
+
 func isBusy(err error) bool {
 	var se *sqlite.Error
 	if errors.As(err, &se) {

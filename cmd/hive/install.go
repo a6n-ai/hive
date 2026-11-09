@@ -1,0 +1,62 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"github.com/a6n-ai/hive/agent"
+)
+
+// settingsCmd parses the --agent and --settings flags shared by install and
+// uninstall. The default settings file is Claude Code's.
+func settingsCmd(name string, args []string) (agent.Adapter, string, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	agentName := fs.String("agent", "", "agent to hook (claude-code)")
+	settings := fs.String("settings", "", "settings file (default ~/.claude/settings.json)")
+	if err := fs.Parse(args); err != nil {
+		return nil, "", err
+	}
+	ad, err := agent.Get(*agentName)
+	if err != nil {
+		return nil, "", err
+	}
+	if *settings == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, "", err
+		}
+		*settings = filepath.Join(home, ".claude", "settings.json")
+	}
+	return ad, *settings, nil
+}
+
+func installCmd(args []string, stdout io.Writer) error {
+	ad, settings, err := settingsCmd("install", args)
+	if err != nil {
+		return err
+	}
+	bin, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if err := ad.Install(settings, bin); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "installed %s hooks in %s\n", ad.Name(), settings)
+	return err
+}
+
+func uninstallCmd(args []string, stdout io.Writer) error {
+	ad, settings, err := settingsCmd("uninstall", args)
+	if err != nil {
+		return err
+	}
+	if err := ad.Uninstall(settings); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(stdout, "removed %s hooks from %s\n", ad.Name(), settings)
+	return err
+}

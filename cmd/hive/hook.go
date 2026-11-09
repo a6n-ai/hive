@@ -1,0 +1,117 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/a6n-ai/hive"
+	"github.com/a6n-ai/hive/agent"
+	"github.com/a6n-ai/hive/internal/config"
+	"github.com/a6n-ai/hive/internal/extract"
+	"github.com/a6n-ai/hive/internal/recall"
+)
+
+const maxHookInput = 8 << 20
+
+// hookCmd always exits 0 with no output on failure, so a broken Hive never
+// breaks the agent. Errors go to hive.log instead.
+func hookCmd(args []string, stdin io.Reader, stdout io.Writer) int {
+	if os.Getenv("HIVE_DISABLED") == "1" {
+		return 0
+	}
+	home := config.Home()
+	defer func() {
+		if r := recover(); r != nil {
+			logLine(home, "hook panic: %v", r)
+		}
+	}()
+	if err := runHook(args, stdin, stdout); err != nil {
+		logLine(home, "hook: %v", err)
+	}
+	return 0
+}
+
+func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet("hook", flag.ContinueOnError)
+	agentName := fs.String("agent", "", "agent adapter name")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: hook --agent NAME EVENT")
+	}
+	event := fs.Arg(0)
+	ad, err := agent.Get(*agentName)
+	if err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(io.LimitReader(stdin, maxHookInput))
+	if err != nil {
+		return err
+	}
+	e, err := ad.Parse(event, raw)
+	if err != nil {
+		return err
+	}
+	h, err := hive.Open(hive.Options{Caller: "hive", Project: e.Project})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = h.Close() }()
+	ctx := context.Background()
+	if err := h.Capture(ctx, e); err != nil {
+		return err
+	}
+	q, ok := hookQuery(event, e)
+	if !ok {
+		return nil
+	}
+	lines, err := h.Recall(ctx, q)
+	if err != nil {
+		return err
+	}
+	if out := ad.Reply(event, lines); out != nil {
+		_, err = stdout.Write(out)
+	}
+	return err
+}
+
+// hookQuery picks what to recall for an event. ok is false when the event
+// should inject nothing.
+func hookQuery(event string, e hive.Event) (hive.Query, bool) {
+	switch event {
+	case "SessionStart":
+		return hive.Query{Project: e.Project, Mode: recall.SessionStart}, true
+	case "UserPromptSubmit":
+		return hive.Query{Project: e.Project, Text: e.PromptText, Mode: recall.Prompt}, true
+	case "PostToolUse", "PostToolUseFailure":
+		errText, _ := e.Payload["error"].(string)
+		if errText == "" {
+			return hive.Query{}, false
+		}
+		return hive.Query{Project: e.Project, ErrorSignature: extract.Signature(errText), Mode: recall.PostToolError}, true
+	}
+	return hive.Query{}, false
+}
+
+// logLine appends one timestamped line to hive.log in home. Errors writing
+// the log are dropped: there is nowhere left to report them.
+func logLine(home, format string, args ...any) {
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		return
+	}
+	f, err := os.OpenFile(filepath.Join(home, "hive.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer func() { _ = f.Close() }()
+	msg := strings.Join(strings.Fields(fmt.Sprintf(format, args...)), " ")
+	_, _ = fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), msg)
+}
