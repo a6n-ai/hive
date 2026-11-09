@@ -111,8 +111,29 @@ func TestChangedSinceSeesInsertUpdateStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ms) != 1 || ms[0].LastUsed != 99 || next <= cur {
-		t.Fatalf("after TouchUsed: got %d memories, cursor %d -> %d", len(ms), cur, next)
+	if len(ms) != 0 || next != cur {
+		t.Fatalf("after TouchUsed: got %d memories, cursor %d -> %d; want no change", len(ms), cur, next)
+	}
+}
+
+func TestTouchUsedDoesNotAdvanceUpdatedAt(t *testing.T) {
+	st, _ := openTemp(t)
+	id := upsertOne(t, st, changeTestMemory("a"))
+	var before int64
+	if err := st.db.QueryRow(`SELECT updated_at FROM memories WHERE id = ?`, id).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(3 * time.Millisecond)
+	if err := st.Write(context.Background(), func(tx *Tx) error { return tx.TouchUsed([]string{id}, 99) }); err != nil {
+		t.Fatal(err)
+	}
+	var after int64
+	if err := st.db.QueryRow(`SELECT updated_at FROM memories WHERE id = ?`, id).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("TouchUsed moved updated_at from %d to %d", before, after)
 	}
 }
 
