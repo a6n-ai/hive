@@ -50,6 +50,7 @@ func (h Headless) Run(ctx context.Context, prompt string) (string, error) {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	cmd.Dir = dir
+	cmd.WaitDelay = 5 * time.Second // a grandchild that keeps stdout open must not hold the run
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = &out
 	cmd.Env = append(os.Environ(), "HIVE_DISABLED=1")
