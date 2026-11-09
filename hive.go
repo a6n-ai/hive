@@ -17,6 +17,7 @@ import (
 	"github.com/a6n-ai/hive/internal/extract"
 	"github.com/a6n-ai/hive/internal/importer"
 	"github.com/a6n-ai/hive/internal/recall"
+	"github.com/a6n-ai/hive/internal/retention"
 	"github.com/a6n-ai/hive/internal/scrub"
 	"github.com/a6n-ai/hive/internal/store"
 	"github.com/a6n-ai/hive/model"
@@ -157,6 +158,18 @@ func (h *Hive) RegisterExtractor(x extract.Extractor) { h.pipeline.Extract.Regis
 
 func (h *Hive) QueryEvents(_ context.Context, f EventFilter) ([]Event, error) {
 	return h.store.QueryEvents(f.Session, f.Project, f.Kinds, f.Since, f.Until, f.Limit)
+}
+
+// Retention prunes stored data under the [retention] settings. A dry run reports
+// the counts and changes nothing.
+func (h *Hive) Retention(ctx context.Context, dryRun bool) (retention.Report, error) {
+	return retention.Apply(ctx, h.store, h.cfg.Retention, time.Now(), dryRun)
+}
+
+// AutoRetention prunes when a prune is due and the settings are not paused. It
+// reports whether it ran.
+func (h *Hive) AutoRetention(ctx context.Context) (bool, error) {
+	return retention.Auto(ctx, h.store, h.cfg.Retention, time.Now())
 }
 
 // ImportReport is an import's summary plus what it added to the store.

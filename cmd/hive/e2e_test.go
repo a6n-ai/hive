@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/a6n-ai/hive"
+	"github.com/a6n-ai/hive/model"
 )
 
 var binPath string
@@ -213,5 +218,27 @@ func TestImportCommand(t *testing.T) {
 	again := runOK(t, home, "", "import", "claude-code", "--root", root)
 	if !strings.Contains(again, "new_events=0") {
 		t.Errorf("second import output %q, want new_events=0", again)
+	}
+}
+
+func TestRetentionApplyYes(t *testing.T) {
+	home := t.TempDir()
+	h, err := hive.Open(hive.Options{Home: home})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().AddDate(0, 0, -400).UnixMilli()
+	if err := h.Capture(context.Background(), hive.Event{TS: old, Agent: "claude-code", Session: "old", Project: "/p",
+		Kind: model.Prompt, PromptText: "a prompt from long ago"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out := runOK(t, home, "", "retention", "apply", "--yes")
+	for _, want := range []string{"prompt_texts_cleared=1", "events_deleted=1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output %q missing %q", out, want)
+		}
 	}
 }

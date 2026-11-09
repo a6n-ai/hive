@@ -13,7 +13,7 @@ import (
 )
 
 const usage = `usage: hive <command> [args]
-commands: hook, install, uninstall, recall, remember, forget, why, list, doctor, import`
+commands: hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention`
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
@@ -42,6 +42,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = listCmd(args[1:], stdout)
 	case "import":
 		err = importCmd(args[1:], stdout)
+	case "retention":
+		err = retentionCmd(args[1:], stdin, stdout)
 	case "doctor":
 		err = doctorCmd(stdout)
 	default:
