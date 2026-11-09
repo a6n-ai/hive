@@ -49,6 +49,7 @@ func (ix *Index) Save(w io.Writer, s Stamp) error {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 	ix.compact()
+	ix.refreshDict()
 	b := body{Stamp: s, IDs: ix.ids, Vecs: ix.vecs, Lens: ix.lens, Dict: ix.dict,
 		Postings: ix.snapshotPostings(), TotalLen: ix.totalLen, Tags: map[string][]byte{}}
 	for t, bm := range ix.tags {

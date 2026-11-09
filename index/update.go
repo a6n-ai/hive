@@ -1,6 +1,10 @@
 package index
 
-import "github.com/RoaringBitmap/roaring/v2"
+import (
+	"slices"
+
+	"github.com/RoaringBitmap/roaring/v2"
+)
 
 // Delete hides the live document with id from every later search.
 func (ix *Index) Delete(id string) {
@@ -48,7 +52,7 @@ func (ix *Index) compact() {
 			vecs = append(vecs, ix.vecs[ord*ix.dim:(ord+1)*ix.dim]...)
 		}
 	}
-	dict, postings := ix.rebuildPostings(remap)
+	postings := ix.rebuildPostings(remap)
 	tags := make(map[string]*roaring.Bitmap, len(ix.tags))
 	for t, bm := range ix.tags {
 		if nb := remapBitmap(bm, remap); !nb.IsEmpty() {
@@ -56,7 +60,8 @@ func (ix *Index) compact() {
 		}
 	}
 	ix.ids, ix.lens, ix.vecs = ids, lens, vecs
-	ix.dict, ix.postings, ix.tags = dict, postings, tags
+	ix.dict, ix.postings, ix.tags = nil, postings, tags
+	ix.dirty = true
 	ix.tomb = roaring.New()
 	ix.live = len(ids)
 	ix.byID = make(map[string]int, len(ids))
@@ -66,25 +71,23 @@ func (ix *Index) compact() {
 }
 
 // rebuildPostings keeps the postings of surviving ordinals, renumbered by remap.
-func (ix *Index) rebuildPostings(remap map[int]int) ([][]string, []map[string][]posting) {
-	dict := make([][]string, len(ix.fields))
+func (ix *Index) rebuildPostings(remap map[int]int) []map[string][]posting {
 	postings := make([]map[string][]posting, len(ix.fields))
 	for fi := range ix.fields {
 		postings[fi] = map[string][]posting{}
-		for _, term := range ix.dict[fi] {
+		for term, ps := range ix.postings[fi] {
 			var kept []posting
-			for _, p := range ix.postings[fi][term] {
+			for _, p := range ps {
 				if n, ok := remap[p.ord]; ok {
 					kept = append(kept, posting{ord: n, tf: p.tf})
 				}
 			}
 			if len(kept) > 0 {
 				postings[fi][term] = kept
-				dict[fi] = append(dict[fi], term)
 			}
 		}
 	}
-	return dict, postings
+	return postings
 }
 
 func remapBitmap(bm *roaring.Bitmap, remap map[int]int) *roaring.Bitmap {
@@ -96,4 +99,22 @@ func remapBitmap(bm *roaring.Bitmap, remap map[int]int) *roaring.Bitmap {
 		}
 	}
 	return out
+}
+
+// refreshDict rebuilds the sorted term dictionary from the postings: one sort
+// per batch of changes, not one insert per new term. The caller holds the write lock.
+func (ix *Index) refreshDict() {
+	if !ix.dirty {
+		return
+	}
+	ix.dict = make([][]string, len(ix.fields))
+	for fi := range ix.fields {
+		terms := make([]string, 0, len(ix.postings[fi]))
+		for t := range ix.postings[fi] {
+			terms = append(terms, t)
+		}
+		slices.Sort(terms)
+		ix.dict[fi] = terms
+	}
+	ix.dirty = false
 }

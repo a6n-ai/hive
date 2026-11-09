@@ -52,9 +52,10 @@ type Index struct {
 	fields   []Field
 	dim      int
 	ids      []string
-	vecs     []float32 // ordinal-major, unit length; dim floats per ordinal
-	lens     [][]int   // ordinal -> token count per field
-	dict     [][]string
+	vecs     []float32  // ordinal-major, unit length; dim floats per ordinal
+	lens     [][]int    // ordinal -> token count per field
+	dict     [][]string // sorted terms per field; valid when !dirty
+	dirty    bool
 	postings []map[string][]posting
 	totalLen []int // live documents only
 	tags     map[string]*roaring.Bitmap
@@ -129,6 +130,13 @@ func (ix *Index) Len() int {
 
 func (ix *Index) Search(q Query) ([]Hit, error) {
 	ix.mu.RLock()
+	for ix.dirty {
+		ix.mu.RUnlock()
+		ix.mu.Lock()
+		ix.refreshDict()
+		ix.mu.Unlock()
+		ix.mu.RLock()
+	}
 	defer ix.mu.RUnlock()
 	qv, err := ix.queryVector(q.Vector)
 	if err != nil {

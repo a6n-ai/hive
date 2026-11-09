@@ -52,7 +52,7 @@ func (ix *Index) addField(fi, ord int, s string) {
 	}
 	for t, n := range counts {
 		if _, ok := ix.postings[fi][t]; !ok {
-			ix.dict[fi] = slices.Insert(ix.dict[fi], sort.SearchStrings(ix.dict[fi], t), t)
+			ix.dirty = true
 		}
 		ix.postings[fi][t] = append(ix.postings[fi][t], posting{ord: ord, tf: n})
 	}
