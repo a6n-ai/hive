@@ -465,3 +465,23 @@ func (t *Tx) SessionEvents(session string) ([]model.Event, error) {
 	}
 	return scanEvents(rows)
 }
+
+// LastEvent returns the session's latest event with id below beforeID (0 means
+// no bound), or nil when there is none.
+func (t *Tx) LastEvent(session string, beforeID int64) (*model.Event, error) {
+	q := eventSelect + ` WHERE e.session = ?`
+	args := []any{session}
+	if beforeID > 0 {
+		q += ` AND e.id < ?`
+		args = append(args, beforeID)
+	}
+	rows, err := t.tx.Query(q+` ORDER BY e.ts DESC, e.id DESC LIMIT 1`, args...)
+	if err != nil {
+		return nil, err
+	}
+	evs, err := scanEvents(rows)
+	if err != nil || len(evs) == 0 {
+		return nil, err
+	}
+	return &evs[0], nil
+}

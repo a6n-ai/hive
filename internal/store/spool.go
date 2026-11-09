@@ -69,18 +69,32 @@ func sameFile(f *os.File, path string) bool {
 	return os.SameFile(a, b)
 }
 
-// DrainSpool imports every spooled event inside this transaction. Spool files
-// are deleted only after the transaction commits.
+// DrainSpool imports every spooled event inside this transaction and returns
+// the number of spooled lines read. Spool files are deleted only after the
+// transaction commits.
 func (t *Tx) DrainSpool() (int, error) {
+	n, _, err := t.drain()
+	return n, err
+}
+
+// DrainSpoolEvents is DrainSpool returning the events actually inserted, so
+// the caller can run extractors on them.
+func (t *Tx) DrainSpoolEvents() ([]model.Event, error) {
+	_, evs, err := t.drain()
+	return evs, err
+}
+
+func (t *Tx) drain() (int, []model.Event, error) {
+	var inserted []model.Event
 	if t.spoolDir == "" {
-		return 0, nil
+		return 0, nil, nil
 	}
 	entries, err := os.ReadDir(t.spoolDir)
 	if os.IsNotExist(err) {
-		return 0, nil
+		return 0, nil, nil
 	}
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	total := 0
 	for _, ent := range entries {
@@ -96,44 +110,50 @@ func (t *Tx) DrainSpool() (int, error) {
 				if os.IsNotExist(err) {
 					continue
 				}
-				return total, err
+				return total, inserted, err
 			}
 		}
-		n, err := t.importSpoolFile(claimed)
+		n, evs, err := t.importSpoolFile(claimed)
 		if err != nil {
-			return total, err
+			return total, inserted, err
 		}
 		total += n
+		inserted = append(inserted, evs...)
 		path := claimed
 		t.AfterCommit(func() { _ = os.Remove(path) })
 	}
-	return total, nil
+	return total, inserted, nil
 }
 
-func (t *Tx) importSpoolFile(path string) (int, error) {
+func (t *Tx) importSpoolFile(path string) (int, []model.Event, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer func() { _ = f.Close() }()
 	// Wait for any append that opened the file before it was renamed.
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	n := 0
+	var inserted []model.Event
 	for sc.Scan() {
 		var e model.Event
 		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
 			continue // a torn line from a crashed writer; nothing to recover
 		}
 		e.ID = 0
-		if _, err := t.InsertEvent(&e); err != nil {
-			return n, err
+		ok, err := t.InsertEvent(&e)
+		if err != nil {
+			return n, inserted, err
+		}
+		if ok {
+			inserted = append(inserted, e)
 		}
 		n++
 	}
-	return n, sc.Err()
+	return n, inserted, sc.Err()
 }
