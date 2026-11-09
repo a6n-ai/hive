@@ -32,13 +32,14 @@ func redactAssignments(s string, findings *[]Finding) string {
 		if end <= start {
 			continue
 		}
-		end = yamlContinuation(s, loc[0], loc[1], start, end)
 		switch {
 		case spanStart >= 0 && start <= spanEnd:
+			// The current span already covers this value's YAML block.
 			spanEnd = max(spanEnd, end)
 		case start < last:
 			// Inside text already written; nothing new to cover.
 		default:
+			end = yamlContinuation(s, loc[0], loc[1], start, end)
 			flush()
 			spanStart, spanEnd = start, end
 		}
@@ -73,13 +74,17 @@ func valueStart(s string, i int) int {
 // the line after its key, every following line indented deeper than the key
 // is part of the value. Other values are returned unchanged.
 func yamlContinuation(s string, keyStart, sepEnd, start, end int) int {
-	v := s[start:end]
 	nextLineValue := start > sepEnd && strings.ContainsRune(s[sepEnd:start], '\n')
-	if !nextLineValue && !blockIndicator.MatchString(v) {
-		return end
+	from := end
+	if !nextLineValue {
+		header, lineEnd := headerAt(s, start)
+		if !blockIndicator.MatchString(header) {
+			return end
+		}
+		from = lineEnd
 	}
 	keyIndent := lineIndent(s, lineStart(s, keyStart))
-	for j := end; j < len(s); {
+	for j := from; j < len(s) && j-end <= maxValueSpan; {
 		k := j
 		if s[k] == '\r' {
 			k++
@@ -99,6 +104,32 @@ func yamlContinuation(s string, keyStart, sepEnd, start, end int) int {
 		j = le
 	}
 	return end
+}
+
+// maxHeaderSpan bounds the YAML node header read after a key. shortcut: a
+// header longer than this (a very long tag or comment) is not recognised as a
+// block scalar, so its body is not redacted; raise it if that is seen in practice.
+const maxHeaderSpan = 256
+
+// headerAt reads the YAML node header at start: the rest of its line without
+// tags, anchors and a trailing comment. It returns the header and where the
+// line ends.
+func headerAt(s string, start int) (string, int) {
+	end := min(len(s), start+maxHeaderSpan)
+	if k := strings.IndexByte(s[start:end], '\n'); k >= 0 {
+		end = start + k
+	}
+	var fields []string
+	for _, f := range strings.Fields(s[start:end]) {
+		if f[0] == '#' {
+			break
+		}
+		fields = append(fields, f)
+	}
+	for len(fields) > 0 && (fields[0][0] == '!' || fields[0][0] == '&') {
+		fields = fields[1:]
+	}
+	return strings.Join(fields, " "), end
 }
 
 func lineStart(s string, i int) int { return strings.LastIndexByte(s[:i], '\n') + 1 }

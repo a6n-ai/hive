@@ -276,3 +276,34 @@ func TestYAMLMultilineValues(t *testing.T) {
 		}
 	}
 }
+
+func TestRound8YAMLPropertiesAndSameLineKeys(t *testing.T) {
+	s := newScrubber(t)
+	for _, in := range []string{
+		"password: !secret |\n  line1tail9\n  line2tail9\nhost: x\n",
+		"password: &anchor >-\n  line1tail9\nhost: x\n",
+		"password: |  # the db pass\n  line1tail9\nhost: x\n",
+	} {
+		out, _ := s.Scrub(in)
+		if strings.Contains(out, "tail9") {
+			t.Errorf("leaked for %q: out %q", in, out)
+		}
+		if !strings.Contains(out, "host: x") {
+			t.Errorf("over-redacted for %q: out %q", in, out)
+		}
+	}
+}
+
+func TestManySameLineKeysLinear(t *testing.T) {
+	s := newScrubber(t)
+	timeFor := func(n int) time.Duration {
+		in := "token=a password=b secret=c auth=d:\n" + strings.Repeat("  deeper line9 here\n", n)
+		start := time.Now()
+		s.Scrub(in)
+		return time.Since(start)
+	}
+	small, large := timeFor(2000), timeFor(20000)
+	if ratio := float64(large) / float64(small); ratio > 30 {
+		t.Fatalf("10x input took %.1fx longer (%v vs %v), want roughly linear", ratio, large, small)
+	}
+}
