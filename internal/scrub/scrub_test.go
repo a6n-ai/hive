@@ -174,6 +174,20 @@ func TestQuotedValueDoesNotCrossLines(t *testing.T) {
 	}
 }
 
+// Security review round 4: a properly closed value may span lines.
+func TestClosedMultilineValueRedacted(t *testing.T) {
+	s := newScrubber(t)
+	for _, in := range []string{
+		"password=\"line1\nline2tail9\"\n",
+		"{\"password\": \"line1\nline2tail9\", \"x\": 1}",
+		"secret='line1\nline2tail9'",
+	} {
+		if out, _ := s.Scrub(in); strings.Contains(out, "line2tail9") || strings.Contains(out, "line1") {
+			t.Errorf("leaked:\n in:  %q\n out: %q", in, out)
+		}
+	}
+}
+
 func TestExtraPatterns(t *testing.T) {
 	s, err := New([]string{`ACME-[0-9]{6}`})
 	if err != nil {

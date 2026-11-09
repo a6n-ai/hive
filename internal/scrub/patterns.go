@@ -26,18 +26,28 @@ var builtin = []rule{
 	// is redacted whole.
 	{"url_credentials", regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.\-]*://([^\s:/@]+:[^\s/]*)@[^\s@/]+`), 1},
 	// A quoted key (JSON, YAML) may end its unquoted value at ',' or '}'.
-	{"assignment", regexp.MustCompile(`(?i)\b` + secretKeys + `s?\b["']\s*[:=]\s*(` + quotedValue + `|[^\s'",}]+)`), 1},
+	{"assignment", regexp.MustCompile(`(?im)\b` + secretKeys + `s?\b["']\s*[:=]\s*(` + quotedValue + `|[^\s'",}]+)`), 1},
 	// A bare key (shell, env, .ini) keeps the whole token after it.
-	{"assignment", regexp.MustCompile(`(?i)\b` + secretKeys + `s?\b\s*[:=]\s*(` + quotedValue + `|[^\s'"]+)`), 1},
+	{"assignment", regexp.MustCompile(`(?im)\b` + secretKeys + `s?\b\s*[:=]\s*(` + quotedValue + `|[^\s'"]+)`), 1},
 }
 
 const secretKeys = `(?:password|passwd|secret|token|api[_\-]?key|auth|credential)`
 
-// quotedValue prefers an escape-aware quoted string, then falls back to a
-// plain one that may end in a backslash or never close (redacted to end of
-// line), so no quoted form escapes redaction. No form crosses a newline, so an
-// unterminated value cannot swallow the next line's opening quote.
-const quotedValue = `"(?:[^"\\\n]|\\[^\n])*"|"[^"\n]*"?|'(?:[^'\\\n]|\\[^\n])*'|'[^'\n]*'?`
+// quotedValue, tried in order:
+//  1. a closed value on one line (escape-aware);
+//  2. a closed value spanning lines, accepted only when its closing quote is
+//     followed by end of line or , ; } ] — so an unterminated value cannot run
+//     on to the next line's opening quote (`a="x⏎b="y"`) and hide that secret;
+//     the terminator is redacted with the value;
+//  3. an unterminated or backslash-ended value, redacted to end of line.
+var quotedValue = quotedForms(`"`) + `|` + quotedForms(`'`)
+
+// quotedForms returns the three alternatives above for quote character q.
+func quotedForms(q string) string {
+	return q + `(?:[^` + q + `\\\n]|\\[^\n])*` + q +
+		`|` + q + `(?:[^` + q + `\\]|\\.|\\\n)*` + q + `[ \t]*(?:[,;}\]]|$)` +
+		`|` + q + `[^` + q + `\n]*` + q + `?`
+}
 
 // entropyCandidate finds runs that may be random secrets.
 var entropyCandidate = regexp.MustCompile(`[A-Za-z0-9_=+\-]{32,}`)
