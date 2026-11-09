@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -166,24 +167,61 @@ func (t *Tx) importSpoolFile(path string) (int, []model.Event, error) {
 		return 0, nil, err
 	}
 	defer func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 	n := 0
 	var inserted []model.Event
-	for sc.Scan() {
+	err = forEachSpoolLine(bufio.NewReader(f), func(line []byte) error {
 		var e model.Event
-		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
-			continue // a torn line from a crashed writer; nothing to recover
+		if err := json.Unmarshal(line, &e); err != nil {
+			return nil // a torn line from a crashed writer; nothing to recover
 		}
 		e.ID = 0
 		ok, err := t.InsertEvent(&e)
 		if err != nil {
-			return n, inserted, err
+			return err
 		}
 		if ok {
 			inserted = append(inserted, e)
 		}
 		n++
+		return nil
+	})
+	return n, inserted, err
+}
+
+// maxSpoolLine bounds one spooled event. A longer line is skipped, so one
+// oversized spool line cannot fail every drain.
+const maxSpoolLine = 16 << 20
+
+// forEachSpoolLine calls fn for each complete line of r, skipping lines longer
+// than maxSpoolLine. Only read errors and errors from fn are returned.
+func forEachSpoolLine(r *bufio.Reader, fn func([]byte) error) error {
+	var line []byte
+	tooLong := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !tooLong {
+			if len(line)+len(chunk) > maxSpoolLine {
+				tooLong, line = true, nil
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		switch {
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			if !tooLong && len(line) > 0 {
+				return fn(line)
+			}
+			return nil
+		case err != nil:
+			return err
+		}
+		if !tooLong {
+			if err := fn(line); err != nil {
+				return err
+			}
+		}
+		line, tooLong = line[:0], false
 	}
-	return n, inserted, sc.Err()
 }

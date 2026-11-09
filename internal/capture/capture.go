@@ -74,11 +74,11 @@ func hashString(s string) string {
 
 // Prepare scrubs e, applies the storage policy, and sets its digest.
 func (p *Pipeline) Prepare(e *model.Event) {
+	ApplyPolicy(e) // truncate first, so scrubbing never scans more than the store keeps
 	if e.Payload != nil {
 		e.Payload, _ = p.Scrub.ScrubAny(e.Payload).(map[string]any)
 	}
 	e.PromptText, _ = p.Scrub.Scrub(e.PromptText)
-	ApplyPolicy(e)
 	if e.Digest == "" {
 		e.Digest = Digest(e)
 	}

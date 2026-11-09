@@ -11,6 +11,7 @@ const (
 	maxPromptRunes = 2000
 	maxErrorRunes  = 500
 	maxErrorLines  = 2
+	maxFieldRunes  = 4000
 )
 
 // keptKeys is the payload whitelist: paths, commands, outcomes, short text.
@@ -37,6 +38,11 @@ func ApplyPolicy(e *model.Event) {
 	}
 	if s, ok := e.Payload["error"].(string); ok {
 		e.Payload["error"] = errorSummary(s)
+	}
+	for k, v := range e.Payload {
+		if s, ok := v.(string); ok {
+			e.Payload[k] = truncRunes(s, maxFieldRunes)
+		}
 	}
 	if s, ok := e.Payload["text"].(string); ok {
 		e.Payload["text"] = truncRunes(s, maxPromptRunes)

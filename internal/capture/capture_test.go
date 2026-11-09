@@ -214,3 +214,46 @@ func TestCaptureSpoolsWhenWriteFails(t *testing.T) {
 		t.Fatalf("spool = %q, err %v", b, err)
 	}
 }
+
+func TestHugeCommandDoesNotStopCapture(t *testing.T) {
+	ctx := context.Background()
+	p, path := newPipeline(t)
+	holder, err := store.Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Close() }()
+	held, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- holder.Write(ctx, func(*store.Tx) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	huge := model.Event{TS: 1000, Agent: "claude-code", Session: "s1", Project: "/p", Kind: model.PostTool, Tool: "shell",
+		Digest: "huge", Payload: map[string]any{"command": strings.Repeat("x", 18<<20), "exit_code": 0}}
+	if err := p.Capture(ctx, huge); err != nil {
+		t.Fatalf("locked capture of huge command: %v", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	normal := model.Event{TS: 2000, Agent: "claude-code", Session: "s1", Project: "/p", Kind: model.Prompt, PromptText: "normal", Digest: "normal"}
+	if err := p.Capture(ctx, normal); err != nil {
+		t.Fatalf("capture after release: %v", err)
+	}
+	evs, err := p.Store.QueryEvents("s1", "", []model.EventKind{model.Prompt}, 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range evs {
+		found = found || e.PromptText == "normal"
+	}
+	if !found {
+		t.Fatal("normal event not stored after the huge spool line")
+	}
+}

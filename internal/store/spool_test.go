@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -318,5 +319,30 @@ func TestConcurrentDrainersNoLoss(t *testing.T) {
 	_ = holder.db.QueryRow("SELECT COUNT(*) FROM events WHERE digest LIKE 'd%'").Scan(&n)
 	if n != 42 {
 		t.Fatalf("captured events = %d, want 42", n)
+	}
+}
+
+func TestOversizedSpoolLineSkipped(t *testing.T) {
+	st, path := openTemp(t)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(filepath.Join(dir, "spool"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	line, _ := json.Marshal(event("kept"))
+	huge := []byte(`{"digest":"too-big","pad":"` + strings.Repeat("x", 17<<20) + `"}` + "\n")
+	spool := filepath.Join(dir, "spool", "9.jsonl")
+	if err := os.WriteFile(spool, append(append(huge, line...), '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(spool, time.Now().Add(-2*time.Hour), time.Now().Add(-2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(context.Background(), func(tx *Tx) error { _, err := tx.DrainSpool(); return err }); err != nil {
+		t.Fatalf("drain with an oversized line: %v", err)
+	}
+	var n int
+	_ = st.db.QueryRow("SELECT COUNT(*) FROM events WHERE digest = 'kept'").Scan(&n)
+	if n != 1 {
+		t.Fatalf("event after the oversized line stored %d times, want 1", n)
 	}
 }
