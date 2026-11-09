@@ -18,6 +18,7 @@ import (
 
 	"github.com/a6n-ai/hive/agent/claudecode"
 	"github.com/a6n-ai/hive/internal/capture"
+	"github.com/a6n-ai/hive/internal/consolidate"
 	"github.com/a6n-ai/hive/model"
 )
 
@@ -80,6 +81,9 @@ type fileImport struct {
 	prompted map[string]bool
 	pending  map[string]toolUse
 	projects map[string]string
+	// promptChecked is set at the transcript's first prompt; skip drops the file
+	// when that prompt is a consolidation review.
+	promptChecked, skip bool
 }
 
 // ClaudeCode reads Claude Code transcripts under opts.Root and hands each
@@ -160,6 +164,18 @@ func (f *fileImport) line(ctx context.Context, raw []byte) error {
 	if l.IsSidechain || (l.Type != "user" && l.Type != "assistant") {
 		f.sum.Skipped++
 		return nil
+	}
+	if f.skip {
+		return nil
+	}
+	if !f.promptChecked && l.Type == "user" {
+		if text, ok := promptText(l.Message.Content); ok {
+			f.promptChecked = true
+			f.skip = strings.HasPrefix(text, consolidate.PromptHeader)
+			if f.skip {
+				return nil
+			}
+		}
 	}
 	if !f.started[l.SessionID] {
 		f.started[l.SessionID] = true

@@ -1,0 +1,2 @@
+{"type":"user","uuid":"h1","sessionId":"hl","timestamp":"2026-11-01T10:00:00Z","cwd":"/tmp/hive-headless-1","message":{"role":"user","content":"You review one coding session's memories for a developer's coding agent.\nPropose changes."}}
+{"type":"assistant","uuid":"h2","sessionId":"hl","timestamp":"2026-11-01T10:00:01Z","cwd":"/tmp/hive-headless-1","message":{"role":"assistant","content":[{"type":"text","text":"{\"ops\":[]}"}]}}

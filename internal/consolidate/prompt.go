@@ -2,7 +2,11 @@ package consolidate
 
 import "encoding/json"
 
-const instructions = `You review one coding session's memories for a developer's coding agent.
+// PromptHeader opens every consolidation prompt. The importer skips transcripts
+// that start with it, so review runs are never re-read as events.
+const PromptHeader = "You review one coding session's memories for a developer's coding agent."
+
+const instructions = PromptHeader + `
 Propose changes that make the memories accurate, concise, and useful. Do only these jobs:
 1. merge: combine duplicate memories of the same type into one (keep one id, drop the others).
 2. promote: make a candidate preference active, optionally narrowing its scope.

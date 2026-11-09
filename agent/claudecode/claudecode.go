@@ -146,7 +146,8 @@ func (a *Adapter) InstructionsFile() string { return "CLAUDE.md" }
 func (a *Adapter) Headless(model string) agent.HeadlessSpec {
 	return agent.HeadlessSpec{
 		Command: []string{"claude", "-p", "--output-format", "json", "--model", model,
-			"--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--permission-mode", "dontAsk"},
+			"--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--permission-mode", "dontAsk",
+			"--no-session-persistence", "--setting-sources", ""},
 		ParseOutput: parseHeadless,
 	}
 }
