@@ -139,7 +139,7 @@ func (p *Pipeline) CaptureBatch(ctx context.Context, evs []model.Event) error {
 		}
 		for i := range kept {
 			if err := p.storeIsolated(ctx, tx, &kept[i]); err != nil {
-				if err := quarantine(p.Store.Path(), &kept[i]); err != nil {
+				if err := p.failed(ctx, tx, &kept[i], err); err != nil {
 					return err
 				}
 			}
@@ -169,11 +169,27 @@ func (p *Pipeline) drainSpool(ctx context.Context, tx *store.Tx, excluded []stri
 			continue
 		}
 		if err := tx.Savepoint(func() error { return p.process(ctx, tx, &drained[i]) }); err != nil {
-			if err := quarantine(p.Store.Path(), &drained[i]); err != nil {
+			if err := p.failed(ctx, tx, &drained[i], err); err != nil {
 				return err
 			}
 		}
 	}
+	return nil
+}
+
+// failed handles an event whose processing failed in tx. An environmental
+// failure aborts the transaction, so the caller spools the batch again. Any
+// other failure quarantines the event, but only once the transaction commits:
+// a rolled-back transaction must not leave quarantine files behind.
+func (p *Pipeline) failed(ctx context.Context, tx *store.Tx, e *model.Event, err error) error {
+	if ctx.Err() != nil || store.IsEnvironmental(err) {
+		return err
+	}
+	tx.AfterCommit(func() {
+		if quarantine(p.Store.Path(), e) != nil {
+			_ = p.Store.Spool(e)
+		}
+	})
 	return nil
 }
 

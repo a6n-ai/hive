@@ -130,6 +130,46 @@ func TestCaptureBatchPoisonIsolated(t *testing.T) {
 	}
 }
 
+// batchFaults fails a "poison" event and cancels the batch on a "cancel" event.
+type batchFaults struct{ cancel context.CancelFunc }
+
+func (batchFaults) Kinds() []model.EventKind { return []model.EventKind{model.Prompt} }
+
+func (f batchFaults) Extract(ctx context.Context, e *model.Event, _ *store.Tx, _ config.Config) error {
+	switch {
+	case strings.HasPrefix(e.Session, "poison"):
+		return errors.New("extractor failed")
+	case strings.HasPrefix(e.Session, "cancel"):
+		f.cancel()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func TestBatchCtxCancelDoesNotQuarantine(t *testing.T) {
+	home := t.TempDir()
+	h, err := Open(Options{Home: home, Caller: "hive"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = h.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h.RegisterExtractor(batchFaults{cancel})
+
+	evs := []Event{promptBatch(1, "poison")[0], promptBatch(1, "cancel")[0], promptBatch(1, "fine")[0]}
+	if err := h.CaptureBatch(ctx, evs); err != nil {
+		t.Fatal(err)
+	}
+	bad, _ := filepath.Glob(filepath.Join(home, "spool", "bad", "*.jsonl"))
+	if len(bad) != 0 {
+		t.Fatalf("canceled batch quarantined %d files, want 0", len(bad))
+	}
+	if n := spooledLines(t, home); n != 3 {
+		t.Fatalf("canceled batch spooled %d events, want 3", n)
+	}
+}
+
 func TestWriterKeepsIndexCurrent(t *testing.T) {
 	ctx := context.Background()
 	h, err := Open(Options{Home: t.TempDir(), Caller: "hive", Writer: true})

@@ -115,6 +115,17 @@ func isBusy(err error) bool {
 	return false
 }
 
+// IsEnvironmental reports a failure of the lock or the database (busy, full,
+// I/O), which says nothing about the event being written. Constraint errors do
+// belong to the event.
+func IsEnvironmental(err error) bool {
+	var se *sqlite.Error
+	if errors.Is(err, ErrLocked) {
+		return true
+	}
+	return errors.As(err, &se) && se.Code()&0xff != sqlite3.SQLITE_CONSTRAINT
+}
+
 // Write runs fn in one BEGIN IMMEDIATE transaction. It returns ErrLocked when
 // another writer holds the lock past busy_timeout.
 func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
