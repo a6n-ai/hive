@@ -54,14 +54,14 @@ func Recall(ctx context.Context, st *store.Store, cfg config.RecallCfg, q Query,
 	switch q.Mode {
 	case SessionStart:
 		filter.Limit = sessionCandidates
-		lines, err = scoreAll(st, filter, cfg, q, now, nil)
+		lines, err = scoreAll(st, filter, cfg, q, now, nil, nil)
 		lines = withinBudget(lines, firstNonZero(q.Budget, cfg.SessionBudget), 0)
 	case Prompt:
-		terms := text.Terms(q.Text)
-		if len(terms) == 0 {
+		groups := text.Groups(q.Text)
+		if len(groups) == 0 {
 			return nil, nil
 		}
-		lines, err = scoreAll(st, filter, cfg, q, now, terms)
+		lines, err = scoreAll(st, filter, cfg, q, now, groups, flatten(groups))
 		lines = aboveThreshold(lines, cfg.PromptThreshold)
 		lines = withinBudget(lines, q.Budget, cfg.PromptMaxLines)
 	case PostToolError:
@@ -69,7 +69,7 @@ func Recall(ctx context.Context, st *store.Store, cfg config.RecallCfg, q Query,
 			return nil, nil
 		}
 		filter.Types, filter.Key = []model.MemoryType{model.Fix}, q.ErrorSignature
-		lines, err = scoreAll(st, filter, cfg, q, now, nil)
+		lines, err = scoreAll(st, filter, cfg, q, now, nil, nil)
 		lines = withinBudget(lines, 0, cfg.PromptMaxLines)
 	}
 	if err != nil {
@@ -79,7 +79,7 @@ func Recall(ctx context.Context, st *store.Store, cfg config.RecallCfg, q Query,
 }
 
 // scoreAll fetches candidates (FTS when terms are given) and scores them.
-func scoreAll(st *store.Store, f store.ListFilter, cfg config.RecallCfg, q Query, now time.Time, terms []string) ([]Line, error) {
+func scoreAll(st *store.Store, f store.ListFilter, cfg config.RecallCfg, q Query, now time.Time, groups [][]string, terms []string) ([]Line, error) {
 	var ms []model.Memory
 	var err error
 	if terms != nil {
@@ -93,8 +93,8 @@ func scoreAll(st *store.Store, f store.ListFilter, cfg config.RecallCfg, q Query
 	lines := make([]Line, 0, len(ms))
 	for _, m := range ms {
 		rel := 1.0
-		if terms != nil {
-			rel = relevance(terms, m.Text)
+		if groups != nil {
+			rel = relevance(groups, m.Text)
 		}
 		score := rel * m.Confidence * recency(m, now, cfg.HalfLifeDays) * scopeWeight(m, q.Files)
 		lines = append(lines, Line{MemoryID: m.ID, Type: m.Type, Text: m.Text, Score: score})
@@ -149,4 +149,12 @@ func markUsed(ctx context.Context, st *store.Store, lines []Line, now time.Time)
 		return nil
 	}
 	return err
+}
+
+func flatten(groups [][]string) []string {
+	var out []string
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
 }

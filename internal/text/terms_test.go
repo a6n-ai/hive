@@ -2,6 +2,7 @@ package text
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -16,5 +17,12 @@ func TestTerms(t *testing.T) {
 		if got := Terms(in); !reflect.DeepEqual(got, want) {
 			t.Errorf("Terms(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestTermsCJKBigrams(t *testing.T) {
+	got := Terms("如何部署")
+	if !slices.Contains(got, "部署") {
+		t.Fatalf("Terms(如何部署) = %v, want 部署 among them", got)
 	}
 }

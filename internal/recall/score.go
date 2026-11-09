@@ -12,14 +12,21 @@ import (
 // relevance is the share of terms that match, taking the better of the
 // query's view and the memory's view. It does not depend on corpus size,
 // unlike bm25, so one threshold works for a new and an old database.
-func relevance(queryTerms []string, memText string) float64 {
+func relevance(queryGroups [][]string, memText string) float64 {
 	memTerms := text.Terms(memText)
-	if len(queryTerms) == 0 || len(memTerms) == 0 {
+	if len(queryGroups) == 0 || len(memTerms) == 0 {
 		return 0
 	}
-	q := countMatched(queryTerms, memTerms)
+	var queryTerms []string
+	matchedWords := 0
+	for _, g := range queryGroups {
+		queryTerms = append(queryTerms, g...)
+		if countMatched(g, memTerms) > 0 {
+			matchedWords++
+		}
+	}
 	m := countMatched(memTerms, queryTerms)
-	return math.Max(float64(q)/float64(len(queryTerms)), float64(m)/float64(len(memTerms)))
+	return math.Max(float64(matchedWords)/float64(len(queryGroups)), float64(m)/float64(len(memTerms)))
 }
 
 // countMatched counts terms in a that match some term in b.

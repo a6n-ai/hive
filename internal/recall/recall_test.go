@@ -213,3 +213,17 @@ func TestRecallSkipsMarkUsedAfterLock(t *testing.T) {
 		t.Fatalf("Recall took %v after the lock was hit, want < 40ms", elapsed)
 	}
 }
+
+func TestCJKUnspacedRecall(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	put(t, st, model.Memory{Type: model.Note, Key: "a", Text: "部署命令: make deploy"})
+	if lines, _ := Recall(ctx, st, cfg(), Query{Project: "/p", Text: "如何部署", Mode: Prompt}, now); len(lines) != 1 {
+		t.Fatalf("部署 inside 如何部署: lines = %+v, want 1", lines)
+	}
+	st2 := newStore(t)
+	put(t, st2, model.Memory{Type: model.Note, Key: "b", Text: "命令行工具"})
+	if lines, _ := Recall(ctx, st2, cfg(), Query{Project: "/p", Text: "命令", Mode: Prompt}, now); len(lines) != 1 {
+		t.Fatalf("命令 inside 命令行工具: lines = %+v, want 1", lines)
+	}
+}

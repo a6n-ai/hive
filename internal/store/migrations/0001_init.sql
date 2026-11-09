@@ -37,6 +37,7 @@ CREATE TABLE memories (
   key TEXT NOT NULL,
   body TEXT NOT NULL,
   text TEXT NOT NULL,
+  terms TEXT NOT NULL DEFAULT '',
   count INTEGER NOT NULL DEFAULT 1,
   confidence REAL NOT NULL,
   status TEXT NOT NULL,
@@ -48,19 +49,19 @@ CREATE TABLE memories (
 );
 
 CREATE VIRTUAL TABLE memories_fts USING fts5(
-  text, key,
+  terms, key,
   content='memories', content_rowid='rowid',
   tokenize='unicode61 remove_diacritics 2'
 );
 CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
-  INSERT INTO memories_fts(rowid, text, key) VALUES (new.rowid, new.text, new.key);
+  INSERT INTO memories_fts(rowid, terms, key) VALUES (new.rowid, new.terms, new.key);
 END;
 CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
-  INSERT INTO memories_fts(memories_fts, rowid, text, key) VALUES ('delete', old.rowid, old.text, old.key);
+  INSERT INTO memories_fts(memories_fts, rowid, terms, key) VALUES ('delete', old.rowid, old.terms, old.key);
 END;
-CREATE TRIGGER memories_au AFTER UPDATE OF text, key ON memories BEGIN
-  INSERT INTO memories_fts(memories_fts, rowid, text, key) VALUES ('delete', old.rowid, old.text, old.key);
-  INSERT INTO memories_fts(rowid, text, key) VALUES (new.rowid, new.text, new.key);
+CREATE TRIGGER memories_au AFTER UPDATE OF terms, key ON memories BEGIN
+  INSERT INTO memories_fts(memories_fts, rowid, terms, key) VALUES ('delete', old.rowid, old.terms, old.key);
+  INSERT INTO memories_fts(rowid, terms, key) VALUES (new.rowid, new.terms, new.key);
 END;
 
 CREATE TABLE memory_evidence (

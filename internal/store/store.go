@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/a6n-ai/hive/internal/text"
 	"github.com/a6n-ai/hive/model"
 	sqlite "modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -269,9 +270,9 @@ func (t *Tx) UpsertMemory(m *model.Memory, merge func(prev, next map[string]any)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := t.tx.Exec(`INSERT INTO memories(id, type, scope_kind, scope, key, body, text, count, confidence, status,
-			superseded_by, first_seen, last_seen, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			m.ID, string(m.Type), string(m.ScopeKind), m.Scope, m.Key, body, m.Text, m.Count, m.Confidence, string(m.Status),
+		if _, err := t.tx.Exec(`INSERT INTO memories(id, type, scope_kind, scope, key, body, text, terms, count, confidence, status,
+			superseded_by, first_seen, last_seen, last_used) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			m.ID, string(m.Type), string(m.ScopeKind), m.Scope, m.Key, body, m.Text, termsOf(m.Text), m.Count, m.Confidence, string(m.Status),
 			nullable(m.SupersededBy), m.FirstSeen, m.LastSeen, nullInt(m.LastUsed)); err != nil {
 			return nil, err
 		}
@@ -287,8 +288,8 @@ func (t *Tx) UpsertMemory(m *model.Memory, merge func(prev, next map[string]any)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := t.tx.Exec(`UPDATE memories SET count=?, last_seen=?, body=?, text=?, confidence=? WHERE id=?`,
-			existing.Count, existing.LastSeen, body, existing.Text, existing.Confidence, existing.ID); err != nil {
+		if _, err := t.tx.Exec(`UPDATE memories SET count=?, last_seen=?, body=?, text=?, terms=?, confidence=? WHERE id=?`,
+			existing.Count, existing.LastSeen, body, existing.Text, termsOf(existing.Text), existing.Confidence, existing.ID); err != nil {
 			return nil, err
 		}
 		m = existing
@@ -300,6 +301,9 @@ func (t *Tx) UpsertMemory(m *model.Memory, merge func(prev, next map[string]any)
 	}
 	return m, nil
 }
+
+// termsOf is the indexed form of a memory's text: its terms, space-separated.
+func termsOf(s string) string { return strings.Join(text.Terms(s), " ") }
 
 func countConfidence(count int) float64 {
 	if count <= 0 {
