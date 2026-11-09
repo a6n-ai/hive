@@ -103,7 +103,7 @@ func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float6
 			if df == 0 {
 				continue
 			}
-			idf := math.Log(1 + (n-df+0.5)/(df+0.5))
+			idf := fts5Idf(n, df)
 			cands := docs
 			if allowed != nil {
 				cands = roaring.And(docs, allowed)
@@ -123,6 +123,15 @@ func (ix *Index) lexical(terms []string, allowed *roaring.Bitmap) map[int]float6
 		}
 	}
 	return scores
+}
+
+// fts5Idf is SQLite FTS5's bm25 idf, so the index and the FTS path score alike.
+func fts5Idf(n, df float64) float64 {
+	idf := math.Log((n - df + 0.5) / (df + 0.5))
+	if idf <= 0 {
+		return 1e-6
+	}
+	return idf
 }
 
 // prefixPostings returns the postings of every dictionary term of field fi that

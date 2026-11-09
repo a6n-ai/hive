@@ -23,7 +23,7 @@ const (
 
 const (
 	sessionCandidates = 200 // most recently seen memories scored at session start
-	promptCandidates  = 50  // FTS hits scored for a prompt
+	promptCandidates  = 200 // best matches scored for a prompt, the same on the FTS and index paths
 )
 
 type Query struct {

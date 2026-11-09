@@ -84,6 +84,39 @@ func TestRecallEquivalence(t *testing.T) {
 	}
 }
 
+// TestRecallEquivalenceLargeCandidateSet: past the candidate cut, both paths
+// must still pick the same memories.
+func TestRecallEquivalenceLargeCandidateSet(t *testing.T) {
+	ctx := context.Background()
+	st := newStore(t)
+	projects := []string{"/p1", "/p2", "/p3"}
+	for i := range 240 {
+		put(t, st, model.Memory{Type: model.Note, ScopeKind: model.ProjectScope, Scope: projects[i%3],
+			Key: fmt.Sprintf("key %d", i), Text: fmt.Sprintf("deploy step %d runs make target%d", i, i%11),
+			Confidence: 0.5 + float64(i)/1000})
+	}
+	src := IndexSource{Idx: indexOf(t, st), Store: st}
+	c := cfg()
+	c.PromptThreshold = 0.01
+	prompts := []string{"deploy", "make target3", "deploy step runs", "target7 make", "deploy make target0",
+		"step", "runs make", "target10", "deploy target5 step", "deploy steps"}
+
+	for i, p := range prompts {
+		q := Query{Project: projects[i%len(projects)], Text: p, Mode: Prompt}
+		want, err := Recall(ctx, st, nil, c, q, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := Recall(ctx, st, src, c, q, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(linesOf(want), linesOf(got)) {
+			t.Errorf("prompt %q project %q:\nstore %v\nindex %v", p, q.Project, linesOf(want), linesOf(got))
+		}
+	}
+}
+
 func linesOf(ls []Line) []string {
 	out := make([]string, len(ls))
 	for i, l := range ls {
