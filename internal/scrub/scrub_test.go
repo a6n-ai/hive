@@ -235,3 +235,25 @@ func TestExtraPatterns(t *testing.T) {
 		t.Fatal("invalid user pattern accepted")
 	}
 }
+
+// Security review round 6.
+func TestRound6Bypasses(t *testing.T) {
+	s, err := New([]string{`ACME-[0-9]{6}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, in, secret string }{
+		{"escaped newline", "password=\"first9\\\napi_key=\"second9value\"\n", "second9value"},
+		{"single-quote backslash", "secret='abc9\\' token=second9tail", "second9tail"},
+		{"custom pattern at value start", "password=ACME-123456tail9secret", "tail9secret"},
+		{"yaml value on next line", "password:\n  hunter9two\nother: 1\n", "hunter9two"},
+	}
+	for _, c := range cases {
+		if out, _ := s.Scrub(c.in); strings.Contains(out, c.secret) {
+			t.Errorf("%s leaked:\n in:  %q\n out: %q", c.name, c.in, out)
+		}
+	}
+	if out, _ := s.Scrub("password:\n\nnext: 1"); strings.Contains(out, "next") == false {
+		t.Errorf("blank line after key must not pull in the next key: %q", out)
+	}
+}
