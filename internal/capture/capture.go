@@ -90,7 +90,8 @@ func (p *Pipeline) Prepare(e *model.Event) {
 // Capture stores e and everything it implies. When the database is locked the
 // event is spooled for the next writer and Capture returns nil.
 func (p *Pipeline) Capture(ctx context.Context, e model.Event) error {
-	if underAny(e.Project, p.Cfg.Exclude.Paths) {
+	excluded := normalizeExcludes(p.Cfg.Exclude.Paths)
+	if underAny(e.Project, excluded) {
 		return nil
 	}
 	p.Prepare(&e)
@@ -100,7 +101,7 @@ func (p *Pipeline) Capture(ctx context.Context, e model.Event) error {
 			return err
 		}
 		for i := range drained {
-			if underAny(drained[i].Project, p.Cfg.Exclude.Paths) {
+			if underAny(drained[i].Project, excluded) {
 				continue
 			}
 			if err := tx.Savepoint(func() error { return p.process(ctx, tx, &drained[i]) }); err != nil {

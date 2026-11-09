@@ -308,3 +308,38 @@ func TestPoisonSpooledEventIsQuarantined(t *testing.T) {
 		t.Fatalf("poison file = %q, err %v", b, err)
 	}
 }
+
+func TestExcludeExpandsHomeAndSymlinks(t *testing.T) {
+	ctx := context.Background()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	secret := filepath.Join(home, "secret", "x")
+	if err := os.MkdirAll(secret, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(t.TempDir(), "real")
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := newPipeline(t)
+	p.Cfg.Exclude.Paths = []string{"~/secret", link}
+	for _, c := range []struct{ session, project string }{{"control", "/p"}, {"home", ResolveProject(secret)}, {"link", ResolveProject(real)}} {
+		e := model.Event{TS: 1000, Agent: "claude-code", Session: c.session, Project: c.project, Kind: model.Prompt, PromptText: "hi " + c.session}
+		if err := p.Capture(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for session, want := range map[string]int{"control": 1, "home": 0, "link": 0} {
+		evs, err := p.Store.QueryEvents(session, "", nil, 0, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(evs) != want {
+			t.Errorf("session %s: %d events stored, want %d", session, len(evs), want)
+		}
+	}
+}
