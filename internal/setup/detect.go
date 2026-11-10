@@ -55,6 +55,8 @@ type Action struct {
 	Files   []string
 	Command []string
 	Keys    map[string]any
+	Agent   string
+	Since   string
 }
 
 var agentOrder = []string{"claude-code", "codex", "gemini"}
@@ -126,7 +128,7 @@ func Plan(d Detected, c Choices) []Action {
 	var out []Action
 	for _, a := range d.Agents {
 		if slices.Contains(c.Agents, a.Name) {
-			out = append(out, Action{Kind: "install-hooks", Desc: "install Hive hooks for " + a.Name, Files: []string{a.Settings}})
+			out = append(out, Action{Kind: "install-hooks", Desc: "install Hive hooks for " + a.Name, Files: []string{a.Settings}, Agent: a.Name})
 		}
 	}
 	if c.DisableClaudeMem && d.ClaudeMem {
@@ -135,7 +137,7 @@ func Plan(d Detected, c Choices) []Action {
 	}
 	if c.ImportSince != "" && d.HasHistory {
 		out = append(out, Action{Kind: "import", Desc: "import Claude Code history, " + importLabel(c.ImportSince),
-			Files: []string{filepath.Join(filepath.Dir(d.ConfigPath), "hive.db")}})
+			Files: []string{filepath.Join(filepath.Dir(d.ConfigPath), "hive.db")}, Since: c.ImportSince})
 	}
 	if keys := changedKeys(d, c); len(keys) > 0 {
 		out = append(out, Action{Kind: "write-config", Desc: "write changed retention and consolidation settings",
