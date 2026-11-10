@@ -425,3 +425,10 @@ func TestDoctorWarnsGeminiHooksDisabled(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionDefault(t *testing.T) {
+	out := runOK(t, t.TempDir(), "", "version")
+	if strings.TrimSpace(out) != "hive dev (none, unknown)" {
+		t.Fatalf("version = %q", out)
+	}
+}
