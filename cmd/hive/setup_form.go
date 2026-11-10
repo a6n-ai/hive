@@ -40,6 +40,9 @@ func agentsGroup(d setup.Detected, c *setup.Choices) *huh.Group {
 	var opts []huh.Option[string]
 	for _, a := range d.Agents {
 		label := a.Name
+		if a.Found && !a.OnPath {
+			label += " (config found, CLI not on PATH)"
+		}
 		if !a.Verified {
 			label += " (not yet verified against a live CLI)"
 		}

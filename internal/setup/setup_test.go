@@ -59,9 +59,9 @@ func TestDetectFindsAgentsAndClaudeMem(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []AgentInfo{
-		{Name: "claude-code", Found: true, Installed: true, Verified: true, Settings: filepath.Join(home, ".claude", "settings.json")},
+		{Name: "claude-code", Found: true, OnPath: true, Installed: true, Verified: true, Settings: filepath.Join(home, ".claude", "settings.json")},
 		{Name: "codex", Found: false, Installed: false, Verified: true, Settings: filepath.Join(home, ".codex", "hooks.json")},
-		{Name: "gemini", Found: true, Installed: false, Verified: false, Settings: filepath.Join(home, ".gemini", "settings.json")},
+		{Name: "gemini", Found: true, OnPath: true, Installed: false, Verified: false, Settings: filepath.Join(home, ".gemini", "settings.json")},
 	}
 	if !reflect.DeepEqual(d.Agents, want) {
 		t.Errorf("agents = %+v, want %+v", d.Agents, want)
@@ -83,9 +83,9 @@ func TestDetectFindsAgentsAndClaudeMem(t *testing.T) {
 func TestDefaultsFollowDetection(t *testing.T) {
 	d := Detected{
 		Agents: []AgentInfo{
-			{Name: "claude-code", Found: true},
+			{Name: "claude-code", Found: true, OnPath: true},
 			{Name: "codex", Found: false},
-			{Name: "gemini", Found: true},
+			{Name: "gemini", Found: true, OnPath: true},
 		},
 		ClaudeMem: true,
 		Current:   config.Defaults(),
@@ -244,6 +244,32 @@ func TestDefaultsFreshMachineWritesNoConfig(t *testing.T) {
 	for _, a := range Plan(d, Defaults(d)) {
 		if a.Kind == "write-config" {
 			t.Errorf("write-config planned on a fresh machine: %+v", a)
+		}
+	}
+}
+
+func TestDefaultsTickOnlyAgentsOnPath(t *testing.T) {
+	env, home := testEnv(t, []string{"claude"}, map[string]string{
+		".codex/hooks.json":     `{}`,
+		".gemini/settings.json": `{}`,
+	})
+	d, err := Detect(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Defaults(d)
+	if !slices.Equal(c.Agents, []string{"claude-code"}) {
+		t.Errorf("default agents = %v, want [claude-code]", c.Agents)
+	}
+	for _, name := range []string{"codex", "gemini"} {
+		var found bool
+		for _, a := range d.Agents {
+			if a.Name == name {
+				found = a.Found && !a.OnPath
+			}
+		}
+		if !found {
+			t.Errorf("%s: want Found with a settings file and not OnPath; agents = %+v (home %s)", name, d.Agents, home)
 		}
 	}
 }

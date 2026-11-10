@@ -26,8 +26,8 @@ type Env struct {
 }
 
 type AgentInfo struct {
-	Name, Settings             string
-	Found, Installed, Verified bool
+	Name, Settings                     string
+	Found, OnPath, Installed, Verified bool
 }
 
 type Detected struct {
@@ -82,7 +82,8 @@ func Detect(env Env) (Detected, error) {
 		raw, readErr := env.ReadFile(info.Settings)
 		info.Installed = readErr == nil && agent.IsHookCommand(string(raw), name)
 		_, pathErr := env.LookPath(agentBinary[name])
-		info.Found = pathErr == nil || readErr == nil
+		info.OnPath = pathErr == nil
+		info.Found = info.OnPath || readErr == nil
 		d.Agents = append(d.Agents, info)
 	}
 	claude := d.Agents[0].Settings
@@ -114,7 +115,7 @@ func claudeMemPlugin(raw []byte) string {
 func Defaults(d Detected) Choices {
 	c := Choices{DisableClaudeMem: d.ClaudeMem, Retention: d.Current.Retention.Mode, Consolidate: d.Current.Consolidate.Auto}
 	for _, a := range d.Agents {
-		if a.Found {
+		if a.OnPath {
 			c.Agents = append(c.Agents, a.Name)
 		}
 	}
