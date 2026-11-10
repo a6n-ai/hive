@@ -15,7 +15,7 @@ version tag, with `checksums.txt`. `inscribe version` prints the build.
 Pick one:
 
     curl -fsSL https://raw.githubusercontent.com/a6n-ai/inscribe/main/install.sh | sh
-    brew install --cask a6n-ai/a6n/inscribe
+    brew install --cask a6n-ai/tap/inscribe
     go install github.com/a6n-ai/inscribe/cmd/inscribe@latest
     # or download inscribe_<version>_<os>_<arch>.tar.gz from the release page
 
