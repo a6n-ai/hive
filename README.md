@@ -30,6 +30,19 @@ project sees it. It shows
 every file and command before it runs. `inscribe setup --yes` applies the defaults
 without prompts; without a terminal it prints the plan and exits 2.
 
+## Uninstall
+
+    inscribe uninstall           # hooks for every agent and the MCP server; keeps your data
+    inscribe uninstall --purge   # also deletes ~/.inscribe: memories, events, config
+
+Then remove the binary the way you installed it: `brew uninstall inscribe`, or for
+the script install, in one step:
+
+    curl -fsSL https://raw.githubusercontent.com/a6n-ai/inscribe/main/install.sh | sh -s -- --uninstall --purge
+
+Drop `--purge` to keep your data. If setup disabled claude-mem, re-enable it with
+`claude plugin enable <its id>`.
+
 ### Advanced
 
 `install` adds one hook per event to the agent's settings file, keeps every other

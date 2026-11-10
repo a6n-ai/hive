@@ -196,3 +196,32 @@ func TestInstallShRefusesHTTP(t *testing.T) {
 		t.Error("inscribe was installed from a plain http URL")
 	}
 }
+
+func TestInstallShUninstallPurge(t *testing.T) {
+	installDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "args.log")
+	fake := "#!/bin/sh\necho \"$@\" >> \"$FAKE_LOG\"\n"
+	if err := os.WriteFile(filepath.Join(installDir, "inscribe"), []byte(fake), 0o755); err != nil { //nolint:gosec // G306: test fake must be executable
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "../../install.sh", "--uninstall", "--purge")
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir(), "INSCRIBE_INSTALL_DIR="+installDir, "FAKE_LOG="+logPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("install.sh --uninstall --purge: %v\n%s", err, out)
+	}
+	if log := readText(t, logPath); strings.TrimSpace(log) != "uninstall --purge" {
+		t.Errorf("binary was called with %q, want \"uninstall --purge\"", log)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "inscribe")); !os.IsNotExist(err) {
+		t.Errorf("binary still present after uninstall: %v", err)
+	}
+}
+
+func TestInstallShPurgeNeedsUninstall(t *testing.T) {
+	cmd := exec.Command("sh", "../../install.sh", "--purge")
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "--purge only goes with --uninstall") {
+		t.Fatalf("install.sh --purge: err %v, output %q", err, out)
+	}
+}

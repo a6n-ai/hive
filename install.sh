@@ -76,7 +76,34 @@ verify() {
 	[ "$got" = "$want" ] || fail "checksum mismatch for $2"
 }
 
+# uninstall removes hooks and the MCP server through the binary itself, then the
+# binary. purge (non-empty) also deletes all Inscribe data.
+uninstall() {
+	bin="$INSTALL_DIR/inscribe"
+	[ -x "$bin" ] || bin=$(command -v inscribe 2>/dev/null || true)
+	[ -n "$bin" ] || fail "inscribe is not installed in $INSTALL_DIR or on PATH"
+	say "removing hooks and the MCP server"
+	if [ -n "$1" ]; then "$bin" uninstall --purge; else "$bin" uninstall; fi
+	rm -f "$bin"
+	echo "removed $bin"
+}
+
 main() {
+	purge=
+	mode=install
+	for arg in "$@"; do
+		case "$arg" in
+			--uninstall) mode=uninstall ;;
+			--purge) purge=1 ;;
+			*) fail "unknown option: $arg (use --uninstall [--purge])" ;;
+		esac
+	done
+	[ -z "$purge" ] || [ "$mode" = uninstall ] || fail "--purge only goes with --uninstall"
+	if [ "$mode" = uninstall ]; then
+		uninstall "$purge"
+		return
+	fi
+
 	os=$(os_name)
 	arch=$(arch_name)
 	tmp=$(mktemp -d)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/a6n-ai/inscribe/internal/recall"
@@ -49,6 +50,16 @@ var registry = map[string]Adapter{}
 
 // Register makes an adapter available to Get. Adapters register from init.
 func Register(a Adapter) { registry[a.Name()] = a }
+
+// All returns every registered adapter, sorted by name.
+func All() []Adapter {
+	out := make([]Adapter, 0, len(registry))
+	for _, a := range registry {
+		out = append(out, a)
+	}
+	slices.SortFunc(out, func(x, y Adapter) int { return strings.Compare(x.Name(), y.Name()) })
+	return out
+}
 
 func Get(name string) (Adapter, error) {
 	a, ok := registry[name]

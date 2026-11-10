@@ -49,15 +49,3 @@ func installCmd(args []string, stdout io.Writer) error {
 	}
 	return nil
 }
-
-func uninstallCmd(args []string, stdout io.Writer) error {
-	ad, settings, err := settingsCmd("uninstall", args)
-	if err != nil {
-		return err
-	}
-	if err := ad.Uninstall(settings); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(stdout, "removed %s hooks from %s\n", ad.Name(), settings)
-	return err
-}

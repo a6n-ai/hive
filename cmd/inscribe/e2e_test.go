@@ -603,6 +603,56 @@ func TestSetupNoTTYWithoutYesExits2(t *testing.T) {
 	}
 }
 
+func TestUninstallAllRemovesHooksAndMCP(t *testing.T) {
+	home := t.TempDir()
+	data := filepath.Join(home, ".inscribe")
+	env, logPath := fakeClaudeEnv(t, home)
+	env = append(env, "INSCRIBE_HOME="+data)
+	if _, errOut, code := runCLI(t, data, "", env, "setup", "--yes"); code != 0 {
+		t.Fatalf("setup --yes: exit %d: %s", code, errOut)
+	}
+	runOK(t, data, "", "remember", "keep me")
+
+	out, errOut, code := runCLI(t, data, "", env, "uninstall")
+	if code != 0 {
+		t.Fatalf("uninstall: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if s := readText(t, filepath.Join(home, ".claude", "settings.json")); strings.Contains(s, "hook --agent claude-code") {
+		t.Fatalf("uninstall left inscribe hooks:\n%s", s)
+	}
+	if log := readText(t, logPath); !strings.Contains(log, "mcp remove --scope user inscribe") {
+		t.Errorf("uninstall did not remove the MCP server; claude calls:\n%s", log)
+	}
+	if _, err := os.Stat(data); err != nil {
+		t.Fatalf("uninstall without --purge removed the data dir: %v", err)
+	}
+
+	if out, errOut, code := runCLI(t, data, "", env, "uninstall", "--purge"); code != 0 {
+		t.Fatalf("uninstall --purge: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if _, err := os.Stat(data); !os.IsNotExist(err) {
+		t.Fatalf("uninstall --purge kept the data dir: %v", err)
+	}
+}
+
+func TestUninstallPurgeRefusesHomeDir(t *testing.T) {
+	home := t.TempDir()
+	env, _ := fakeClaudeEnv(t, home)
+	if err := os.WriteFile(filepath.Join(home, "keep.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, code := runCLI(t, home, "", env, "uninstall", "--purge")
+	if code == 0 {
+		t.Fatal("uninstall --purge with INSCRIBE_HOME = HOME exited 0")
+	}
+	if !strings.Contains(errOut, "refusing") {
+		t.Errorf("stderr %q does not explain the refusal", errOut)
+	}
+	if _, err := os.Stat(filepath.Join(home, "keep.txt")); err != nil {
+		t.Fatalf("purge deleted a file in HOME: %v", err)
+	}
+}
+
 func TestSetupYesTwiceIdempotent(t *testing.T) {
 	home := t.TempDir()
 	env, _ := fakeClaudeEnv(t, home)
