@@ -16,6 +16,11 @@ fail() {
 	exit 1
 }
 
+# say prints a step to stderr, so stdout keeps only the final result lines.
+say() {
+	printf '==> %s\n' "$*" >&2
+}
+
 os_name() {
 	case "$(uname -s)" in
 		Darwin) echo darwin ;;
@@ -35,12 +40,14 @@ arch_name() {
 # fetch URL FILE downloads URL to FILE with curl or wget. Downloads stay on
 # https (file is allowed for local fixtures); a redirect cannot downgrade them.
 fetch() {
+	# A progress bar only when a person is watching stderr.
+	if [ -t 2 ]; then cprog=--progress-bar wprog=--show-progress; else cprog=-s wprog=; fi
 	if command -v curl >/dev/null 2>&1; then
-		curl --proto '=https,file' --tlsv1.2 -fsSL "$1" -o "$2"
+		curl --proto '=https,file' --tlsv1.2 --connect-timeout 20 --retry 2 -fSL $cprog "$1" -o "$2"
 	elif command -v wget >/dev/null 2>&1; then
 		case "$1" in
-			https://*) wget --https-only -qO "$2" "$1" ;;
-			*) wget -qO "$2" "$1" ;;
+			https://*) wget --https-only -q $wprog -O "$2" "$1" ;;
+			*) wget -q $wprog -O "$2" "$1" ;;
 		esac
 	else
 		fail "need curl or wget to download inscribe"
@@ -75,15 +82,25 @@ main() {
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
 
+	say "platform: $os/$arch"
+
 	tag=${INSCRIBE_VERSION:-}
-	[ -n "$tag" ] || tag=$(latest_tag "$tmp")
+	if [ -z "$tag" ]; then
+		say "finding the latest release"
+		tag=$(latest_tag "$tmp")
+	fi
 	[ -n "$tag" ] || fail "could not find the latest inscribe release"
+	say "version: $tag"
 
 	archive="inscribe_${tag#v}_${os}_${arch}.tar.gz"
+	say "downloading checksums.txt"
 	fetch "$BASE_URL/$tag/checksums.txt" "$tmp/checksums.txt"
+	say "downloading $archive"
 	fetch "$BASE_URL/$tag/$archive" "$tmp/$archive"
+	say "verifying sha256"
 	verify "$tmp" "$archive"
 
+	say "installing to $INSTALL_DIR"
 	mkdir -p "$tmp/x"
 	tar -xzf "$tmp/$archive" -C "$tmp/x"
 	mkdir -p "$INSTALL_DIR"
