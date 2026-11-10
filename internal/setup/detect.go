@@ -37,6 +37,7 @@ type Detected struct {
 	ConfigPath  string
 	HasHistory  bool
 	HiveBin     string
+	Current     config.Config
 }
 
 type Choices struct {
@@ -65,6 +66,11 @@ var unverified = map[string]bool{"gemini": true}
 
 func Detect(env Env) (Detected, error) {
 	d := Detected{ConfigPath: filepath.Join(config.Home(), "config.toml"), HiveBin: env.HiveBin}
+	cur, _, err := config.Load(config.Home(), "")
+	if err != nil {
+		return d, err
+	}
+	d.Current = cur
 	for _, name := range agentOrder {
 		ad, err := agent.Get(name)
 		if err != nil {
@@ -104,7 +110,7 @@ func claudeMemPlugin(raw []byte) string {
 }
 
 func Defaults(d Detected) Choices {
-	c := Choices{DisableClaudeMem: d.ClaudeMem, Retention: "rolling"}
+	c := Choices{DisableClaudeMem: d.ClaudeMem, Retention: d.Current.Retention.Mode, Consolidate: d.Current.Consolidate.Auto}
 	for _, a := range d.Agents {
 		if a.Found {
 			c.Agents = append(c.Agents, a.Name)
@@ -131,13 +137,27 @@ func Plan(d Detected, c Choices) []Action {
 		out = append(out, Action{Kind: "import", Desc: "import Claude Code history, " + importLabel(c.ImportSince),
 			Files: []string{filepath.Join(filepath.Dir(d.ConfigPath), "hive.db")}})
 	}
-	out = append(out, Action{Kind: "write-config", Desc: "write retention and consolidation settings", Files: []string{d.ConfigPath},
-		Keys: map[string]any{"retention.mode": c.Retention, "consolidate.auto": c.Consolidate}})
+	if keys := changedKeys(d, c); len(keys) > 0 {
+		out = append(out, Action{Kind: "write-config", Desc: "write changed retention and consolidation settings",
+			Files: []string{d.ConfigPath}, Keys: keys})
+	}
 	if c.MCP {
 		out = append(out, Action{Kind: "mcp-add", Desc: "add Hive as an MCP server to Claude Code",
 			Command: []string{"claude", "mcp", "add", "hive", "--", d.HiveBin, "mcp"}})
 	}
 	return out
+}
+
+// changedKeys returns only the config keys whose chosen value differs from the current one.
+func changedKeys(d Detected, c Choices) map[string]any {
+	keys := map[string]any{}
+	if c.Retention != d.Current.Retention.Mode {
+		keys["retention.mode"] = c.Retention
+	}
+	if c.Consolidate != d.Current.Consolidate.Auto {
+		keys["consolidate.auto"] = c.Consolidate
+	}
+	return keys
 }
 
 func importLabel(since string) string {

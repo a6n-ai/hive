@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/a6n-ai/hive/internal/config"
 )
 
 // testEnv returns an Env whose files and PATH are fakes, with HOME and
@@ -86,6 +88,7 @@ func TestDefaultsFollowDetection(t *testing.T) {
 			{Name: "gemini", Found: true},
 		},
 		ClaudeMem: true,
+		Current:   config.Defaults(),
 	}
 	c := Defaults(d)
 	want := Choices{Agents: []string{"claude-code", "gemini"}, DisableClaudeMem: true, ImportSince: "", Retention: "rolling"}
@@ -201,4 +204,46 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+func TestDefaultsKeepExistingConfig(t *testing.T) {
+	env, home := testEnv(t, nil, nil)
+	if err := os.MkdirAll(filepath.Join(home, ".hive"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".hive", "config.toml"),
+		[]byte("[retention]\nmode = \"keep_all\"\n\n[consolidate]\nauto = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Detect(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := Defaults(d)
+	if c.Retention != "keep_all" || !c.Consolidate {
+		t.Fatalf("defaults = %+v, want existing keep_all and consolidate on", c)
+	}
+	for _, a := range Plan(d, c) {
+		if a.Kind == "write-config" {
+			t.Errorf("write-config planned for unchanged config: %+v", a)
+		}
+	}
+	for _, a := range Plan(d, Choices{Retention: "rolling", Consolidate: true}) {
+		if a.Kind == "write-config" && !reflect.DeepEqual(a.Keys, map[string]any{"retention.mode": "rolling"}) {
+			t.Errorf("write-config keys = %v, want only retention.mode", a.Keys)
+		}
+	}
+}
+
+func TestDefaultsFreshMachineWritesNoConfig(t *testing.T) {
+	env, _ := testEnv(t, nil, nil)
+	d, err := Detect(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range Plan(d, Defaults(d)) {
+		if a.Kind == "write-config" {
+			t.Errorf("write-config planned on a fresh machine: %+v", a)
+		}
+	}
 }
