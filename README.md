@@ -13,7 +13,15 @@ Prebuilt archives for darwin and linux (amd64 and arm64) are attached to each
 version tag, with `checksums.txt`. `hive version` prints the build.
 
     go install github.com/a6n-ai/hive/cmd/hive@latest
-    hive install --agent claude-code
+    hive setup
+
+`hive setup` detects the agents on your machine and walks through the choices:
+which agents to hook, whether to disable claude-mem, how much history to import,
+retention, consolidation (off by default), and an MCP server entry. It shows
+every file and command before it runs. `hive setup --yes` applies the defaults
+without prompts; without a terminal it prints the plan and exits 2.
+
+### Advanced
 
 `install` adds one hook per event to the agent's settings file, keeps every other
 hook, and writes a one-time backup beside it. Invalid JSON is refused and left

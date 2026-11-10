@@ -533,3 +533,85 @@ func TestNoConsolidateSpawnWithoutHeadless(t *testing.T) {
 		t.Fatalf("claude-code did not spawn consolidate: %v", spawned)
 	}
 }
+
+// fakeClaudeEnv puts a fake claude first on PATH; it logs its arguments and runs nothing real.
+func fakeClaudeEnv(t *testing.T, home string) (extraEnv []string, logPath string) {
+	t.Helper()
+	bin := t.TempDir()
+	logPath = filepath.Join(t.TempDir(), "claude.log")
+	script := "#!/bin/sh\necho \"$@\" >> \"$FAKE_CLAUDE_LOG\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(script), 0o755); err != nil { //nolint:gosec // G306: test fake must be executable
+		t.Fatal(err)
+	}
+	return []string{"HOME=" + home, "PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "FAKE_CLAUDE_LOG=" + logPath}, logPath
+}
+
+func TestSetupYesAppliesDefaults(t *testing.T) {
+	home := t.TempDir()
+	env, _ := fakeClaudeEnv(t, home)
+	out, errOut, code := runCLI(t, home, "", env, "setup", "--yes")
+	if code != 0 {
+		t.Fatalf("setup --yes: exit %d\n%s\n%s", code, out, errOut)
+	}
+	settings := readText(t, filepath.Join(home, ".claude", "settings.json"))
+	if !strings.Contains(settings, "hook --agent claude-code SessionStart") {
+		t.Fatalf("claude settings lack Hive hooks:\n%s", settings)
+	}
+	if !strings.Contains(out, "database:") {
+		t.Errorf("output lacks the doctor report:\n%s", out)
+	}
+}
+
+func TestSetupNoTTYWithoutYesExits2(t *testing.T) {
+	home := t.TempDir()
+	env, _ := fakeClaudeEnv(t, home)
+	out, errOut, code := runCLI(t, home, "", env, "setup")
+	if code != 2 {
+		t.Fatalf("exit %d, want 2\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(out, "hive setup --yes") {
+		t.Errorf("output %q does not ask for --yes", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); err == nil {
+		t.Error("setup without --yes changed the settings file")
+	}
+}
+
+func TestSetupYesTwiceIdempotent(t *testing.T) {
+	home := t.TempDir()
+	env, _ := fakeClaudeEnv(t, home)
+	if _, errOut, code := runCLI(t, home, "", env, "setup", "--yes"); code != 0 {
+		t.Fatalf("setup --yes: exit %d: %s", code, errOut)
+	}
+	first := readText(t, filepath.Join(home, ".claude", "settings.json"))
+	if _, errOut, code := runCLI(t, home, "", env, "setup", "--yes"); code != 0 {
+		t.Fatalf("setup --yes: exit %d: %s", code, errOut)
+	}
+	second := readText(t, filepath.Join(home, ".claude", "settings.json"))
+	if first != second {
+		t.Errorf("second setup changed settings:\n%s\n---\n%s", first, second)
+	}
+	if n := strings.Count(second, "hook --agent claude-code"); n != 6 {
+		t.Errorf("hive hooks = %d, want 6", n)
+	}
+}
+
+func TestSetupYesDoesNotResetUserConfig(t *testing.T) {
+	home := t.TempDir()
+	env, _ := fakeClaudeEnv(t, home)
+	cfg := filepath.Join(home, "config.toml")
+	if err := os.WriteFile(cfg, []byte("[retention]\nmode = \"keep_all\"\n\n[consolidate]\nauto = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, errOut, code := runCLI(t, home, "", env, "setup", "--yes"); code != 0 {
+			t.Fatalf("setup --yes: exit %d: %s", code, errOut)
+		}
+	}
+	text := readText(t, cfg)
+	for _, want := range []string{`mode = "keep_all"`, "auto = true"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("config lost %q after setup --yes:\n%s", want, text)
+		}
+	}
+}

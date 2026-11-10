@@ -15,7 +15,7 @@ import (
 )
 
 const usage = `usage: hive <command> [args]
-commands: hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, undo, sync, mcp, version`
+commands: setup, hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, undo, sync, mcp, version`
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
@@ -28,6 +28,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "hook":
 		return hookCmd(args[1:], stdin, stdout)
+	case "setup":
+		code, serr := setupCmd(args[1:], stdin, stdout)
+		if serr != nil {
+			fmt.Fprintln(stderr, "hive:", serr)
+		}
+		return code
 	case "install":
 		err = installCmd(args[1:], stdout)
 	case "uninstall":
