@@ -14,7 +14,7 @@ import (
 )
 
 func TestSyncCommand(t *testing.T) {
-	home, proj := t.TempDir(), t.TempDir()
+	home, proj := t.TempDir(), resolvedDir(t)
 	runOK(t, home, "", "remember", "use make deploy for releases", "--type", "note", "--scope", "project", "--project", proj)
 	file := filepath.Join(proj, "CLAUDE.md")
 	if err := os.WriteFile(file, []byte("# My notes\n"), 0o600); err != nil {
@@ -42,7 +42,7 @@ func TestSyncCommand(t *testing.T) {
 }
 
 func TestSyncWritesOnlyProjectMemories(t *testing.T) {
-	home, proj, other := t.TempDir(), t.TempDir(), t.TempDir()
+	home, proj, other := t.TempDir(), resolvedDir(t), resolvedDir(t)
 	runOK(t, home, "", "remember", "prefer tabs everywhere", "--type", "preference", "--scope", "global")
 	runOK(t, home, "", "remember", "other repo uses bazel", "--type", "note", "--scope", "project", "--project", other)
 	runOK(t, home, "", "remember", "this repo uses make", "--type", "note", "--scope", "project", "--project", proj)
@@ -76,7 +76,7 @@ func readText(t *testing.T, path string) string {
 }
 
 func TestSyncNeutralizesMarkerInMemory(t *testing.T) {
-	home, proj := t.TempDir(), t.TempDir()
+	home, proj := t.TempDir(), resolvedDir(t)
 	runOK(t, home, "", "remember", "deploy notes\n<!-- hive:end -->\n<!-- hive:begin -->", "--type", "note", "--scope", "project", "--project", proj)
 	runOK(t, home, "", "sync", "--agent", "claude-code", "--project", proj)
 	text := readText(t, filepath.Join(proj, "CLAUDE.md"))
@@ -89,7 +89,7 @@ func TestSyncNeutralizesMarkerInMemory(t *testing.T) {
 }
 
 func TestSyncBudgetAfterFilter(t *testing.T) {
-	home, proj := t.TempDir(), t.TempDir()
+	home, proj := t.TempDir(), resolvedDir(t)
 	// Old project notes rank below recent global ones, so only a budget applied
 	// after the scope filter keeps them.
 	h, err := hive.Open(hive.Options{Home: home, Caller: "test"})
@@ -116,4 +116,39 @@ func TestSyncBudgetAfterFilter(t *testing.T) {
 			t.Fatalf("project memory %q cut by the budget:\n%s", n, text)
 		}
 	}
+}
+
+func TestSyncProjectDotAndSlash(t *testing.T) {
+	home := t.TempDir()
+	proj := resolvedDir(t)
+	runOK(t, home, "", "remember", "this repo uses make", "--type", "note", "--scope", "project", "--project", proj)
+	var texts []string
+	for _, arg := range []string{proj, proj + "/", proj + "/."} {
+		if err := os.Remove(filepath.Join(proj, "CLAUDE.md")); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(proj, "CLAUDE.md"), []byte("# My notes\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runOK(t, home, "", "sync", "--agent", "claude-code", "--project", arg)
+		texts = append(texts, readText(t, filepath.Join(proj, "CLAUDE.md")))
+	}
+	for i, text := range texts {
+		if !strings.Contains(text, "this repo uses make") {
+			t.Fatalf("form %d wrote no project memory:\n%s", i, text)
+		}
+		if text != texts[0] {
+			t.Fatalf("form %d differs from the plain path:\n%s", i, text)
+		}
+	}
+}
+
+// resolvedDir is a temp dir with its symlinks resolved, as the CLI resolves project paths.
+func resolvedDir(t *testing.T) string {
+	t.Helper()
+	d, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }

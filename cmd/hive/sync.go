@@ -10,6 +10,7 @@ import (
 
 	"github.com/a6n-ai/hive"
 	"github.com/a6n-ai/hive/agent"
+	"github.com/a6n-ai/hive/internal/capture"
 	"github.com/a6n-ai/hive/internal/recall"
 	"github.com/a6n-ai/hive/model"
 )
@@ -39,9 +40,13 @@ func syncCmd(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	proj := *project
-	if proj == "" {
-		proj = defaultProject()
+	proj := defaultProject()
+	if *project != "" {
+		abs, err := filepath.Abs(*project)
+		if err != nil {
+			return err
+		}
+		proj = capture.ResolveProject(abs)
 	}
 	h, err := hive.Open(hive.Options{Caller: "hive", Project: proj})
 	if err != nil {
