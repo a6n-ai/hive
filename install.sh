@@ -79,8 +79,11 @@ main() {
 	mkdir -p "$tmp/x"
 	tar -xzf "$tmp/$archive" -C "$tmp/x"
 	mkdir -p "$INSTALL_DIR"
-	cp "$tmp/x/hive" "$INSTALL_DIR/hive"
-	chmod 0755 "$INSTALL_DIR/hive"
+	# A rename gives the new binary a new inode, so a running hive is not overwritten.
+	staged="$INSTALL_DIR/.hive.$$"
+	cp "$tmp/x/hive" "$staged"
+	chmod 0755 "$staged"
+	mv -f "$staged" "$INSTALL_DIR/hive"
 
 	echo "installed hive $tag to $INSTALL_DIR/hive"
 	case ":$PATH:" in

@@ -148,3 +148,36 @@ func TestInstallShUnsupportedArch(t *testing.T) {
 		t.Error("hive was installed for an unsupported architecture")
 	}
 }
+
+func TestInstallShReplacesAtomically(t *testing.T) {
+	base, installDir, env := installEnv(t, "Linux", "x86_64")
+	makeRelease(t, base, "v1.2.3", "linux", "amd64", "")
+	if err := os.MkdirAll(installDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(installDir, "hive")
+	if err := os.WriteFile(old, []byte("old-hive"), 0o755); err != nil { //nolint:gosec // G306: test fake must be executable
+		t.Fatal(err)
+	}
+	before, err := os.Stat(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, code := runInstallSh(t, env...); code != 0 {
+		t.Fatalf("install.sh exit %d:\n%s", code, out)
+	}
+	after, err := os.Stat(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(before, after) {
+		t.Error("installed hive reuses the old inode; a running hive would be overwritten in place")
+	}
+	entries, err := os.ReadDir(installDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "hive" {
+		t.Errorf("install dir entries = %v, want only hive", entries)
+	}
+}
