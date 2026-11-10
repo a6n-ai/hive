@@ -1,6 +1,9 @@
 package codex
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/a6n-ai/hive/agent"
 	"github.com/a6n-ai/hive/agent/hookjson"
 )
@@ -8,7 +11,15 @@ import (
 // installEvents omits PreToolUse: Hive never blocks a tool call.
 var installEvents = []string{"SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SessionEnd"}
 
-func (a *Adapter) SettingsPath() string { return agent.UserPath(".codex", "hooks.json") }
+// codexHome is where Codex reads its hooks and skills: $CODEX_HOME when set.
+func codexHome() string {
+	if h := os.Getenv("CODEX_HOME"); h != "" {
+		return h
+	}
+	return agent.UserPath(".codex")
+}
+
+func (a *Adapter) SettingsPath() string { return filepath.Join(codexHome(), "hooks.json") }
 
 func (a *Adapter) Install(settingsPath, hiveBin string) error {
 	entries := make([]hookjson.Entry, 0, len(installEvents))

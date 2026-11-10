@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -148,7 +149,7 @@ func (a *Adapter) Capabilities() agent.Caps {
 
 func (a *Adapter) InstructionsFile() string { return "AGENTS.md" }
 
-func (a *Adapter) SkillDirs() []string { return []string{agent.UserPath(".codex", "skills")} }
+func (a *Adapter) SkillDirs() []string { return []string{filepath.Join(codexHome(), "skills")} }
 
 // Headless is empty: there is no verified way to run Codex with tools off, so
 // consolidation does not run on Codex.

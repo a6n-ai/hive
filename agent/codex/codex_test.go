@@ -137,3 +137,15 @@ func TestCodexAdapterFacts(t *testing.T) {
 		t.Fatalf("install note = %q", note)
 	}
 }
+
+func TestCodexHomeRespected(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	a := New()
+	if got, want := a.SettingsPath(), filepath.Join(home, "hooks.json"); got != want {
+		t.Fatalf("settings path = %s, want %s", got, want)
+	}
+	if got, want := a.SkillDirs(), []string{filepath.Join(home, "skills")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("skill dirs = %v, want %v", got, want)
+	}
+}
