@@ -181,3 +181,18 @@ func TestInstallShReplacesAtomically(t *testing.T) {
 		t.Errorf("install dir entries = %v, want only hive", entries)
 	}
 }
+
+func TestInstallShRefusesHTTP(t *testing.T) {
+	_, installDir, env := installEnv(t, "Linux", "x86_64")
+	env = append(env, "HIVE_INSTALL_BASE_URL=http://127.0.0.1:9/releases")
+	out, code := runInstallSh(t, env...)
+	if code == 0 {
+		t.Fatalf("plain http base URL exited 0:\n%s", out)
+	}
+	if !strings.Contains(out, "https") {
+		t.Errorf("output %q does not refuse plain http", out)
+	}
+	if _, err := os.Stat(filepath.Join(installDir, "hive")); err == nil {
+		t.Error("hive was installed from a plain http URL")
+	}
+}

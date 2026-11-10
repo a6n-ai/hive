@@ -7,6 +7,10 @@ REPO="a6n-ai/hive"
 BASE_URL="${HIVE_INSTALL_BASE_URL:-https://github.com/$REPO/releases/download}"
 INSTALL_DIR="${HIVE_INSTALL_DIR:-$HOME/.local/bin}"
 
+case "$BASE_URL" in
+	http://*) echo "install.sh: refusing plain http download from $BASE_URL; use https" >&2; exit 1 ;;
+esac
+
 fail() {
 	printf 'install.sh: %s\n' "$*" >&2
 	exit 1
@@ -28,12 +32,16 @@ arch_name() {
 	esac
 }
 
-# fetch URL FILE downloads URL to FILE with curl or wget.
+# fetch URL FILE downloads URL to FILE with curl or wget. Downloads stay on
+# https (file is allowed for local fixtures); a redirect cannot downgrade them.
 fetch() {
 	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL "$1" -o "$2"
+		curl --proto '=https,file' --tlsv1.2 -fsSL "$1" -o "$2"
 	elif command -v wget >/dev/null 2>&1; then
-		wget -qO "$2" "$1"
+		case "$1" in
+			https://*) wget --https-only -qO "$2" "$1" ;;
+			*) wget -qO "$2" "$1" ;;
+		esac
 	else
 		fail "need curl or wget to download hive"
 	fi
