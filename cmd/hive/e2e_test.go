@@ -432,3 +432,36 @@ func TestVersionDefault(t *testing.T) {
 		t.Fatalf("version = %q", out)
 	}
 }
+
+func TestGeminiPromptAndToolRecall(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	runOK(t, home, "", "remember", "always run make lint before pushing", "--type", "note", "--scope", "global")
+	gemini := func(event string, payload map[string]any) string {
+		t.Helper()
+		b, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return runOK(t, home, string(b), "hook", "--agent", "gemini", event)
+	}
+	prompt := gemini("BeforeAgent", map[string]any{"session_id": "g1", "cwd": proj, "prompt": "always run make lint before pushing"})
+	if ctx := additionalContext(t, prompt); !strings.Contains(ctx, "make lint") {
+		t.Fatalf("BeforeAgent additionalContext = %q", ctx)
+	}
+	file := filepath.Join(proj, "auth.ts")
+	shell := func(session, exit, text string) map[string]any {
+		return map[string]any{"session_id": session, "cwd": proj, "tool_name": "run_shell_command",
+			"tool_input": map[string]any{"command": "go test ./..."}, "tool_response": map[string]any{"output": "Exit Code: " + exit + "\n" + text}}
+	}
+	errAt := func(line int) string {
+		return fmt.Sprintf("TypeError: cannot read properties of undefined (reading 'map') at %s:%d:5\n    at next", file, line)
+	}
+	gemini("AfterTool", shell("g2", "1", errAt(12)))
+	gemini("AfterTool", map[string]any{"session_id": "g2", "cwd": proj, "tool_name": "replace",
+		"tool_input": map[string]any{"file_path": file, "old_string": "a", "new_string": "b"}})
+	gemini("AfterTool", shell("g2", "0", "ok"))
+	out := gemini("AfterTool", shell("g3", "1", errAt(40)))
+	if ctx := additionalContext(t, out); !strings.Contains(ctx, "auth.ts") {
+		t.Fatalf("AfterTool additionalContext = %q", ctx)
+	}
+}

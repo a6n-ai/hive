@@ -16,6 +16,7 @@ import (
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/extract"
 	"github.com/a6n-ai/hive/internal/recall"
+	"github.com/a6n-ai/hive/model"
 )
 
 const maxHookInput = 8 << 20
@@ -72,7 +73,7 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := followUps(event, e, h.Consolidation().Auto); err != nil {
 		logLine(config.Home(), "follow-up: %v", err)
 	}
-	q, ok := hookQuery(event, e, h.Scrub)
+	q, ok := hookQuery(e, h.Scrub)
 	if !ok {
 		return nil
 	}
@@ -104,15 +105,15 @@ func followUps(event string, e hive.Event, auto bool) error {
 	return nil
 }
 
-// hookQuery picks what to recall for an event. ok is false when the event
-// should inject nothing.
-func hookQuery(event string, e hive.Event, scrub func(string) string) (hive.Query, bool) {
-	switch event {
-	case "SessionStart":
+// hookQuery picks what to recall for an event by its kind, so every agent's
+// event names reach the same recall. ok is false when the event should inject nothing.
+func hookQuery(e hive.Event, scrub func(string) string) (hive.Query, bool) {
+	switch e.Kind {
+	case model.SessionStart:
 		return hive.Query{Project: e.Project, Mode: recall.SessionStart}, true
-	case "UserPromptSubmit":
+	case model.Prompt:
 		return hive.Query{Project: e.Project, Text: e.PromptText, Mode: recall.Prompt}, true
-	case "PostToolUse", "PostToolUseFailure":
+	case model.PostTool:
 		errText, _ := e.Payload["error"].(string)
 		if errText == "" {
 			return hive.Query{}, false
