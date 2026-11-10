@@ -25,7 +25,8 @@ Then run the guided installer:
 
 `hive setup` detects the agents on your machine and walks through the choices:
 which agents to hook, whether to disable claude-mem, how much history to import,
-retention, consolidation (off by default), and an MCP server entry. It shows
+retention, consolidation (off by default), and an MCP server entry at user scope, so every
+project sees it. It shows
 every file and command before it runs. `hive setup --yes` applies the defaults
 without prompts; without a terminal it prints the plan and exits 2.
 

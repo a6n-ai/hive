@@ -14,11 +14,11 @@ import (
 )
 
 // fakeRunner records every command. It fails commands starting with failOn,
-// and reports the hive MCP server as listed once it has been added.
+// and reports the hive MCP server as present once it has been added.
 type fakeRunner struct {
 	calls  []string
 	failOn string
-	list   string
+	added  bool
 }
 
 func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string, error) {
@@ -28,12 +28,32 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 		return "", errors.New("exit status 1")
 	}
 	if strings.HasPrefix(line, "claude mcp add") {
-		f.list = "hive"
+		f.added = true
 	}
-	if line == "claude mcp list" {
-		return f.list, nil
+	if line == "claude mcp get hive" && !f.added {
+		return "", errors.New("exit status 1")
 	}
 	return "", nil
+}
+
+func TestMCPAddUsesUserScope(t *testing.T) {
+	env, _ := testEnv(t, nil, nil)
+	d := Detected{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), HiveBin: "/opt/hive/bin/hive", Current: config.Defaults()}
+	plan := Plan(d, Choices{Retention: "rolling", MCP: true})
+	if len(plan) != 1 || !strings.Contains(plan[0].Desc, "all projects") {
+		t.Fatalf("plan = %+v, want one mcp-add described as for all projects", plan)
+	}
+	f := &fakeRunner{}
+	Apply(context.Background(), env, plan, f.run)
+	want := []string{"claude mcp get hive", "claude mcp add --scope user hive -- /opt/hive/bin/hive mcp"}
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Fatalf("calls = %q, want %q", f.calls, want)
+	}
+	f.calls = nil
+	Apply(context.Background(), env, plan, f.run)
+	if !reflect.DeepEqual(f.calls, []string{"claude mcp get hive"}) {
+		t.Errorf("second run calls = %q, want only the get check", f.calls)
+	}
 }
 
 func TestApplyRunsActionsInOrder(t *testing.T) {
@@ -44,7 +64,7 @@ func TestApplyRunsActionsInOrder(t *testing.T) {
 		{Kind: "install-hooks", Agent: "claude-code", Files: []string{settings}},
 		{Kind: "disable-plugin", Command: []string{"claude", "plugin", "disable", "claude-mem@x"}},
 		{Kind: "write-config", Files: []string{cfg}, Keys: map[string]any{"retention.mode": "keep_all"}},
-		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "hive", "--", "/opt/hive/bin/hive", "mcp"}},
+		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", "/opt/hive/bin/hive", "mcp"}},
 	}
 	f := &fakeRunner{}
 	rep := Apply(context.Background(), env, actions, f.run)
@@ -56,7 +76,7 @@ func TestApplyRunsActionsInOrder(t *testing.T) {
 			t.Errorf("done[%d] = %s, want %s", i, a.Kind, actions[i].Kind)
 		}
 	}
-	want := []string{"claude plugin disable claude-mem@x", "claude mcp list", "claude mcp add hive -- /opt/hive/bin/hive mcp"}
+	want := []string{"claude plugin disable claude-mem@x", "claude mcp get hive", "claude mcp add --scope user hive -- /opt/hive/bin/hive mcp"}
 	if !reflect.DeepEqual(f.calls, want) {
 		t.Errorf("calls = %q, want %q", f.calls, want)
 	}
@@ -74,7 +94,7 @@ func TestApplyContinuesAfterFailure(t *testing.T) {
 	actions := []Action{
 		{Kind: "disable-plugin", Command: []string{"claude", "plugin", "disable", "claude-mem@x"}},
 		{Kind: "write-config", Files: []string{cfg}, Keys: map[string]any{"consolidate.auto": true}},
-		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "hive", "--", "/opt/hive/bin/hive", "mcp"}},
+		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", "/opt/hive/bin/hive", "mcp"}},
 	}
 	f := &fakeRunner{failOn: "claude plugin disable"}
 	rep := Apply(context.Background(), env, actions, f.run)

@@ -145,8 +145,8 @@ func Plan(d Detected, c Choices) []Action {
 			Files: []string{d.ConfigPath}, Keys: keys})
 	}
 	if c.MCP {
-		out = append(out, Action{Kind: "mcp-add", Desc: "add Hive as an MCP server to Claude Code",
-			Command: []string{"claude", "mcp", "add", "hive", "--", d.HiveBin, "mcp"}})
+		out = append(out, Action{Kind: "mcp-add", Desc: "add Hive as an MCP server to Claude Code for all projects",
+			Command: []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", d.HiveBin, "mcp"}})
 	}
 	return out
 }

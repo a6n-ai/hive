@@ -59,16 +59,12 @@ func applyOne(ctx context.Context, env Env, a Action, run Runner) error {
 	return fmt.Errorf("unknown action %q", a.Kind)
 }
 
-// addMCP adds the Hive MCP server unless Claude Code already lists one named hive.
+// addMCP adds the Hive MCP server at user scope unless `claude mcp get hive` finds it.
 func addMCP(ctx context.Context, add []string, run Runner) error {
-	out, err := run(ctx, "claude", "mcp", "list")
-	if err != nil {
-		return err
-	}
-	if strings.Contains(out, "hive") {
+	if _, err := run(ctx, "claude", "mcp", "get", "hive"); err == nil {
 		return nil
 	}
-	_, err = run(ctx, add[0], add[1:]...)
+	_, err := run(ctx, add[0], add[1:]...)
 	return err
 }
 

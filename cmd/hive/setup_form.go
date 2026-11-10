@@ -80,5 +80,5 @@ func consolidateGroup(c *setup.Choices) *huh.Group {
 }
 
 func mcpGroup(c *setup.Choices) *huh.Group {
-	return huh.NewGroup(huh.NewConfirm().Title("Add Hive as an MCP server to Claude Code?").Value(&c.MCP))
+	return huh.NewGroup(huh.NewConfirm().Title("Add Hive as an MCP server to Claude Code for all projects?").Value(&c.MCP))
 }

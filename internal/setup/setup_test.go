@@ -130,7 +130,7 @@ func TestPlanOrderAndContents(t *testing.T) {
 	if !reflect.DeepEqual(plan[3].Keys, map[string]any{"retention.mode": "keep_all", "consolidate.auto": true}) {
 		t.Errorf("write-config keys = %v", plan[3].Keys)
 	}
-	if !reflect.DeepEqual(plan[4].Command, []string{"claude", "mcp", "add", "hive", "--", "/bin/hive", "mcp"}) {
+	if !reflect.DeepEqual(plan[4].Command, []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", "/bin/hive", "mcp"}) {
 		t.Errorf("mcp command = %v", plan[4].Command)
 	}
 	for _, a := range plan {
