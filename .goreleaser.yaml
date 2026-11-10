@@ -27,7 +27,7 @@ homebrew_casks:
   - repository:
       owner: a6n-ai
       name: homebrew-tap
-      token: '{{ index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}'
+      token: '{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}'
     skip_upload: '{{ if not (index .Env "HOMEBREW_TAP_GITHUB_TOKEN") }}true{{ end }}'
     homepage: https://github.com/a6n-ai/inscribe
     description: Shared memory for coding agents
