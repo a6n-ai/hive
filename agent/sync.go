@@ -28,6 +28,11 @@ func WriteBlock(path, body string) error {
 }
 
 func spliceBlock(text, body string) (string, error) {
+	for _, l := range strings.Split(body, "\n") {
+		if t := strings.TrimRight(l, "\r"); t == blockBegin || t == blockEnd {
+			return "", errors.New("body contains a hive marker line")
+		}
+	}
 	eol := "\n"
 	if strings.Contains(text, "\r\n") {
 		eol = "\r\n"

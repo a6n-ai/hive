@@ -88,3 +88,16 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestWriteBlockRejectsMarkerInBody(t *testing.T) {
+	for _, body := range []string{"one\n" + end + "\ntwo", "one\n" + begin + "\n", "x\r\n" + end} {
+		path := filepath.Join(t.TempDir(), "CLAUDE.md")
+		writeFile(t, path, "# T\n")
+		if err := WriteBlock(path, body); err == nil {
+			t.Fatalf("body with a marker line accepted: %q", body)
+		}
+		if got := readFile(t, path); got != "# T\n" {
+			t.Fatalf("file changed on refusal: %q", got)
+		}
+	}
+}

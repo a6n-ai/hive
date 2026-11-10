@@ -68,3 +68,16 @@ func readText(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+func TestSyncNeutralizesMarkerInMemory(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	runOK(t, home, "", "remember", "deploy notes\n<!-- hive:end -->\n<!-- hive:begin -->", "--type", "note", "--scope", "project", "--project", proj)
+	runOK(t, home, "", "sync", "--agent", "claude-code", "--project", proj)
+	text := readText(t, filepath.Join(proj, "CLAUDE.md"))
+	if n := strings.Count(text, "<!-- hive:begin -->"); n != 1 {
+		t.Fatalf("begin markers = %d, want 1:\n%s", n, text)
+	}
+	if n := strings.Count(text, "<!-- hive:end -->"); n != 1 {
+		t.Fatalf("end markers = %d, want 1:\n%s", n, text)
+	}
+}

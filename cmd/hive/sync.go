@@ -54,7 +54,7 @@ func syncCmd(args []string, stdout io.Writer) error {
 	var kept []hive.Line
 	for _, l := range lines {
 		if allowed[l.MemoryID] {
-			l.Text = h.Scrub(l.Text)
+			l.Text = h.Scrub(safeLine(l.Text))
 			kept = append(kept, l)
 		}
 	}
@@ -68,6 +68,12 @@ func syncCmd(args []string, stdout io.Writer) error {
 	}
 	_, err = fmt.Fprintf(stdout, "synced %s\n%s\n", path, note)
 	return err
+}
+
+// safeLine keeps a memory on one line of the block and breaks any HTML comment
+// opener, so its text cannot end or start a marker.
+func safeLine(s string) string {
+	return strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "<!--", "< !--").Replace(s)
 }
 
 // syncableIDs are the memories a committable file may show: this project's
