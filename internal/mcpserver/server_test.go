@@ -172,3 +172,19 @@ func TestMCPRememberDefaultsToProject(t *testing.T) {
 	}
 	t.Fatalf("remember without scope did not default to project scope: %v", ms)
 }
+
+func TestMCPQueryAndProjectCapped(t *testing.T) {
+	proj := t.TempDir()
+	cs := connect(t, openHive(t, proj), proj)
+	cases := map[string]map[string]any{
+		"long query":   {"query": strings.Repeat("x", 2001)},
+		"long project": {"project": strings.Repeat("p", 4097)},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, isErr := call(t, cs, "recall", args); !isErr {
+				t.Fatal("oversized argument accepted")
+			}
+		})
+	}
+}

@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	maxText   = 2000
-	maxBudget = 2000
+	maxText    = 2000
+	maxBudget  = 2000
+	maxProject = 4096
+	maxQuery   = 2000
 )
 
 type rememberIn struct {
@@ -51,6 +53,9 @@ func New(h *hive.Hive, project string) *mcp.Server {
 // scopedProject returns the project a call acts on: the server's, unless the
 // call names another project, which is refused.
 func scopedProject(arg, project string) (string, error) {
+	if len(arg) > maxProject {
+		return "", fmt.Errorf("project is over %d characters", maxProject)
+	}
 	if arg != "" && arg != project {
 		return "", fmt.Errorf("project %q is not this server's project", arg)
 	}
@@ -120,6 +125,9 @@ func recallTool(h *hive.Hive, project string) mcp.ToolHandlerFor[recallIn, any] 
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in recallIn) (*mcp.CallToolResult, any, error) {
 		if in.Budget < 0 || in.Budget > maxBudget {
 			return nil, nil, fmt.Errorf("budget must be 0 to %d", maxBudget)
+		}
+		if utf8.RuneCountInString(in.Query) > maxQuery {
+			return nil, nil, fmt.Errorf("query is over %d characters", maxQuery)
 		}
 		proj, err := scopedProject(in.Project, project)
 		if err != nil {
