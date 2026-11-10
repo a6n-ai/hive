@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/a6n-ai/hive/agent"
+	"github.com/a6n-ai/hive/agent/hookjson"
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/scrub"
 	"github.com/a6n-ai/hive/internal/store"
@@ -56,11 +56,15 @@ func doctorAgent(stdout io.Writer, name string) error {
 	if err != nil {
 		return err
 	}
-	hiveHooks, claudeMem, err := countHooks(raw, name)
+	hiveHooks, claudeMem, commented, err := countHooks(raw, name)
 	if err != nil {
-		return fmt.Errorf("%s: %w", settings, err)
+		fmt.Fprintf(stdout, "%s hooks: cannot read %s: %v\n", name, settings, err)
+		return nil
 	}
 	fmt.Fprintf(stdout, "%s hooks: %d hive hook(s) in %s\n", name, hiveHooks, settings)
+	if commented {
+		fmt.Fprintf(stdout, "%s: %s has comments; hive install cannot edit it safely\n", name, filepath.Base(settings))
+	}
 	if hiveHooks > 0 {
 		printWarnings(stdout, ad, raw)
 	}
@@ -91,10 +95,11 @@ func readSettings(settings string) ([]byte, error) {
 }
 
 // countHooks counts the hook commands in a settings file that run Hive for
-// agent name, and the ones that run claude-mem.
-func countHooks(raw []byte, name string) (hive, claudeMem int, err error) {
+// agent name, and the ones that run claude-mem. commented reports comments in
+// the file, which Inspect reads through.
+func countHooks(raw []byte, name string) (hive, claudeMem int, commented bool, err error) {
 	if raw == nil {
-		return 0, 0, nil
+		return 0, 0, false, nil
 	}
 	var m struct {
 		Hooks map[string][]struct {
@@ -103,8 +108,9 @@ func countHooks(raw []byte, name string) (hive, claudeMem int, err error) {
 			} `json:"hooks"`
 		} `json:"hooks"`
 	}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return 0, 0, err
+	commented, err = hookjson.Inspect(raw, &m)
+	if err != nil {
+		return 0, 0, false, err
 	}
 	for _, groups := range m.Hooks {
 		for _, g := range groups {
@@ -118,7 +124,7 @@ func countHooks(raw []byte, name string) (hive, claudeMem int, err error) {
 			}
 		}
 	}
-	return hive, claudeMem, nil
+	return hive, claudeMem, commented, nil
 }
 
 // scrubberSelfTest checks that one secret is redacted and one ordinary

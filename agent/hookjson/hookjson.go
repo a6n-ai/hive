@@ -28,12 +28,76 @@ func Owns(agentName string) func(cmd string) bool {
 	return func(cmd string) bool { return agent.IsHookCommand(cmd, agentName) }
 }
 
+// errComments means a settings file has comments, which a rewrite would drop.
+var errComments = errors.New("settings have comments, so hive cannot edit them safely")
+
 // Install replaces every hook owns recognises with entries. It writes only
-// when the file changes.
+// when the file changes. A file with comments is refused, with the hooks to
+// paste in by hand.
 func Install(path string, entries []Entry, owns func(cmd string) bool) error {
-	return editSettings(path, func(m map[string]any) (bool, error) {
+	err := editSettings(path, func(m map[string]any) (bool, error) {
 		return installHooks(m, entries, owns)
 	})
+	if errors.Is(err, errComments) {
+		return fmt.Errorf("%w; paste this into the file by hand:\n%s", err, snippet(entries))
+	}
+	return err
+}
+
+// snippet is the hooks block Install would write, for pasting by hand.
+func snippet(entries []Entry) string {
+	m := map[string]any{}
+	_, _ = installHooks(m, entries, func(string) bool { return false })
+	b, _ := json.MarshalIndent(map[string]any{"hooks": m["hooks"]}, "", "  ")
+	return string(b)
+}
+
+// Inspect decodes settings for reading only. Comments are allowed, and
+// commented reports whether they were needed. Writers never use it.
+func Inspect(raw []byte, v any) (commented bool, err error) {
+	err = json.Unmarshal(raw, v)
+	if err == nil {
+		return false, nil
+	}
+	if json.Unmarshal(stripComments(raw), v) != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// stripComments removes // and /* */ comments outside string literals.
+func stripComments(raw []byte) []byte {
+	out := make([]byte, 0, len(raw))
+	for i := 0; i < len(raw); i++ {
+		switch {
+		case raw[i] == '"':
+			end := i + 1
+			for end < len(raw) && raw[end] != '"' {
+				if raw[end] == '\\' {
+					end++
+				}
+				end++
+			}
+			end = min(end+1, len(raw))
+			out = append(out, raw[i:end]...)
+			i = end - 1
+		case raw[i] == '/' && i+1 < len(raw) && raw[i+1] == '/':
+			k := bytes.IndexByte(raw[i:], '\n')
+			if k < 0 {
+				return out
+			}
+			i += k - 1
+		case raw[i] == '/' && i+1 < len(raw) && raw[i+1] == '*':
+			k := bytes.Index(raw[i+2:], []byte("*/"))
+			if k < 0 {
+				return out
+			}
+			i += k + 3
+		default:
+			out = append(out, raw[i])
+		}
+	}
+	return out
 }
 
 // Uninstall removes every hook owns recognises.
@@ -185,6 +249,10 @@ func editSettings(path string, change func(map[string]any) (bool, error)) error 
 		}
 		mode = info.Mode().Perm()
 		if err := decodeSettings(raw, &m); err != nil {
+			var scratch map[string]any
+			if commented, cerr := Inspect(raw, &scratch); commented && cerr == nil {
+				return fmt.Errorf("%s: %w", path, errComments)
+			}
 			return fmt.Errorf("%s: not valid JSON, left unchanged: %w", path, err)
 		}
 		if m == nil {

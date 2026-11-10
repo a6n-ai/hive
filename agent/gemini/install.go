@@ -1,8 +1,6 @@
 package gemini
 
 import (
-	"encoding/json"
-
 	"github.com/a6n-ai/hive/agent"
 	"github.com/a6n-ai/hive/agent/hookjson"
 )
@@ -32,7 +30,7 @@ func (a *Adapter) Warnings(settings []byte) []string {
 			Enabled *bool `json:"enabled"`
 		} `json:"hooksConfig"`
 	}
-	_ = json.Unmarshal(settings, &m)
+	_, _ = hookjson.Inspect(settings, &m)
 	out := []string{"gemini adapter: written from documentation, not verified against a live Gemini CLI"}
 	if m.HooksConfig.Enabled != nil && !*m.HooksConfig.Enabled {
 		out = append(out, "gemini: hooksConfig.enabled is false — hooks will not run")

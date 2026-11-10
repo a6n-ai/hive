@@ -465,3 +465,44 @@ func TestGeminiPromptAndToolRecall(t *testing.T) {
 		t.Fatalf("AfterTool additionalContext = %q", ctx)
 	}
 }
+
+func TestDoctorToleratesJSONC(t *testing.T) {
+	home, fakeHome := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(fakeHome, ".gemini"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings := "// my theme\n{\"theme\": \"dark\" /* keep */}\n"
+	if err := os.WriteFile(filepath.Join(fakeHome, ".gemini", "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code := runCLI(t, home, "", []string{"HOME=" + fakeHome}, "doctor")
+	if code != 0 {
+		t.Fatalf("doctor exit %d: %s", code, errOut)
+	}
+	for _, want := range []string{"gemini: settings.json has comments; hive install cannot edit it safely", "database:"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestInstallRefusesJSONCWithInstructions(t *testing.T) {
+	home, dir := t.TempDir(), t.TempDir()
+	file := filepath.Join(dir, "settings.json")
+	orig := "// my theme\n{\"theme\": \"dark\"}\n"
+	if err := os.WriteFile(file, []byte(orig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, errOut, code := runCLI(t, home, "", nil, "install", "--agent", "gemini", "--settings", file)
+	if code == 0 {
+		t.Fatal("install accepted settings with comments")
+	}
+	if got := readText(t, file); got != orig {
+		t.Fatalf("settings changed to %q", got)
+	}
+	for _, want := range []string{`hook --agent gemini SessionStart"`, `"matcher": "*"`} {
+		if !strings.Contains(errOut, want) {
+			t.Fatalf("install output lacks %s:\n%s", want, errOut)
+		}
+	}
+}
