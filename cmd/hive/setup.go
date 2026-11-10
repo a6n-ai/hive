@@ -28,7 +28,7 @@ func setupCmd(args []string, stdin io.Reader, stdout io.Writer) (int, error) {
 	}
 	d, err := setup.Detect(env)
 	if err != nil {
-		return 1, err
+		return 1, fmt.Errorf("hive setup: cannot read the existing config (fix or remove it, then run setup again): %w", err)
 	}
 	c := setup.Defaults(d)
 	switch {

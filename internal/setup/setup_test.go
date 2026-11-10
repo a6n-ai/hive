@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/a6n-ai/hive/internal/config"
 )
 
@@ -271,5 +273,72 @@ func TestDefaultsTickOnlyAgentsOnPath(t *testing.T) {
 		if !found {
 			t.Errorf("%s: want Found with a settings file and not OnPath; agents = %+v (home %s)", name, d.Agents, home)
 		}
+	}
+}
+
+func TestSetConfigKeysRejectsResultThatDoesNotParse(t *testing.T) {
+	kv := map[string]any{"retention.mode": "keep_all"}
+	fixtures := map[string]string{
+		"top-level dotted key": "retention.mode = \"rolling\"\n",
+		"inline table":         "retention = { mode = \"rolling\" }\n",
+		"quoted key":           "[retention]\n\"mode\" = \"rolling\"\n",
+		"multi-line string":    "[retention]\nmode = \"\"\"\nrolling\"\"\"\n",
+	}
+	for name, orig := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			writeTestFile(t, path, orig)
+			err := SetConfigKeys(path, kv)
+			got := readFile(t, path)
+			if err != nil {
+				if got != orig {
+					t.Errorf("file changed although SetConfigKeys failed with %v:\n%s", err, got)
+				}
+				return
+			}
+			var m map[string]any
+			if _, derr := toml.Decode(got, &m); derr != nil {
+				t.Fatalf("SetConfigKeys wrote text that does not parse: %v\n%s", derr, got)
+			}
+			if tbl, _ := m["retention"].(map[string]any); tbl["mode"] != "keep_all" {
+				t.Errorf("retention.mode = %v, want keep_all", tbl["mode"])
+			}
+		})
+	}
+}
+
+func TestSetConfigKeysAtomicWithBackup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	orig := "# keep\n[retention]\nmode = \"rolling\"\n"
+	writeTestFile(t, path, orig)
+	if err := os.Chmod(path, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetConfigKeys(path, map[string]any{"retention.mode": "keep_all"}); err != nil {
+		t.Fatal(err)
+	}
+	backup := path + ".hive-backup"
+	if got := readFile(t, backup); got != orig {
+		t.Errorf("backup = %q, want the original", got)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(before, after) {
+		t.Error("config was rewritten in place, not replaced atomically")
+	}
+	if after.Mode().Perm() != 0o640 {
+		t.Errorf("mode = %v, want 0640", after.Mode().Perm())
+	}
+	if err := SetConfigKeys(path, map[string]any{"retention.mode": "storage_time"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, backup); got != orig {
+		t.Errorf("second change replaced the backup: %q", got)
 	}
 }

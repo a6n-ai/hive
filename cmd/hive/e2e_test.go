@@ -641,3 +641,19 @@ func TestSetupDevNullStdinExits2(t *testing.T) {
 		t.Errorf("output lacks the plan or the --yes hint:\n%s", out.String())
 	}
 }
+
+func TestSetupInvalidConfigExits1NamesFile(t *testing.T) {
+	home := t.TempDir()
+	env, _ := fakeClaudeEnv(t, home)
+	cfg := filepath.Join(home, "config.toml")
+	if err := os.WriteFile(cfg, []byte("[retention\nmode = \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code := runCLI(t, home, "", env, "setup", "--yes")
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\n%s\n%s", code, out, errOut)
+	}
+	if !strings.Contains(errOut, cfg) || !strings.Contains(errOut, "hive setup: cannot read") {
+		t.Errorf("stderr %q does not name %s and the setup failure", errOut, cfg)
+	}
+}
