@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,25 @@ func TestWriteBlockRejectsMarkerInBody(t *testing.T) {
 		if got := readFile(t, path); got != "# T\n" {
 			t.Fatalf("file changed on refusal: %q", got)
 		}
+	}
+}
+
+func TestWriteBlockRefusesSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "outside.md")
+	writeFile(t, target, "outside text\n")
+	path := filepath.Join(dir, "project", "CLAUDE.md")
+	if err := os.Mkdir(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	err := WriteBlock(path, "one")
+	if err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("symlink write error = %v, want one naming %s", err, path)
+	}
+	if got := readFile(t, target); got != "outside text\n" {
+		t.Fatalf("target changed through the symlink: %q", got)
 	}
 }

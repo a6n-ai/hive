@@ -3,7 +3,9 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,15 +18,54 @@ const (
 // appends a block when there is none. Everything outside the markers is kept
 // byte for byte, and the file's own line endings are used for the block.
 func WriteBlock(path, body string) error {
-	raw, err := os.ReadFile(path) //nolint:gosec // G304: the instructions path is the user's own project file
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	mode := fs.FileMode(0o644)
+	var raw []byte
+	fi, err := os.Lstat(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
 		return err
+	case fi.Mode()&os.ModeSymlink != 0:
+		return fmt.Errorf("%s: is a symlink, refusing to write through it", path)
+	case !fi.Mode().IsRegular():
+		return fmt.Errorf("%s: not a regular file, refusing to write", path)
+	default:
+		mode = fi.Mode().Perm()
+		if raw, err = os.ReadFile(path); err != nil { //nolint:gosec // G304: the instructions path is the user's own project file
+			return err
+		}
 	}
 	out, err := spliceBlock(string(raw), body)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	return os.WriteFile(path, []byte(out), 0o644) //nolint:gosec // G306: instructions files are meant to be read by the agent and the user
+	return writeReplace(path, []byte(out), mode)
+}
+
+// writeReplace writes data to a temp file beside path, then renames it over path,
+// so a crash never leaves a half-written instructions file.
+func writeReplace(path string, data []byte, mode fs.FileMode) (err error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".hive-instructions-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	if _, err = tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err = tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func spliceBlock(text, body string) (string, error) {
