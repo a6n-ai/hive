@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -137,5 +138,30 @@ func TestGeminiAdapterFacts(t *testing.T) {
 	}
 	if spec := a.Headless("x"); spec.Command != nil {
 		t.Fatalf("headless command = %v, want none", spec.Command)
+	}
+}
+
+func TestGeminiExitCodeAnywhere(t *testing.T) {
+	const text = "Command: false\nDirectory: (root)\nExit Code: 1\nboom"
+	payloads := map[string]map[string]any{
+		"string response":          {"tool_response": text},
+		"tool_response llmContent": {"tool_response": map[string]any{"llmContent": text}},
+		"tool_result llmContent":   {"tool_result": map[string]any{"llmContent": text}},
+	}
+	for name, p := range payloads {
+		t.Run(name, func(t *testing.T) {
+			p["session_id"], p["tool_name"], p["tool_input"] = "g1", "run_shell_command", map[string]any{"command": "false"}
+			b, err := json.Marshal(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e, err := New().Parse("AfterTool", b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e.Payload["exit_code"] != 1 || e.Payload["error"] != "boom" {
+				t.Fatalf("payload = %#v", e.Payload)
+			}
+		})
 	}
 }

@@ -24,7 +24,7 @@ var eventKinds = map[string]model.EventKind{
 	"SessionEnd":   model.SessionEnd,
 }
 
-var exitLine = regexp.MustCompile(`^Exit Code: (-?\d+)\n?`)
+var exitLine = regexp.MustCompile(`(?m)^Exit Code: (-?\d+)[ \t]*(?:\n|$)`)
 
 type Adapter struct{}
 
@@ -121,9 +121,9 @@ func normalize(tool string, input map[string]any, resp any) (string, map[string]
 	return tool, out
 }
 
-// shellResult takes the exit code from the response keys, or from a leading
-// "Exit Code: N" line in the response text. A non-zero code makes the rest of
-// the text the error.
+// shellResult takes the exit code from the response keys, or from an
+// "Exit Code: N" line anywhere in the response text. A non-zero code makes the
+// text after that line the error.
 func shellResult(out map[string]any, resp any) {
 	if code, ok := agent.ExitCode(resp); ok {
 		out["exit_code"] = code

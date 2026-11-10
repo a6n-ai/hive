@@ -120,13 +120,13 @@ func ExitCode(resp any) (code int, ok bool) {
 }
 
 // ResponseText is the text of a tool response: the string itself, or its
-// output or stderr field.
+// output, stderr or llmContent field.
 func ResponseText(resp any) string {
 	switch v := resp.(type) {
 	case string:
 		return v
 	case map[string]any:
-		for _, k := range []string{"output", "stderr"} {
+		for _, k := range []string{"output", "stderr", "llmContent"} {
 			if s, ok := v[k].(string); ok {
 				return s
 			}
