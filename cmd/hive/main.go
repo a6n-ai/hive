@@ -15,7 +15,7 @@ import (
 )
 
 const usage = `usage: hive <command> [args]
-commands: hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, undo`
+commands: hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, undo, sync`
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
@@ -50,6 +50,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = consolidateCmd(args[1:], stdout)
 	case "undo":
 		err = undoCmd(args[1:], stdout)
+	case "sync":
+		err = syncCmd(args[1:], stdout)
 	case "doctor":
 		err = doctorCmd(stdout)
 	default:

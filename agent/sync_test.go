@@ -1,0 +1,90 @@
+package agent
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+const (
+	begin = "<!-- hive:begin -->"
+	end   = "<!-- hive:end -->"
+)
+
+func TestWriteBlockAppendsCreatesReplaces(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "CLAUDE.md")
+	if err := WriteBlock(path, "one"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); got != begin+"\none\n"+end+"\n" {
+		t.Fatalf("created file = %q", got)
+	}
+	writeFile(t, path, "# Title\n\nuser text\n")
+	if err := WriteBlock(path, "one"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); got != "# Title\n\nuser text\n\n"+begin+"\none\n"+end+"\n" {
+		t.Fatalf("appended = %q", got)
+	}
+	if err := WriteBlock(path, "two"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); got != "# Title\n\nuser text\n\n"+begin+"\ntwo\n"+end+"\n" {
+		t.Fatalf("replaced = %q", got)
+	}
+}
+
+func TestWriteBlockKeepsCRLFAndUserText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "AGENTS.md")
+	writeFile(t, path, "# T\r\n\r\nuser\r\n"+begin+"\r\nold\r\n"+end+"\r\ntail\r\n")
+	if err := WriteBlock(path, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); got != "# T\r\n\r\nuser\r\n"+begin+"\r\nnew\r\n"+end+"\r\ntail\r\n" {
+		t.Fatalf("replaced CRLF = %q", got)
+	}
+	writeFile(t, path, "# T\r\n")
+	if err := WriteBlock(path, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, path); got != "# T\r\n\r\n"+begin+"\r\nnew\r\n"+end+"\r\n" {
+		t.Fatalf("appended CRLF = %q", got)
+	}
+}
+
+func TestWriteBlockRejectsMalformedMarkers(t *testing.T) {
+	cases := map[string]string{
+		"begin without end": "x\n" + begin + "\nold\n",
+		"end without begin": "x\n" + end + "\n",
+		"two begins":        begin + "\na\n" + begin + "\nb\n" + end + "\n",
+		"end before begin":  end + "\n" + begin + "\n",
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "CLAUDE.md")
+			writeFile(t, path, content)
+			if err := WriteBlock(path, "new"); err == nil {
+				t.Fatal("malformed markers accepted")
+			}
+			if got := readFile(t, path); got != content {
+				t.Fatalf("file changed on refusal: %q", got)
+			}
+		})
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
