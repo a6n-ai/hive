@@ -15,7 +15,7 @@ version tag, with `checksums.txt`. `hive version` prints the build.
 Pick one:
 
     curl -fsSL https://raw.githubusercontent.com/a6n-ai/hive/main/install.sh | sh
-    brew install --cask a6n-ai/tap/hive
+    brew install --cask a6n-ai/a6n/hive
     go install github.com/a6n-ai/hive/cmd/hive@latest
     # or download hive_<version>_<os>_<arch>.tar.gz from the release page
 
