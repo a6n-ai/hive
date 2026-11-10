@@ -98,3 +98,39 @@ func ContextJSON(event string, lines []recall.Line) []byte {
 	}
 	return out
 }
+
+// ExitCode reads a tool's exit code from the response keys agents use, or from
+// metadata.exit_code. ok is false when the response carries no code.
+func ExitCode(resp any) (code int, ok bool) {
+	m, isMap := resp.(map[string]any)
+	if !isMap {
+		return 0, false
+	}
+	for _, k := range []string{"exit_code", "exitCode", "returncode", "status_code"} {
+		if n, isNum := m[k].(float64); isNum {
+			return int(n), true
+		}
+	}
+	if md, isMap := m["metadata"].(map[string]any); isMap {
+		if n, isNum := md["exit_code"].(float64); isNum {
+			return int(n), true
+		}
+	}
+	return 0, false
+}
+
+// ResponseText is the text of a tool response: the string itself, or its
+// output or stderr field.
+func ResponseText(resp any) string {
+	switch v := resp.(type) {
+	case string:
+		return v
+	case map[string]any:
+		for _, k := range []string{"output", "stderr"} {
+			if s, ok := v[k].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}

@@ -13,7 +13,7 @@ import (
 // uninstall. The default settings file is the adapter's.
 func settingsCmd(name string, args []string) (agent.Adapter, string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	agentName := fs.String("agent", "", "agent to hook (claude-code, codex)")
+	agentName := fs.String("agent", "", "agent to hook (claude-code, codex, gemini)")
 	settings := fs.String("settings", "", "settings file (default is the agent's own)")
 	if err := fs.Parse(args); err != nil {
 		return nil, "", err

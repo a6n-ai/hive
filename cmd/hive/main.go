@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/a6n-ai/hive/agent/claudecode"
 	_ "github.com/a6n-ai/hive/agent/codex"
+	_ "github.com/a6n-ai/hive/agent/gemini"
 )
 
 const usage = `usage: hive <command> [args]

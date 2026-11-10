@@ -84,11 +84,11 @@ func normalize(tool string, input map[string]any, resp any) (string, map[string]
 		}
 		out["paths"] = paths
 	}
-	code, hasCode := exitCode(resp)
+	code, hasCode := agent.ExitCode(resp)
 	if hasCode {
 		out["exit_code"] = code
 		if code != 0 {
-			out["error"] = responseText(resp)
+			out["error"] = agent.ResponseText(resp)
 		}
 	}
 	return tool, out
@@ -132,40 +132,6 @@ func patchPaths(text string) []string {
 		}
 	}
 	return paths
-}
-
-// exitCode reads the exit code from the response keys Codex uses for shell
-// tools, or from metadata.exit_code.
-func exitCode(resp any) (int, bool) {
-	m, ok := resp.(map[string]any)
-	if !ok {
-		return 0, false
-	}
-	for _, k := range []string{"exit_code", "exitCode", "returncode", "status_code"} {
-		if n, ok := m[k].(float64); ok {
-			return int(n), true
-		}
-	}
-	if md, ok := m["metadata"].(map[string]any); ok {
-		if n, ok := md["exit_code"].(float64); ok {
-			return int(n), true
-		}
-	}
-	return 0, false
-}
-
-func responseText(resp any) string {
-	switch v := resp.(type) {
-	case string:
-		return v
-	case map[string]any:
-		for _, k := range []string{"output", "stderr"} {
-			if s, ok := v[k].(string); ok {
-				return s
-			}
-		}
-	}
-	return ""
 }
 
 func (a *Adapter) Reply(event string, lines []recall.Line) []byte {
