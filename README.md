@@ -12,7 +12,15 @@ Claude Code is supported today. Hive replaces claude-mem for this use.
 Prebuilt archives for darwin and linux (amd64 and arm64) are attached to each
 version tag, with `checksums.txt`. `hive version` prints the build.
 
+Pick one:
+
+    curl -fsSL https://raw.githubusercontent.com/a6n-ai/hive/main/install.sh | sh
+    brew install --cask a6n-ai/tap/hive
     go install github.com/a6n-ai/hive/cmd/hive@latest
+    # or download hive_<version>_<os>_<arch>.tar.gz from the release page
+
+Then run the guided installer:
+
     hive setup
 
 `hive setup` detects the agents on your machine and walks through the choices:
