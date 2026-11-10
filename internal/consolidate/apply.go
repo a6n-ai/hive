@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // addConfidence is the confidence of a memory the agent adds.

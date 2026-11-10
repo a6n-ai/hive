@@ -1,4 +1,4 @@
-package hive
+package inscribe
 
 import (
 	"context"
@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
-func TestHiveRememberWhyForget(t *testing.T) {
+func TestInscribeRememberWhyForget(t *testing.T) {
 	ctx := context.Background()
-	h, err := Open(Options{Home: t.TempDir(), Caller: "hive"})
+	h, err := Open(Options{Home: t.TempDir(), Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestQueryEvents(t *testing.T) {
 
 func TestBadProjectConfigIgnored(t *testing.T) {
 	home, proj := t.TempDir(), t.TempDir()
-	file := filepath.Join(proj, ".hive.toml")
+	file := filepath.Join(proj, ".inscribe.toml")
 	for _, body := range []string{"this is [not toml", "[scrub]\npatterns = [\"(\"]\n"} {
 		if err := os.WriteFile(file, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -81,8 +81,8 @@ func TestBadProjectConfigIgnored(t *testing.T) {
 		}
 		_ = h.Close()
 	}
-	logged, err := os.ReadFile(filepath.Join(home, "hive.log"))
+	logged, err := os.ReadFile(filepath.Join(home, "inscribe.log"))
 	if err != nil || !strings.Contains(string(logged), file) {
-		t.Fatalf("hive.log does not warn about %s: %q (%v)", file, logged, err)
+		t.Fatalf("inscribe.log does not warn about %s: %q (%v)", file, logged, err)
 	}
 }

@@ -1,5 +1,5 @@
 // Package bench measures the hook binary's latency on a large database. The
-// benchmarks are skipped unless HIVE_BENCH=1, because seeding takes minutes.
+// benchmarks are skipped unless INSCRIBE_BENCH=1, because seeding takes minutes.
 package bench
 
 import (
@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const (
@@ -38,7 +38,7 @@ func BenchmarkHookPrompt(b *testing.B) {
 // the hook must wait out busy_timeout and spool its event.
 func BenchmarkHookPromptLocked(b *testing.B) {
 	home, bin := setup(b)
-	st, err := store.Open(filepath.Join(home, "hive.db"), false)
+	st, err := store.Open(filepath.Join(home, "inscribe.db"), false)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -66,15 +66,15 @@ func BenchmarkHookPromptLocked(b *testing.B) {
 // setup seeds (once, cached under .cache) and builds the hook binary.
 func setup(b *testing.B) (home, bin string) {
 	b.Helper()
-	if os.Getenv("HIVE_BENCH") != "1" {
-		b.Skip("set HIVE_BENCH=1 to run the hook benchmarks")
+	if os.Getenv("INSCRIBE_BENCH") != "1" {
+		b.Skip("set INSCRIBE_BENCH=1 to run the hook benchmarks")
 	}
 	home = filepath.Join(".cache", "seed-home")
 	if err := seed(home); err != nil {
 		b.Fatal(err)
 	}
-	bin = filepath.Join(b.TempDir(), "hive")
-	build := exec.Command("go", "build", "-o", bin, "../cmd/hive")
+	bin = filepath.Join(b.TempDir(), "inscribe")
+	build := exec.Command("go", "build", "-o", bin, "../cmd/inscribe")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		b.Fatalf("build: %v\n%s", err, out)
@@ -87,7 +87,7 @@ func measure(b *testing.B, bin, home string) {
 	durs := make([]time.Duration, 0, b.N)
 	for range b.N {
 		cmd := exec.Command(bin, "hook", "--agent", "claude-code", "UserPromptSubmit")
-		cmd.Env = append(os.Environ(), "HIVE_HOME="+home)
+		cmd.Env = append(os.Environ(), "INSCRIBE_HOME="+home)
 		cmd.Stdin = bytes.NewReader(promptPayload)
 		var out bytes.Buffer
 		cmd.Stdout = &out
@@ -121,7 +121,7 @@ func seed(home string) error {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err
 	}
-	st, err := store.Open(filepath.Join(home, "hive.db"), false)
+	st, err := store.Open(filepath.Join(home, "inscribe.db"), false)
 	if err != nil {
 		return err
 	}

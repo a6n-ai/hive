@@ -14,20 +14,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/consolidate"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
+	"github.com/a6n-ai/inscribe/model"
 	_ "modernc.org/sqlite"
 )
 
 var binPath string
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "hive-e2e-")
+	dir, err := os.MkdirTemp("", "inscribe-e2e-")
 	if err != nil {
 		panic(err)
 	}
-	binPath = filepath.Join(dir, "hive")
+	binPath = filepath.Join(dir, "inscribe")
 	if out, err := exec.Command("go", "build", "-o", binPath, ".").CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "build failed: %v\n%s", err, out)
 		os.Exit(1)
@@ -37,13 +37,13 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// runCLI runs the built binary with HIVE_HOME set to home. extraEnv entries
+// runCLI runs the built binary with INSCRIBE_HOME set to home. extraEnv entries
 // override the inherited environment; background spawns are off unless extraEnv
-// sets HIVE_TEST_NO_SPAWN=0.
+// sets INSCRIBE_TEST_NO_SPAWN=0.
 func runCLI(t *testing.T, home, stdin string, extraEnv []string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := exec.Command(binPath, args...)
-	cmd.Env = append(append(os.Environ(), "HIVE_HOME="+home, "HIVE_TEST_NO_SPAWN=1"), extraEnv...)
+	cmd.Env = append(append(os.Environ(), "INSCRIBE_HOME="+home, "INSCRIBE_TEST_NO_SPAWN=1"), extraEnv...)
 	cmd.Stdin = strings.NewReader(stdin)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
@@ -64,7 +64,7 @@ func runOK(t *testing.T, home, stdin string, args ...string) string {
 	t.Helper()
 	out, errOut, code := runCLI(t, home, stdin, nil, args...)
 	if code != 0 {
-		t.Fatalf("hive %v: exit %d: %s", args, code, errOut)
+		t.Fatalf("inscribe %v: exit %d: %s", args, code, errOut)
 	}
 	return out
 }
@@ -110,23 +110,23 @@ func TestHookMalformedInputExitsZero(t *testing.T) {
 			t.Errorf("input %.20q: exit %d, stdout %q", in, code, out)
 		}
 	}
-	logged, err := os.ReadFile(filepath.Join(home, "hive.log"))
+	logged, err := os.ReadFile(filepath.Join(home, "inscribe.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n := strings.Count(string(logged), "\n"); n != len(inputs) {
-		t.Fatalf("hive.log has %d lines, want %d", n, len(inputs))
+		t.Fatalf("inscribe.log has %d lines, want %d", n, len(inputs))
 	}
 }
 
 func TestHookDisabled(t *testing.T) {
 	home := t.TempDir()
-	out, _, code := runCLI(t, home, `{"session_id":"s"}`, []string{"HIVE_DISABLED=1"}, "hook", "--agent", "claude-code", "SessionStart")
+	out, _, code := runCLI(t, home, `{"session_id":"s"}`, []string{"INSCRIBE_DISABLED=1"}, "hook", "--agent", "claude-code", "SessionStart")
 	if code != 0 || out != "" {
 		t.Fatalf("exit %d, stdout %q", code, out)
 	}
 	if entries, _ := os.ReadDir(home); len(entries) != 0 {
-		t.Fatalf("HIVE_DISABLED created %d entries", len(entries))
+		t.Fatalf("INSCRIBE_DISABLED created %d entries", len(entries))
 	}
 }
 
@@ -162,7 +162,7 @@ func TestCUJ6SecretNeverStored(t *testing.T) {
 	secret := "sk-ant-" + "api03-" + strings.Repeat("Q", 30)
 	hookOK(t, home, map[string]any{"session_id": "s4", "cwd": proj, "hook_event_name": "UserPromptSubmit",
 		"prompt": "export ANTHROPIC_API_KEY=" + secret}, "UserPromptSubmit")
-	for _, name := range []string{"hive.db", "hive.db-wal"} {
+	for _, name := range []string{"inscribe.db", "inscribe.db-wal"} {
 		b, err := os.ReadFile(filepath.Join(home, name))
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -227,12 +227,12 @@ func TestImportCommand(t *testing.T) {
 
 func TestRetentionApplyYes(t *testing.T) {
 	home := t.TempDir()
-	h, err := hive.Open(hive.Options{Home: home})
+	h, err := inscribe.Open(inscribe.Options{Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
 	old := time.Now().AddDate(0, 0, -400).UnixMilli()
-	if err := h.Capture(context.Background(), hive.Event{TS: old, Agent: "claude-code", Session: "old", Project: "/p",
+	if err := h.Capture(context.Background(), inscribe.Event{TS: old, Agent: "claude-code", Session: "old", Project: "/p",
 		Kind: model.Prompt, PromptText: "a prompt from long ago"}); err != nil {
 		t.Fatal(err)
 	}
@@ -260,12 +260,12 @@ func fakeAgent(t *testing.T) string {
 // seedSession stores n prompts through the library, so tests start no hook processes.
 func seedSession(t *testing.T, home, session string, n int) {
 	t.Helper()
-	h, err := hive.Open(hive.Options{Home: home})
+	h, err := inscribe.Open(inscribe.Options{Home: home})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := range n {
-		e := hive.Event{TS: time.Now().UnixMilli() + int64(i), Agent: "claude-code", Session: session, Project: "/p",
+		e := inscribe.Event{TS: time.Now().UnixMilli() + int64(i), Agent: "claude-code", Session: session, Project: "/p",
 			Kind: model.Prompt, PromptText: fmt.Sprintf("prompt %d about deploys", i)}
 		if err := h.Capture(context.Background(), e); err != nil {
 			t.Fatal(err)
@@ -278,7 +278,7 @@ func seedSession(t *testing.T, home, session string, n int) {
 
 func runRows(t *testing.T, home string) int {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(home, "hive.db"))
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func sessionEnd(t *testing.T, home, session, agentPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := []string{"HIVE_TEST_HEADLESS=" + agentPath, "HIVE_TEST_NO_SPAWN=0"}
+	env := []string{"INSCRIBE_TEST_HEADLESS=" + agentPath, "INSCRIBE_TEST_NO_SPAWN=0"}
 	if _, errOut, code := runCLI(t, home, string(payload), env, "hook", "--agent", "claude-code", "SessionEnd"); code != 0 {
 		t.Fatalf("hook exit %d: %s", code, errOut)
 	}
@@ -337,7 +337,7 @@ func fieldValue(out, key string) string {
 func TestCUJ5ConsolidateAndUndo(t *testing.T) {
 	home := t.TempDir()
 	seedSession(t, home, "cuj5", 60)
-	out, errOut, code := runCLI(t, home, "", []string{"HIVE_TEST_HEADLESS=" + fakeAgent(t), "FAKE_ADD=1"},
+	out, errOut, code := runCLI(t, home, "", []string{"INSCRIBE_TEST_HEADLESS=" + fakeAgent(t), "FAKE_ADD=1"},
 		"consolidate", "--session", "cuj5", "--agent", "claude-code")
 	if code != 0 || !strings.Contains(out, "status=ok applied=1") {
 		t.Fatalf("consolidate: exit %d, out %q, err %q", code, out, errOut)
@@ -357,7 +357,7 @@ func TestCUJ5ConsolidateAndUndo(t *testing.T) {
 func TestTwoConsolidationsOneRuns(t *testing.T) {
 	home := t.TempDir()
 	seedSession(t, home, "race", 25)
-	env := append(os.Environ(), "HIVE_HOME="+home, "HIVE_TEST_HEADLESS="+fakeAgent(t), "FAKE_SLEEP=1")
+	env := append(os.Environ(), "INSCRIBE_HOME="+home, "INSCRIBE_TEST_HEADLESS="+fakeAgent(t), "FAKE_SLEEP=1")
 	var outs [2]bytes.Buffer
 	var cmds []*exec.Cmd
 	for i := range outs {
@@ -413,7 +413,7 @@ func TestInstallCodexAndGemini(t *testing.T) {
 	if err := os.WriteFile(geminiFile, []byte(`{"theme":"dark"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out := runOK(t, home, "", "install", "--agent", "codex", "--settings", codexFile); !strings.Contains(out, "approve the hive hooks") {
+	if out := runOK(t, home, "", "install", "--agent", "codex", "--settings", codexFile); !strings.Contains(out, "approve the inscribe hooks") {
 		t.Fatalf("codex install did not say to approve hooks: %q", out)
 	}
 	runOK(t, home, "", "install", "--agent", "gemini", "--settings", geminiFile)
@@ -431,7 +431,7 @@ func TestInstallCodexAndGemini(t *testing.T) {
 	}
 	runOK(t, home, "", "uninstall", "--agent", "codex", "--settings", codexFile)
 	if strings.Contains(readText(t, codexFile), "hook --agent codex") {
-		t.Fatal("codex uninstall left hive hooks")
+		t.Fatal("codex uninstall left inscribe hooks")
 	}
 }
 
@@ -440,7 +440,7 @@ func TestDoctorWarnsGeminiHooksDisabled(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(fakeHome, ".gemini"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	settings := `{"hooksConfig":{"enabled":false},"hooks":{"BeforeAgent":[{"matcher":"*","hooks":[{"name":"hive","type":"command","command":"/bin/hive hook --agent gemini BeforeAgent"}]}]}}`
+	settings := `{"hooksConfig":{"enabled":false},"hooks":{"BeforeAgent":[{"matcher":"*","hooks":[{"name":"inscribe","type":"command","command":"/bin/inscribe hook --agent gemini BeforeAgent"}]}]}}`
 	if err := os.WriteFile(filepath.Join(fakeHome, ".gemini", "settings.json"), []byte(settings), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +454,7 @@ func TestDoctorWarnsGeminiHooksDisabled(t *testing.T) {
 
 func TestVersionDefault(t *testing.T) {
 	out := runOK(t, t.TempDir(), "", "version")
-	if strings.TrimSpace(out) != "hive dev (none, unknown)" {
+	if strings.TrimSpace(out) != "inscribe dev (none, unknown)" {
 		t.Fatalf("version = %q", out)
 	}
 }
@@ -505,7 +505,7 @@ func TestDoctorToleratesJSONC(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("doctor exit %d: %s", code, errOut)
 	}
-	for _, want := range []string{"gemini: settings.json has comments; hive install cannot edit it safely", "database:"} {
+	for _, want := range []string{"gemini: settings.json has comments; inscribe install cannot edit it safely", "database:"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("doctor output lacks %q:\n%s", want, out)
 		}
@@ -542,7 +542,7 @@ func TestNoConsolidateSpawnWithoutHeadless(t *testing.T) {
 	}
 	t.Cleanup(func() { spawnDetached = old })
 	for _, ev := range []string{"SessionStart", "SessionEnd"} {
-		if err := followUps(ev, hive.Event{Agent: "gemini", Session: "s1"}, true); err != nil {
+		if err := followUps(ev, inscribe.Event{Agent: "gemini", Session: "s1"}, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -552,7 +552,7 @@ func TestNoConsolidateSpawnWithoutHeadless(t *testing.T) {
 		}
 	}
 	spawned = nil
-	if err := followUps("SessionEnd", hive.Event{Agent: "claude-code", Session: "s1"}, true); err != nil {
+	if err := followUps("SessionEnd", inscribe.Event{Agent: "claude-code", Session: "s1"}, true); err != nil {
 		t.Fatal(err)
 	}
 	if len(spawned) != 1 || spawned[0][0] != "consolidate" {
@@ -581,7 +581,7 @@ func TestSetupYesAppliesDefaults(t *testing.T) {
 	}
 	settings := readText(t, filepath.Join(home, ".claude", "settings.json"))
 	if !strings.Contains(settings, "hook --agent claude-code SessionStart") {
-		t.Fatalf("claude settings lack Hive hooks:\n%s", settings)
+		t.Fatalf("claude settings lack Inscribe hooks:\n%s", settings)
 	}
 	if !strings.Contains(out, "database:") {
 		t.Errorf("output lacks the doctor report:\n%s", out)
@@ -595,7 +595,7 @@ func TestSetupNoTTYWithoutYesExits2(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("exit %d, want 2\n%s\n%s", code, out, errOut)
 	}
-	if !strings.Contains(out, "hive setup --yes") {
+	if !strings.Contains(out, "inscribe setup --yes") {
 		t.Errorf("output %q does not ask for --yes", out)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".claude", "settings.json")); err == nil {
@@ -618,7 +618,7 @@ func TestSetupYesTwiceIdempotent(t *testing.T) {
 		t.Errorf("second setup changed settings:\n%s\n---\n%s", first, second)
 	}
 	if n := strings.Count(second, "hook --agent claude-code"); n != 6 {
-		t.Errorf("hive hooks = %d, want 6", n)
+		t.Errorf("inscribe hooks = %d, want 6", n)
 	}
 }
 
@@ -651,7 +651,7 @@ func TestSetupDevNullStdinExits2(t *testing.T) {
 	}
 	defer func() { _ = devNull.Close() }()
 	cmd := exec.Command(binPath, "setup")
-	cmd.Env = append(append(os.Environ(), "HIVE_HOME="+home), env...)
+	cmd.Env = append(append(os.Environ(), "INSCRIBE_HOME="+home), env...)
 	cmd.Stdin = devNull
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
@@ -663,7 +663,7 @@ func TestSetupDevNullStdinExits2(t *testing.T) {
 	if strings.Contains(out.String()+errOut.String(), "TTY") {
 		t.Errorf("setup tried to open a terminal:\n%s", errOut.String())
 	}
-	if !strings.Contains(out.String(), "- ") || !strings.Contains(out.String(), "hive setup --yes") {
+	if !strings.Contains(out.String(), "- ") || !strings.Contains(out.String(), "inscribe setup --yes") {
 		t.Errorf("output lacks the plan or the --yes hint:\n%s", out.String())
 	}
 }
@@ -679,7 +679,7 @@ func TestSetupInvalidConfigExits1NamesFile(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\n%s\n%s", code, out, errOut)
 	}
-	if !strings.Contains(errOut, cfg) || !strings.Contains(errOut, "hive setup: cannot read") {
+	if !strings.Contains(errOut, cfg) || !strings.Contains(errOut, "inscribe setup: cannot read") {
 		t.Errorf("stderr %q does not name %s and the setup failure", errOut, cfg)
 	}
 }

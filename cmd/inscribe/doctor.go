@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/agent/hookjson"
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/scrub"
-	"github.com/a6n-ai/hive/internal/store"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/agent/hookjson"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/scrub"
+	"github.com/a6n-ai/inscribe/internal/store"
 )
 
 // doctorAgents are the agents doctor reports on, in print order.
@@ -26,7 +26,7 @@ func doctorCmd(stdout io.Writer) error {
 		}
 	}
 
-	dbPath := filepath.Join(home, "hive.db")
+	dbPath := filepath.Join(home, "inscribe.db")
 	if st, err := store.Open(dbPath, true); err != nil {
 		fmt.Fprintf(stdout, "database: %s: %v\n", dbPath, err)
 	} else {
@@ -44,7 +44,7 @@ func doctorCmd(stdout io.Writer) error {
 	return nil
 }
 
-// doctorAgent reports one agent's settings file: its Hive hooks, the warnings
+// doctorAgent reports one agent's settings file: its Inscribe hooks, the warnings
 // that apply to an agent with hooks installed, and any claude-mem hooks.
 func doctorAgent(stdout io.Writer, name string) error {
 	ad, err := agent.Get(name)
@@ -56,20 +56,20 @@ func doctorAgent(stdout io.Writer, name string) error {
 	if err != nil {
 		return err
 	}
-	hiveHooks, claudeMem, commented, err := countHooks(raw, name)
+	inscribeHooks, claudeMem, commented, err := countHooks(raw, name)
 	if err != nil {
 		fmt.Fprintf(stdout, "%s hooks: cannot read %s: %v\n", name, settings, err)
 		return nil
 	}
-	fmt.Fprintf(stdout, "%s hooks: %d hive hook(s) in %s\n", name, hiveHooks, settings)
+	fmt.Fprintf(stdout, "%s hooks: %d inscribe hook(s) in %s\n", name, inscribeHooks, settings)
 	if commented {
-		fmt.Fprintf(stdout, "%s: %s has comments; hive install cannot edit it safely\n", name, filepath.Base(settings))
+		fmt.Fprintf(stdout, "%s: %s has comments; inscribe install cannot edit it safely\n", name, filepath.Base(settings))
 	}
-	if hiveHooks > 0 {
+	if inscribeHooks > 0 {
 		printWarnings(stdout, ad, raw)
 	}
 	if claudeMem > 0 {
-		fmt.Fprintf(stdout, "WARNING: %s has %d claude-mem hook(s); Hive replaces claude-mem, so remove them\n", settings, claudeMem)
+		fmt.Fprintf(stdout, "WARNING: %s has %d claude-mem hook(s); Inscribe replaces claude-mem, so remove them\n", settings, claudeMem)
 	}
 	return nil
 }
@@ -94,10 +94,10 @@ func readSettings(settings string) ([]byte, error) {
 	return raw, err
 }
 
-// countHooks counts the hook commands in a settings file that run Hive for
+// countHooks counts the hook commands in a settings file that run Inscribe for
 // agent name, and the ones that run claude-mem. commented reports comments in
 // the file, which Inspect reads through.
-func countHooks(raw []byte, name string) (hive, claudeMem int, commented bool, err error) {
+func countHooks(raw []byte, name string) (inscribe, claudeMem int, commented bool, err error) {
 	if raw == nil {
 		return 0, 0, false, nil
 	}
@@ -117,14 +117,14 @@ func countHooks(raw []byte, name string) (hive, claudeMem int, commented bool, e
 			for _, h := range g.Hooks {
 				switch {
 				case agent.IsHookCommand(h.Command, name):
-					hive++
+					inscribe++
 				case strings.Contains(h.Command, "claude-mem"):
 					claudeMem++
 				}
 			}
 		}
 	}
-	return hive, claudeMem, commented, nil
+	return inscribe, claudeMem, commented, nil
 }
 
 // scrubberSelfTest checks that one secret is redacted and one ordinary

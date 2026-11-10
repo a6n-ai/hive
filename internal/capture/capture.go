@@ -1,4 +1,4 @@
-// Package capture is Hive's write path: scrub, apply the storage policy,
+// Package capture is Inscribe's write path: scrub, apply the storage policy,
 // derive events, store, and run extractors, in one transaction.
 package capture
 
@@ -14,11 +14,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/extract"
-	"github.com/a6n-ai/hive/internal/scrub"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/extract"
+	"github.com/a6n-ai/inscribe/internal/scrub"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 type Pipeline struct {

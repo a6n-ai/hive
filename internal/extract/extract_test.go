@@ -8,12 +8,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/capture"
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/extract"
-	"github.com/a6n-ai/hive/internal/scrub"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/extract"
+	"github.com/a6n-ai/inscribe/internal/scrub"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 type harness struct {
@@ -24,7 +24,7 @@ type harness struct {
 
 func newHarness(t *testing.T, cfg config.Config, extractors ...extract.Extractor) *harness {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "hive.db"), false)
+	st, err := store.Open(filepath.Join(t.TempDir(), "inscribe.db"), false)
 	if err != nil {
 		t.Fatal(err)
 	}

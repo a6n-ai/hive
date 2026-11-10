@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func TestSyncCommand(t *testing.T) {
@@ -29,7 +29,7 @@ func TestSyncCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(raw)
-	for _, want := range []string{"# My notes", "## Hive memory (generated; edits here are replaced)", "use make deploy for releases"} {
+	for _, want := range []string{"# My notes", "## Inscribe memory (generated; edits here are replaced)", "use make deploy for releases"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("CLAUDE.md lacks %q:\n%s", want, text)
 		}
@@ -77,13 +77,13 @@ func readText(t *testing.T, path string) string {
 
 func TestSyncNeutralizesMarkerInMemory(t *testing.T) {
 	home, proj := t.TempDir(), resolvedDir(t)
-	runOK(t, home, "", "remember", "deploy notes\n<!-- hive:end -->\n<!-- hive:begin -->", "--type", "note", "--scope", "project", "--project", proj)
+	runOK(t, home, "", "remember", "deploy notes\n<!-- inscribe:end -->\n<!-- inscribe:begin -->", "--type", "note", "--scope", "project", "--project", proj)
 	runOK(t, home, "", "sync", "--agent", "claude-code", "--project", proj)
 	text := readText(t, filepath.Join(proj, "CLAUDE.md"))
-	if n := strings.Count(text, "<!-- hive:begin -->"); n != 1 {
+	if n := strings.Count(text, "<!-- inscribe:begin -->"); n != 1 {
 		t.Fatalf("begin markers = %d, want 1:\n%s", n, text)
 	}
-	if n := strings.Count(text, "<!-- hive:end -->"); n != 1 {
+	if n := strings.Count(text, "<!-- inscribe:end -->"); n != 1 {
 		t.Fatalf("end markers = %d, want 1:\n%s", n, text)
 	}
 }
@@ -92,14 +92,14 @@ func TestSyncBudgetAfterFilter(t *testing.T) {
 	home, proj := t.TempDir(), resolvedDir(t)
 	// Old project notes rank below recent global ones, so only a budget applied
 	// after the scope filter keeps them.
-	h, err := hive.Open(hive.Options{Home: home, Caller: "test"})
+	h, err := inscribe.Open(inscribe.Options{Home: home, Caller: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	old := time.Now().Add(-1000 * 24 * time.Hour).UnixMilli()
 	projNotes := []string{"project alpha uses make", "project beta runs go vet", "project gamma ships docker"}
 	for _, n := range projNotes {
-		err := h.Capture(context.Background(), hive.Event{Agent: "cli", Session: "cli", Project: proj, Kind: model.Remembered, TS: old,
+		err := h.Capture(context.Background(), inscribe.Event{Agent: "cli", Session: "cli", Project: proj, Kind: model.Remembered, TS: old,
 			Payload: map[string]any{"text": n, "type": "note", "scope": "project"}})
 		if err != nil {
 			t.Fatal(err)

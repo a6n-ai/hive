@@ -25,7 +25,7 @@ func TestInstallNestedWithExtraFields(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"theme":"dark","hooks":{"BeforeAgent":[{"matcher":"x","hooks":[{"type":"command","command":"other-tool"}]}]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	entries := []Entry{{Event: "BeforeAgent", Command: "/bin/hive hook --agent gemini BeforeAgent", Extra: map[string]any{"matcher": "*", "name": "hive"}}}
+	entries := []Entry{{Event: "BeforeAgent", Command: "/bin/inscribe hook --agent gemini BeforeAgent", Extra: map[string]any{"matcher": "*", "name": "inscribe"}}}
 	if err := Install(path, entries, Owns("gemini")); err != nil {
 		t.Fatal(err)
 	}
@@ -35,15 +35,15 @@ func TestInstallNestedWithExtraFields(t *testing.T) {
 	}
 	groups := m["hooks"].(map[string]any)["BeforeAgent"].([]any)
 	if len(groups) != 2 {
-		t.Fatalf("want the other tool's group kept and one hive group added, got %d groups", len(groups))
+		t.Fatalf("want the other tool's group kept and one inscribe group added, got %d groups", len(groups))
 	}
-	hive := groups[1].(map[string]any)
-	if hive["matcher"] != "*" {
-		t.Fatalf("group matcher = %v, want *", hive["matcher"])
+	inscribe := groups[1].(map[string]any)
+	if inscribe["matcher"] != "*" {
+		t.Fatalf("group matcher = %v, want *", inscribe["matcher"])
 	}
-	hook := hive["hooks"].([]any)[0].(map[string]any)
-	if hook["name"] != "hive" || hook["type"] != "command" {
-		t.Fatalf("hook = %v, want name hive and type command", hook)
+	hook := inscribe["hooks"].([]any)[0].(map[string]any)
+	if hook["name"] != "inscribe" || hook["type"] != "command" {
+		t.Fatalf("hook = %v, want name inscribe and type command", hook)
 	}
 	if err := Uninstall(path, Owns("gemini")); err != nil {
 		t.Fatal(err)
@@ -56,15 +56,15 @@ func TestInstallNestedWithExtraFields(t *testing.T) {
 
 func TestOwnsMatcherAcrossBinaries(t *testing.T) {
 	owns := Owns("codex")
-	if !owns("/old/place/hive hook --agent codex SessionStart") {
+	if !owns("/old/place/inscribe hook --agent codex SessionStart") {
 		t.Fatal("codex hook from another binary path not recognised")
 	}
-	if owns("/bin/hive hook --agent gemini SessionStart") {
+	if owns("/bin/inscribe hook --agent gemini SessionStart") {
 		t.Fatal("gemini hook recognised as codex")
 	}
 	path := filepath.Join(t.TempDir(), "hooks.json")
-	one := []Entry{{Event: "Stop", Command: "/old/hive hook --agent codex Stop"}}
-	two := []Entry{{Event: "Stop", Command: "/new/hive hook --agent codex Stop"}}
+	one := []Entry{{Event: "Stop", Command: "/old/inscribe hook --agent codex Stop"}}
+	two := []Entry{{Event: "Stop", Command: "/new/inscribe hook --agent codex Stop"}}
 	if err := Install(path, one, owns); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestOwnsMatcherAcrossBinaries(t *testing.T) {
 	if len(groups) != 1 {
 		t.Fatalf("reinstall from a new binary left %d groups, want 1", len(groups))
 	}
-	if cmd := groups[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"]; cmd != "/new/hive hook --agent codex Stop" {
+	if cmd := groups[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"]; cmd != "/new/inscribe hook --agent codex Stop" {
 		t.Fatalf("command = %v, want the new binary", cmd)
 	}
 }

@@ -1,6 +1,6 @@
 package store
 
-import "github.com/a6n-ai/hive/model"
+import "github.com/a6n-ai/inscribe/model"
 
 // FindMemory returns the memory for a (type, scope_kind, scope, key), or nil when absent.
 func (s *Store) FindMemory(typ model.MemoryType, sk model.ScopeKind, scope, key string) (*model.Memory, error) {

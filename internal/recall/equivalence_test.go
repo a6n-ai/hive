@@ -6,9 +6,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/a6n-ai/hive/index"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/index"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func equivalenceFixture(t *testing.T) *store.Store {

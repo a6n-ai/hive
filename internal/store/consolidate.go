@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // RunRecord is one consolidation run's row in consolidation_runs.

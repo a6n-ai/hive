@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/store"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/store"
 )
 
 // Report counts what a prune changed, or would change in a dry run.
@@ -88,7 +88,7 @@ func Due(st *store.Store, now time.Time) (bool, error) {
 }
 
 // Paused reports whether cfg differs from the settings last applied. Pruning
-// waits for `hive retention apply` to confirm. With no record there is no pause.
+// waits for `inscribe retention apply` to confirm. With no record there is no pause.
 func Paused(st *store.Store, cfg config.RetentionCfg) (bool, error) {
 	v, ok, err := st.GetMeta(appliedKey)
 	if err != nil || !ok {

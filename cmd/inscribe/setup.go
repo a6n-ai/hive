@@ -11,7 +11,7 @@ import (
 
 	"github.com/charmbracelet/x/term"
 
-	"github.com/a6n-ai/hive/internal/setup"
+	"github.com/a6n-ai/inscribe/internal/setup"
 )
 
 // setupCmd detects the machine, collects choices, and applies them. It returns
@@ -28,7 +28,7 @@ func setupCmd(args []string, stdin io.Reader, stdout io.Writer) (int, error) {
 	}
 	d, err := setup.Detect(env)
 	if err != nil {
-		return 1, fmt.Errorf("hive setup: cannot read the existing config (fix or remove it, then run setup again): %w", err)
+		return 1, fmt.Errorf("inscribe setup: cannot read the existing config (fix or remove it, then run setup again): %w", err)
 	}
 	c := setup.Defaults(d)
 	switch {
@@ -54,7 +54,7 @@ func setupCmd(args []string, stdin io.Reader, stdout io.Writer) (int, error) {
 
 func printPlanAndHint(stdout io.Writer, d setup.Detected, c setup.Choices) (int, error) {
 	printPlan(stdout, d, c)
-	_, err := fmt.Fprintln(stdout, "run 'hive setup --yes' to apply these defaults")
+	_, err := fmt.Fprintln(stdout, "run 'inscribe setup --yes' to apply these defaults")
 	return 2, err
 }
 
@@ -67,7 +67,7 @@ func setupEnv() (setup.Env, error) {
 	if err != nil {
 		return setup.Env{}, err
 	}
-	return setup.Env{Home: home, HiveBin: bin, LookPath: exec.LookPath, ReadFile: os.ReadFile}, nil
+	return setup.Env{Home: home, InscribeBin: bin, LookPath: exec.LookPath, ReadFile: os.ReadFile}, nil
 }
 
 // isTerminal reports whether r is a terminal, not merely a character device like /dev/null.

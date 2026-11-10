@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/a6n-ai/hive/agent"
+	"github.com/a6n-ai/inscribe/agent"
 )
 
 // settingsCmd parses the --agent and --settings flags shared by install and

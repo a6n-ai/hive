@@ -5,9 +5,9 @@ import (
 	"context"
 	"slices"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // Extractor reacts to events of the kinds it names, inside the capture

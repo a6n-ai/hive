@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 var (
@@ -26,7 +26,7 @@ func rememberCmd(args []string, stdout io.Writer) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: hive remember TEXT [--type T] [--scope S] [--project P]")
+		return errors.New("usage: inscribe remember TEXT [--type T] [--scope S] [--project P]")
 	}
 	t, ok := memoryTypes[*typ]
 	if !ok {
@@ -36,7 +36,7 @@ func rememberCmd(args []string, stdout io.Writer) error {
 	if !ok {
 		return fmt.Errorf("unknown scope %q", *scope)
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive", Project: *project})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe", Project: *project})
 	if err != nil {
 		return err
 	}

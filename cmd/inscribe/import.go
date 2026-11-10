@@ -8,12 +8,12 @@ import (
 	"io"
 	"time"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/importer"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/importer"
 )
 
 func importCmd(args []string, stdout io.Writer) error {
-	const usageText = "usage: hive import claude-code [--since YYYY-MM-DD] [--project P] [--root DIR]"
+	const usageText = "usage: inscribe import claude-code [--since YYYY-MM-DD] [--project P] [--root DIR]"
 	if len(args) == 0 || args[0] != "claude-code" {
 		return errors.New(usageText)
 	}
@@ -32,7 +32,7 @@ func importCmd(args []string, stdout io.Writer) error {
 		}
 		o.Since = t
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
 	}

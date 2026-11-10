@@ -4,10 +4,10 @@ import (
 	"context"
 	"slices"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/internal/text"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/internal/text"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 type skillX struct{ callerIsScout bool }

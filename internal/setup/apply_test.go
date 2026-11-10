@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/config"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/config"
 )
 
 // fakeRunner records every command. It fails commands starting with failOn,
-// and reports the hive MCP server as present once it has been added.
+// and reports the inscribe MCP server as present once it has been added.
 type fakeRunner struct {
 	calls  []string
 	failOn string
@@ -30,7 +30,7 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 	if strings.HasPrefix(line, "claude mcp add") {
 		f.added = true
 	}
-	if line == "claude mcp get hive" && !f.added {
+	if line == "claude mcp get inscribe" && !f.added {
 		return "", errors.New("exit status 1")
 	}
 	return "", nil
@@ -38,20 +38,20 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 
 func TestMCPAddUsesUserScope(t *testing.T) {
 	env, _ := testEnv(t, nil, nil)
-	d := Detected{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), HiveBin: "/opt/hive/bin/hive", Current: config.Defaults()}
+	d := Detected{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), InscribeBin: "/opt/inscribe/bin/inscribe", Current: config.Defaults()}
 	plan := Plan(d, Choices{Retention: "rolling", MCP: true})
 	if len(plan) != 1 || !strings.Contains(plan[0].Desc, "all projects") {
 		t.Fatalf("plan = %+v, want one mcp-add described as for all projects", plan)
 	}
 	f := &fakeRunner{}
 	Apply(context.Background(), env, plan, f.run)
-	want := []string{"claude mcp get hive", "claude mcp add --scope user hive -- /opt/hive/bin/hive mcp"}
+	want := []string{"claude mcp get inscribe", "claude mcp add --scope user inscribe -- /opt/inscribe/bin/inscribe mcp"}
 	if !reflect.DeepEqual(f.calls, want) {
 		t.Fatalf("calls = %q, want %q", f.calls, want)
 	}
 	f.calls = nil
 	Apply(context.Background(), env, plan, f.run)
-	if !reflect.DeepEqual(f.calls, []string{"claude mcp get hive"}) {
+	if !reflect.DeepEqual(f.calls, []string{"claude mcp get inscribe"}) {
 		t.Errorf("second run calls = %q, want only the get check", f.calls)
 	}
 }
@@ -59,12 +59,12 @@ func TestMCPAddUsesUserScope(t *testing.T) {
 func TestApplyRunsActionsInOrder(t *testing.T) {
 	env, home := testEnv(t, nil, nil)
 	settings := filepath.Join(home, ".claude", "settings.json")
-	cfg := filepath.Join(home, ".hive", "config.toml")
+	cfg := filepath.Join(home, ".inscribe", "config.toml")
 	actions := []Action{
 		{Kind: "install-hooks", Agent: "claude-code", Files: []string{settings}},
 		{Kind: "disable-plugin", Command: []string{"claude", "plugin", "disable", "claude-mem@x"}},
 		{Kind: "write-config", Files: []string{cfg}, Keys: map[string]any{"retention.mode": "keep_all"}},
-		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", "/opt/hive/bin/hive", "mcp"}},
+		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "--scope", "user", "inscribe", "--", "/opt/inscribe/bin/inscribe", "mcp"}},
 	}
 	f := &fakeRunner{}
 	rep := Apply(context.Background(), env, actions, f.run)
@@ -76,12 +76,12 @@ func TestApplyRunsActionsInOrder(t *testing.T) {
 			t.Errorf("done[%d] = %s, want %s", i, a.Kind, actions[i].Kind)
 		}
 	}
-	want := []string{"claude plugin disable claude-mem@x", "claude mcp get hive", "claude mcp add --scope user hive -- /opt/hive/bin/hive mcp"}
+	want := []string{"claude plugin disable claude-mem@x", "claude mcp get inscribe", "claude mcp add --scope user inscribe -- /opt/inscribe/bin/inscribe mcp"}
 	if !reflect.DeepEqual(f.calls, want) {
 		t.Errorf("calls = %q, want %q", f.calls, want)
 	}
 	if !strings.Contains(readFile(t, settings), "hook --agent claude-code") {
-		t.Error("install-hooks wrote no Hive hooks")
+		t.Error("install-hooks wrote no Inscribe hooks")
 	}
 	if !strings.Contains(readFile(t, cfg), `mode = "keep_all"`) {
 		t.Error("write-config did not set retention.mode")
@@ -90,11 +90,11 @@ func TestApplyRunsActionsInOrder(t *testing.T) {
 
 func TestApplyContinuesAfterFailure(t *testing.T) {
 	env, home := testEnv(t, nil, nil)
-	cfg := filepath.Join(home, ".hive", "config.toml")
+	cfg := filepath.Join(home, ".inscribe", "config.toml")
 	actions := []Action{
 		{Kind: "disable-plugin", Command: []string{"claude", "plugin", "disable", "claude-mem@x"}},
 		{Kind: "write-config", Files: []string{cfg}, Keys: map[string]any{"consolidate.auto": true}},
-		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", "/opt/hive/bin/hive", "mcp"}},
+		{Kind: "mcp-add", Command: []string{"claude", "mcp", "add", "--scope", "user", "inscribe", "--", "/opt/inscribe/bin/inscribe", "mcp"}},
 	}
 	f := &fakeRunner{failOn: "claude plugin disable"}
 	rep := Apply(context.Background(), env, actions, f.run)
@@ -112,7 +112,7 @@ func TestApplyContinuesAfterFailure(t *testing.T) {
 func TestApplyTwiceIsIdempotent(t *testing.T) {
 	env, home := testEnv(t, nil, nil)
 	settings := filepath.Join(home, ".claude", "settings.json")
-	cfg := filepath.Join(home, ".hive", "config.toml")
+	cfg := filepath.Join(home, ".inscribe", "config.toml")
 	writeTestFile(t, settings, `{"enabledPlugins":{"claude-mem@x":true}}`)
 	proj := filepath.Join(home, ".claude", "projects", "-tmp-proj")
 	if err := os.MkdirAll(proj, 0o700); err != nil {
@@ -130,7 +130,7 @@ func TestApplyTwiceIsIdempotent(t *testing.T) {
 		ClaudeMemID: "claude-mem@x",
 		ConfigPath:  cfg,
 		HasHistory:  true,
-		HiveBin:     env.HiveBin,
+		InscribeBin: env.InscribeBin,
 		Current:     config.Defaults(),
 	}
 	c := Choices{Agents: []string{"claude-code"}, DisableClaudeMem: true, ImportSince: "all", Retention: "rolling", MCP: true}
@@ -151,7 +151,7 @@ func TestApplyTwiceIsIdempotent(t *testing.T) {
 		t.Errorf("events after second run = %d, want %d (non-zero)", n, events)
 	}
 	if n := strings.Count(settingsOnce, "hook --agent claude-code"); n != 6 {
-		t.Errorf("hive hooks = %d, want 6", n)
+		t.Errorf("inscribe hooks = %d, want 6", n)
 	}
 	adds := 0
 	for _, c := range f.calls {
@@ -174,12 +174,12 @@ func cfgPathOrEmpty(t *testing.T, path string) string {
 
 func countEvents(t *testing.T) int {
 	t.Helper()
-	h, err := hive.Open(hive.Options{})
+	h, err := inscribe.Open(inscribe.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = h.Close() }()
-	evs, err := h.QueryEvents(context.Background(), hive.EventFilter{})
+	evs, err := h.QueryEvents(context.Background(), inscribe.EventFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}

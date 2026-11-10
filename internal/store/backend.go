@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // Backend is the storage seam: every *Store method used outside this package.

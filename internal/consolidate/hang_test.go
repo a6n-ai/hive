@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/consolidate"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
 )
 
 // TestHeadlessKillsHungChild: a grandchild that keeps stdout open must not hold

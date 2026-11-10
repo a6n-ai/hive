@@ -8,22 +8,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/importer"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/importer"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const fixtureRoot = "testdata/projects"
 
-// openHome opens a Hive on a temp home with skills enabled, so skill_use memories form.
-func openHome(t *testing.T) (*hive.Hive, string) {
+// openHome opens an Inscribe on a temp home with skills enabled, so skill_use memories form.
+func openHome(t *testing.T) (*inscribe.Inscribe, string) {
 	t.Helper()
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("[skills]\nenabled = true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := hive.Open(hive.Options{Home: home, Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Home: home, Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func openHome(t *testing.T) (*hive.Hive, string) {
 	return h, home
 }
 
-func importFixture(t *testing.T, h *hive.Hive, o importer.Options) hive.ImportReport {
+func importFixture(t *testing.T, h *inscribe.Inscribe, o importer.Options) inscribe.ImportReport {
 	t.Helper()
 	if o.Root == "" {
 		o.Root = fixtureRoot
@@ -43,7 +43,7 @@ func importFixture(t *testing.T, h *hive.Hive, o importer.Options) hive.ImportRe
 	return rep
 }
 
-func memoryTypes(t *testing.T, h *hive.Hive) map[model.MemoryType]int {
+func memoryTypes(t *testing.T, h *inscribe.Inscribe) map[model.MemoryType]int {
 	t.Helper()
 	ms, err := h.List(context.Background(), store.ListFilter{})
 	if err != nil {
@@ -91,7 +91,7 @@ func TestImportScrubs(t *testing.T) {
 	if err := h.Close(); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"hive.db", "hive.db-wal"} {
+	for _, name := range []string{"inscribe.db", "inscribe.db-wal"} {
 		b, err := os.ReadFile(filepath.Join(home, name))
 		if os.IsNotExist(err) {
 			continue

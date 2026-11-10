@@ -1,4 +1,4 @@
-// Package claudecode adapts Claude Code hook payloads to Hive events.
+// Package claudecode adapts Claude Code hook payloads to Inscribe events.
 package claudecode
 
 import (
@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/capture"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const name = "claude-code"
@@ -25,7 +25,7 @@ var eventKinds = map[string]model.EventKind{
 	"SessionEnd":         model.SessionEnd,
 }
 
-// toolFields maps Claude Code tool names to Hive's canonical tool name and the
+// toolFields maps Claude Code tool names to Inscribe's canonical tool name and the
 // tool_input field kept in the payload under key.
 var toolFields = map[string]struct{ tool, input, key string }{
 	"Read":         {"read", "file_path", "path"},
@@ -75,7 +75,7 @@ func (a *Adapter) Parse(event string, stdin []byte) (model.Event, error) {
 	return e, nil
 }
 
-// NormalizeTool maps a Claude Code tool call to Hive's canonical tool name and
+// NormalizeTool maps a Claude Code tool call to Inscribe's canonical tool name and
 // payload. errText is the failure text when failed is true.
 func NormalizeTool(name string, input map[string]any, failed bool, errText string) (string, map[string]any) {
 	if name == "Bash" {

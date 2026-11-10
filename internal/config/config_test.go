@@ -39,7 +39,7 @@ func TestDefaultsWithNoFiles(t *testing.T) {
 func TestProjectOverridesGlobal(t *testing.T) {
 	home, proj := t.TempDir(), t.TempDir()
 	write(t, filepath.Join(home, "config.toml"), "[recall]\nsession_budget = 500\n")
-	write(t, filepath.Join(proj, ".hive.toml"), "[recall]\nsession_budget = 200\n")
+	write(t, filepath.Join(proj, ".inscribe.toml"), "[recall]\nsession_budget = 200\n")
 	c, _, err := Load(home, proj)
 	if err != nil {
 		t.Fatal(err)
@@ -88,12 +88,12 @@ func TestSkillsEnabledAcceptsBoolOrString(t *testing.T) {
 	}
 }
 
-// A project's .hive.toml comes from whatever repository is checked out, so it
+// A project's .inscribe.toml comes from whatever repository is checked out, so it
 // must not weaken the user's own settings.
 func TestProjectCannotWeakenSecurity(t *testing.T) {
 	home, proj := t.TempDir(), t.TempDir()
 	write(t, filepath.Join(home, "config.toml"), "[exclude]\npaths = [\"/a\"]\n[scrub]\npatterns = [\"X1\"]\n")
-	write(t, filepath.Join(proj, ".hive.toml"), `[exclude]
+	write(t, filepath.Join(proj, ".inscribe.toml"), `[exclude]
 paths = []
 [scrub]
 patterns = ["Y2"]
@@ -131,13 +131,13 @@ session_budget = 100
 }
 
 func TestHome(t *testing.T) {
-	t.Setenv("HIVE_HOME", "/tmp/hh")
+	t.Setenv("INSCRIBE_HOME", "/tmp/hh")
 	if Home() != "/tmp/hh" {
 		t.Fatal(Home())
 	}
-	t.Setenv("HIVE_HOME", "")
+	t.Setenv("INSCRIBE_HOME", "")
 	h, _ := os.UserHomeDir()
-	if Home() != filepath.Join(h, ".hive") {
+	if Home() != filepath.Join(h, ".inscribe") {
 		t.Fatal(Home())
 	}
 }

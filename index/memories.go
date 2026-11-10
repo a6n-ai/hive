@@ -3,8 +3,8 @@ package index
 import (
 	"strings"
 
-	"github.com/a6n-ai/hive/internal/text"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/text"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // MemoryFields are the text fields a memory is indexed by. They weigh the same

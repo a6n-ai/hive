@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/consolidate"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
 )
 
 func TestPromptMarksInputUntrusted(t *testing.T) {

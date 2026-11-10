@@ -1,4 +1,4 @@
-module github.com/a6n-ai/hive
+module github.com/a6n-ai/inscribe
 
 go 1.27
 

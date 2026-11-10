@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/index"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/internal/text"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/index"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/internal/text"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const (
@@ -46,8 +46,8 @@ var (
 
 func requireIndexBench(b *testing.B) {
 	b.Helper()
-	if os.Getenv("HIVE_BENCH") != "1" {
-		b.Skip("set HIVE_BENCH=1 to run the index benchmarks")
+	if os.Getenv("INSCRIBE_BENCH") != "1" {
+		b.Skip("set INSCRIBE_BENCH=1 to run the index benchmarks")
 	}
 }
 
@@ -131,10 +131,10 @@ func reportDistribution(b *testing.B, durs []time.Duration, target time.Duration
 	b.Logf("p50 %v, p99 %v over %d queries", p50, p99, len(s))
 	if p99 >= target {
 		msg := fmt.Sprintf("p99 %v is not below the %v target", p99, target)
-		if targetFails(p99, target, os.Getenv("HIVE_BENCH_STRICT") == "1") {
+		if targetFails(p99, target, os.Getenv("INSCRIBE_BENCH_STRICT") == "1") {
 			b.Error(msg)
 		} else {
-			b.Log(msg + " (set HIVE_BENCH_STRICT=1 to fail on it)")
+			b.Log(msg + " (set INSCRIBE_BENCH_STRICT=1 to fail on it)")
 		}
 	}
 }
@@ -193,7 +193,7 @@ func seedRecallStore(b *testing.B, home string) *store.Store {
 		b.Fatal(err)
 	}
 	_, statErr := os.Stat(marker)
-	st, err := store.Open(filepath.Join(home, "hive.db"), false)
+	st, err := store.Open(filepath.Join(home, "inscribe.db"), false)
 	if err != nil {
 		b.Fatal(err)
 	}

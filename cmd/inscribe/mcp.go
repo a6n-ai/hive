@@ -4,8 +4,8 @@ import (
 	"context"
 	"flag"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/mcpserver"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/mcpserver"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -17,7 +17,7 @@ func mcpCmd(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	h, err := hive.Open(hive.Options{Caller: "mcp", Project: *project})
+	h, err := inscribe.Open(inscribe.Options{Caller: "mcp", Project: *project})
 	if err != nil {
 		return err
 	}

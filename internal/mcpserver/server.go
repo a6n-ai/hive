@@ -1,4 +1,4 @@
-// Package mcpserver serves Hive's memory over the Model Context Protocol.
+// Package mcpserver serves Inscribe's memory over the Model Context Protocol.
 // Tools return errors as tool results, never panics, and cannot purge.
 package mcpserver
 
@@ -9,9 +9,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -41,8 +41,8 @@ type idIn struct {
 
 // New returns a server with the remember, recall, forget and why tools. Calls
 // act on project only; memories of other projects are invisible to them.
-func New(h *hive.Hive, project string) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "hive", Version: "dev"}, nil)
+func New(h *inscribe.Inscribe, project string) *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "inscribe", Version: "dev"}, nil)
 	mcp.AddTool(s, &mcp.Tool{Name: "remember", Description: "Store a memory for this project or globally."}, rememberTool(h, project))
 	mcp.AddTool(s, &mcp.Tool{Name: "recall", Description: "Recall memories relevant to a query or the session start."}, recallTool(h, project))
 	mcp.AddTool(s, &mcp.Tool{Name: "forget", Description: "Mark a memory forgotten. Data is kept."}, forgetTool(h, project))
@@ -66,7 +66,7 @@ func textResult(s string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
 }
 
-func rememberTool(h *hive.Hive, project string) mcp.ToolHandlerFor[rememberIn, any] {
+func rememberTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[rememberIn, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in rememberIn) (*mcp.CallToolResult, any, error) {
 		if in.Text == "" {
 			return nil, nil, errors.New("text is required")
@@ -92,7 +92,7 @@ func rememberTool(h *hive.Hive, project string) mcp.ToolHandlerFor[rememberIn, a
 }
 
 // memoryKind checks the type and scope arguments and applies their defaults.
-func memoryKind(in rememberIn) (hive.MemoryType, hive.ScopeKind, error) {
+func memoryKind(in rememberIn) (inscribe.MemoryType, inscribe.ScopeKind, error) {
 	t := model.MemoryType(in.Type)
 	if in.Type == "" {
 		t = model.Note
@@ -121,7 +121,7 @@ func memoryKind(in rememberIn) (hive.MemoryType, hive.ScopeKind, error) {
 	return t, scope, nil
 }
 
-func recallTool(h *hive.Hive, project string) mcp.ToolHandlerFor[recallIn, any] {
+func recallTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[recallIn, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in recallIn) (*mcp.CallToolResult, any, error) {
 		if in.Budget < 0 || in.Budget > maxBudget {
 			return nil, nil, fmt.Errorf("budget must be 0 to %d", maxBudget)
@@ -133,7 +133,7 @@ func recallTool(h *hive.Hive, project string) mcp.ToolHandlerFor[recallIn, any] 
 		if err != nil {
 			return nil, nil, err
 		}
-		q := hive.Query{Project: proj, Text: in.Query, Budget: in.Budget, Mode: recall.SessionStart}
+		q := inscribe.Query{Project: proj, Text: in.Query, Budget: in.Budget, Mode: recall.SessionStart}
 		if in.Query != "" {
 			q.Mode = recall.Prompt
 		}
@@ -145,7 +145,7 @@ func recallTool(h *hive.Hive, project string) mcp.ToolHandlerFor[recallIn, any] 
 	}
 }
 
-func forgetTool(h *hive.Hive, project string) mcp.ToolHandlerFor[idIn, any] {
+func forgetTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[idIn, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, any, error) {
 		if err := requireMemory(ctx, h, project, in.ID); err != nil {
 			return nil, nil, err
@@ -158,7 +158,7 @@ func forgetTool(h *hive.Hive, project string) mcp.ToolHandlerFor[idIn, any] {
 	}
 }
 
-func whyTool(h *hive.Hive, project string) mcp.ToolHandlerFor[idIn, any] {
+func whyTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[idIn, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in idIn) (*mcp.CallToolResult, any, error) {
 		if err := requireMemory(ctx, h, project, in.ID); err != nil {
 			return nil, nil, err
@@ -177,12 +177,12 @@ func whyTool(h *hive.Hive, project string) mcp.ToolHandlerFor[idIn, any] {
 
 // requireMemory fails unless a memory with id exists in any status and is
 // visible to project (its own, global, or a file inside it).
-func requireMemory(ctx context.Context, h *hive.Hive, project, id string) error {
+func requireMemory(ctx context.Context, h *inscribe.Inscribe, project, id string) error {
 	if id == "" {
 		return errors.New("id is required")
 	}
 	all := []model.Status{model.Active, model.Candidate, model.Superseded, model.Stale, model.Forgotten}
-	ms, err := h.List(ctx, hive.ListFilter{Statuses: all, Project: project})
+	ms, err := h.List(ctx, inscribe.ListFilter{Statuses: all, Project: project})
 	if err != nil {
 		return err
 	}

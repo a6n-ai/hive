@@ -11,24 +11,24 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/a6n-ai/hive/internal/config"
+	"github.com/a6n-ai/inscribe/internal/config"
 )
 
 // testEnv returns an Env whose files and PATH are fakes, with HOME and
-// HIVE_HOME under a temp dir so nothing touches the real home.
+// INSCRIBE_HOME under a temp dir so nothing touches the real home.
 func testEnv(t *testing.T, onPath []string, files map[string]string) (Env, string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("HIVE_HOME", filepath.Join(home, ".hive"))
+	t.Setenv("INSCRIBE_HOME", filepath.Join(home, ".inscribe"))
 	t.Setenv("CODEX_HOME", "")
 	byPath := map[string][]byte{}
 	for rel, body := range files {
 		byPath[filepath.Join(home, rel)] = []byte(body)
 	}
 	return Env{
-		Home:    home,
-		HiveBin: "/opt/hive/bin/hive",
+		Home:        home,
+		InscribeBin: "/opt/inscribe/bin/inscribe",
 		LookPath: func(name string) (string, error) {
 			if slices.Contains(onPath, name) {
 				return "/usr/bin/" + name, nil
@@ -47,7 +47,7 @@ func testEnv(t *testing.T, onPath []string, files map[string]string) (Env, strin
 func TestDetectFindsAgentsAndClaudeMem(t *testing.T) {
 	env, home := testEnv(t, []string{"claude", "gemini"}, map[string]string{
 		".claude/settings.json": `{"enabledPlugins":{"claude-mem@thedotmack":true,"other@x":true},` +
-			`"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/x/hive hook --agent claude-code Stop"}]}]}}`,
+			`"hooks":{"Stop":[{"hooks":[{"type":"command","command":"/x/inscribe hook --agent claude-code Stop"}]}]}}`,
 		".gemini/settings.json": `{}`,
 	})
 	if err := os.MkdirAll(filepath.Join(home, ".claude", "projects", "p"), 0o700); err != nil {
@@ -74,11 +74,11 @@ func TestDetectFindsAgentsAndClaudeMem(t *testing.T) {
 	if !d.HasHistory {
 		t.Error("HasHistory = false, want true")
 	}
-	if d.ConfigPath != filepath.Join(home, ".hive", "config.toml") {
+	if d.ConfigPath != filepath.Join(home, ".inscribe", "config.toml") {
 		t.Errorf("ConfigPath = %q", d.ConfigPath)
 	}
-	if d.HiveBin != env.HiveBin {
-		t.Errorf("HiveBin = %q", d.HiveBin)
+	if d.InscribeBin != env.InscribeBin {
+		t.Errorf("InscribeBin = %q", d.InscribeBin)
 	}
 }
 
@@ -110,8 +110,8 @@ func TestPlanOrderAndContents(t *testing.T) {
 			{Name: "claude-code", Found: true, Settings: "/h/.claude/settings.json"},
 			{Name: "gemini", Found: true, Settings: "/h/.gemini/settings.json"},
 		},
-		ClaudeMem: true, ClaudeMemID: "claude-mem@thedotmack", ConfigPath: "/h/.hive/config.toml",
-		HasHistory: true, HiveBin: "/bin/hive",
+		ClaudeMem: true, ClaudeMemID: "claude-mem@thedotmack", ConfigPath: "/h/.inscribe/config.toml",
+		HasHistory: true, InscribeBin: "/bin/inscribe",
 	}
 	c := Choices{Agents: []string{"claude-code"}, DisableClaudeMem: true, ImportSince: "90d", Retention: "keep_all", Consolidate: true, MCP: true}
 	plan := Plan(d, c)
@@ -132,7 +132,7 @@ func TestPlanOrderAndContents(t *testing.T) {
 	if !reflect.DeepEqual(plan[3].Keys, map[string]any{"retention.mode": "keep_all", "consolidate.auto": true}) {
 		t.Errorf("write-config keys = %v", plan[3].Keys)
 	}
-	if !reflect.DeepEqual(plan[4].Command, []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", "/bin/hive", "mcp"}) {
+	if !reflect.DeepEqual(plan[4].Command, []string{"claude", "mcp", "add", "--scope", "user", "inscribe", "--", "/bin/inscribe", "mcp"}) {
 		t.Errorf("mcp command = %v", plan[4].Command)
 	}
 	for _, a := range plan {
@@ -158,7 +158,7 @@ func TestWarningsRollingImport(t *testing.T) {
 
 func TestSetConfigKeysKeepsCommentsAndOtherKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	orig := "# my hive settings\n[recall]\n# keep my budget\nsession_budget = 100\n\n[retention]\n# how long\nmode = \"rolling\"\nevent_days = 90\n"
+	orig := "# my inscribe settings\n[recall]\n# keep my budget\nsession_budget = 100\n\n[retention]\n# how long\nmode = \"rolling\"\nevent_days = 90\n"
 	if err := os.WriteFile(path, []byte(orig), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestSetConfigKeysKeepsCommentsAndOtherKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := readFile(t, path)
-	for _, want := range []string{"# my hive settings", "# keep my budget", "session_budget = 100", "# how long",
+	for _, want := range []string{"# my inscribe settings", "# keep my budget", "session_budget = 100", "# how long",
 		`mode = "keep_all"`, "event_days = 90", "[consolidate]", "auto = true"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("config lacks %q:\n%s", want, out)
@@ -210,10 +210,10 @@ func readFile(t *testing.T, path string) string {
 
 func TestDefaultsKeepExistingConfig(t *testing.T) {
 	env, home := testEnv(t, nil, nil)
-	if err := os.MkdirAll(filepath.Join(home, ".hive"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".inscribe"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ".hive", "config.toml"),
+	if err := os.WriteFile(filepath.Join(home, ".inscribe", "config.toml"),
 		[]byte("[retention]\nmode = \"keep_all\"\n\n[consolidate]\nauto = true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestSetConfigKeysAtomicWithBackup(t *testing.T) {
 	if err := SetConfigKeys(path, map[string]any{"retention.mode": "keep_all"}); err != nil {
 		t.Fatal(err)
 	}
-	backup := path + ".hive-backup"
+	backup := path + ".inscribe-backup"
 	if got := readFile(t, backup); got != orig {
 		t.Errorf("backup = %q, want the original", got)
 	}

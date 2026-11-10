@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -34,8 +34,8 @@ func TestParseGolden(t *testing.T) {
 		{"UserPromptSubmit.json", "UserPromptSubmit", model.Prompt, "", map[string]any{}, "fix the failing login test"},
 		{"PostToolUse_Bash.json", "PostToolUse", model.PostTool, "shell", map[string]any{"command": "go test ./...", "exit_code": 0}, ""},
 		{"PostToolUseFailure_Bash.json", "PostToolUseFailure", model.PostTool, "shell", map[string]any{"command": "go test ./...", "exit_code": 1,
-			"error": "TypeError: cannot read properties of undefined (reading 'map') at /tmp/hive-fixture-proj/auth.ts:12:5\n    at next"}, ""},
-		{"PostToolUse_Edit.json", "PostToolUse", model.PostTool, "edit", map[string]any{"path": "/tmp/hive-fixture-proj/auth.ts"}, ""},
+			"error": "TypeError: cannot read properties of undefined (reading 'map') at /tmp/inscribe-fixture-proj/auth.ts:12:5\n    at next"}, ""},
+		{"PostToolUse_Edit.json", "PostToolUse", model.PostTool, "edit", map[string]any{"path": "/tmp/inscribe-fixture-proj/auth.ts"}, ""},
 		{"PostToolUse_Skill.json", "PostToolUse", model.PostTool, "skill", map[string]any{"skill": "superpowers:brainstorming"}, ""},
 		{"Stop.json", "Stop", model.TurnEnd, "", map[string]any{}, ""},
 		{"SessionEnd.json", "SessionEnd", model.SessionEnd, "", map[string]any{}, ""},
@@ -83,7 +83,7 @@ func TestReplyGolden(t *testing.T) {
 	}
 }
 
-const bin = "/usr/local/bin/hive"
+const bin = "/usr/local/bin/inscribe"
 
 func readJSON(t *testing.T, path string) map[string]any {
 	t.Helper()
@@ -98,7 +98,7 @@ func readJSON(t *testing.T, path string) map[string]any {
 	return m
 }
 
-func hiveEntries(m map[string]any, event string) int {
+func inscribeEntries(m map[string]any, event string) int {
 	hooks, _ := m["hooks"].(map[string]any)
 	groups, _ := hooks[event].([]any)
 	n := 0
@@ -126,8 +126,8 @@ func TestInstallIdempotentKeepsOthers(t *testing.T) {
 	}
 	m := readJSON(t, path)
 	for _, ev := range installEvents {
-		if n := hiveEntries(m, ev); n != 1 {
-			t.Errorf("%s: %d hive entries, want 1", ev, n)
+		if n := inscribeEntries(m, ev); n != 1 {
+			t.Errorf("%s: %d inscribe entries, want 1", ev, n)
 		}
 	}
 	if !strings.Contains(string(mustRead(t, path)), "other-tool check") || m["model"] != "opus" {
@@ -141,7 +141,7 @@ func TestInstallIdempotentKeepsOthers(t *testing.T) {
 	if got := readJSON(t, path); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after uninstall:\n got  %v\n want %v", got, want)
 	}
-	if _, err := os.Stat(path + ".hive-backup"); err != nil {
+	if _, err := os.Stat(path + ".inscribe-backup"); err != nil {
 		t.Fatalf("no backup written: %v", err)
 	}
 }
@@ -160,7 +160,7 @@ func TestInstallMissingFileCreates(t *testing.T) {
 	if err := New().Install(path, bin); err != nil {
 		t.Fatal(err)
 	}
-	if n := hiveEntries(readJSON(t, path), "SessionStart"); n != 1 {
+	if n := inscribeEntries(readJSON(t, path), "SessionStart"); n != 1 {
 		t.Fatalf("SessionStart entries = %d", n)
 	}
 }
@@ -199,8 +199,8 @@ func TestInstallFollowsSymlink(t *testing.T) {
 	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("settings.json is no longer a symlink: %v", err)
 	}
-	if n := hiveEntries(readJSON(t, target), "SessionStart"); n != 1 {
-		t.Fatalf("target has %d hive entries, want 1", n)
+	if n := inscribeEntries(readJSON(t, target), "SessionStart"); n != 1 {
+		t.Fatalf("target has %d inscribe entries, want 1", n)
 	}
 }
 
@@ -231,21 +231,21 @@ func TestInstallKeepsOtherCommandsVerbatim(t *testing.T) {
 
 func TestInstallQuotesBinaryWithSpace(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
-	if err := New().Install(path, "/Applications/My Tools/hive"); err != nil {
+	if err := New().Install(path, "/Applications/My Tools/inscribe"); err != nil {
 		t.Fatal(err)
 	}
 	cmd := readJSON(t, path)["hooks"].(map[string]any)["SessionStart"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)["command"].(string)
-	if want := "'/Applications/My Tools/hive' hook --agent claude-code"; !strings.HasPrefix(cmd, want) {
+	if want := "'/Applications/My Tools/inscribe' hook --agent claude-code"; !strings.HasPrefix(cmd, want) {
 		t.Fatalf("command = %q, want prefix %q", cmd, want)
 	}
 }
 
 func TestReinstallFromNewPathReplaces(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
-	if err := New().Install(path, "/a/hive"); err != nil {
+	if err := New().Install(path, "/a/inscribe"); err != nil {
 		t.Fatal(err)
 	}
-	if err := New().Install(path, "/b/hive"); err != nil {
+	if err := New().Install(path, "/b/inscribe"); err != nil {
 		t.Fatal(err)
 	}
 	m := readJSON(t, path)
@@ -259,8 +259,8 @@ func TestReinstallFromNewPathReplaces(t *testing.T) {
 				}
 			}
 		}
-		if len(cmds) != 1 || cmds[0] != "/b/hive hook --agent claude-code "+ev {
-			t.Errorf("%s: hive commands = %v, want exactly /b/hive", ev, cmds)
+		if len(cmds) != 1 || cmds[0] != "/b/inscribe hook --agent claude-code "+ev {
+			t.Errorf("%s: inscribe commands = %v, want exactly /b/inscribe", ev, cmds)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-// Package gemini adapts Gemini CLI hook payloads to Hive events. It is written
+// Package gemini adapts Gemini CLI hook payloads to Inscribe events. It is written
 // from the Gemini CLI documentation and has not been checked against a live CLI.
 package gemini
 
@@ -9,10 +9,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/capture"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const name = "gemini"
@@ -109,7 +109,7 @@ func orMap(a, b any) map[string]any {
 	return m
 }
 
-// normalize maps a Gemini CLI tool call to Hive's canonical tool name and payload.
+// normalize maps a Gemini CLI tool call to Inscribe's canonical tool name and payload.
 func normalize(tool string, input map[string]any, resp any) (string, map[string]any) {
 	out := map[string]any{}
 	switch tool {

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/text"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/text"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // relevance is the share of terms that match, taking the better of the

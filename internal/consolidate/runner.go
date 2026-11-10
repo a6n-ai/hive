@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a6n-ai/hive/agent"
+	"github.com/a6n-ai/inscribe/agent"
 )
 
 const (
@@ -26,7 +26,7 @@ type Runner interface {
 }
 
 // Headless runs an agent's one-shot command with the prompt on stdin. Its
-// environment carries HIVE_DISABLED=1 so the child's own hooks record nothing.
+// environment carries INSCRIBE_DISABLED=1 so the child's own hooks record nothing.
 type Headless struct {
 	Spec    agent.HeadlessSpec
 	Timeout time.Duration
@@ -44,7 +44,7 @@ func (h Headless) Run(ctx context.Context, prompt string) (string, error) {
 	defer cancel()
 	var out capped
 	cmd := exec.CommandContext(ctx, h.Spec.Command[0], h.Spec.Command[1:]...) //nolint:gosec // G204: the command comes from an adapter, not from input
-	dir, err := os.MkdirTemp("", "hive-headless-")
+	dir, err := os.MkdirTemp("", "inscribe-headless-")
 	if err != nil {
 		return "", err
 	}
@@ -53,7 +53,7 @@ func (h Headless) Run(ctx context.Context, prompt string) (string, error) {
 	cmd.WaitDelay = 5 * time.Second // a grandchild that keeps stdout open must not hold the run
 	cmd.Stdin = strings.NewReader(prompt)
 	cmd.Stdout = &out
-	cmd.Env = append(os.Environ(), "HIVE_DISABLED=1")
+	cmd.Env = append(os.Environ(), "INSCRIBE_DISABLED=1")
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("consolidate: agent run: %w", err)
 	}

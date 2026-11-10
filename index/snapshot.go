@@ -13,7 +13,7 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
-const snapshotMagic = "HIVEIDX1"
+const snapshotMagic = "INSCIDX1"
 
 var (
 	// ErrStale means the snapshot was built for another schema, field set, or dimension.

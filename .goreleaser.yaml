@@ -1,11 +1,11 @@
 version: 2
 
-project_name: hive
+project_name: inscribe
 
 builds:
-  - id: hive
-    main: ./cmd/hive
-    binary: hive
+  - id: inscribe
+    main: ./cmd/inscribe
+    binary: inscribe
     env:
       - CGO_ENABLED=0
     goos: [darwin, linux]
@@ -29,14 +29,14 @@ homebrew_casks:
       name: homebrew-a6n
       token: '{{ index .Env "HOMEBREW_TAP_GITHUB_TOKEN" }}'
     skip_upload: '{{ if not (index .Env "HOMEBREW_TAP_GITHUB_TOKEN") }}true{{ end }}'
-    homepage: https://github.com/a6n-ai/hive
+    homepage: https://github.com/a6n-ai/inscribe
     description: Shared memory for coding agents
     license: Apache-2.0
     binaries:
-      - hive
+      - inscribe
     hooks:
       post:
         install_steps: |
           on_macos do
-            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/hive"]
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/inscribe"]
           end

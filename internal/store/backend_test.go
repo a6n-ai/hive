@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func changeTestMemory(id string) *model.Memory {
@@ -38,7 +38,7 @@ func upsertOne(t *testing.T, st *Store, m *model.Memory) string {
 }
 
 func TestMigration0002AppliesOnV1Database(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "hive.db")
+	path := filepath.Join(t.TempDir(), "inscribe.db")
 	raw, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		t.Fatal(err)

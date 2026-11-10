@@ -1,4 +1,4 @@
-// Package setup detects the machine, plans the steps of hive setup, and applies them.
+// Package setup detects the machine, plans the steps of inscribe setup, and applies them.
 package setup
 
 import (
@@ -9,20 +9,20 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/config"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/config"
 
-	_ "github.com/a6n-ai/hive/agent/claudecode"
-	_ "github.com/a6n-ai/hive/agent/codex"
-	_ "github.com/a6n-ai/hive/agent/gemini"
+	_ "github.com/a6n-ai/inscribe/agent/claudecode"
+	_ "github.com/a6n-ai/inscribe/agent/codex"
+	_ "github.com/a6n-ai/inscribe/agent/gemini"
 )
 
 // Env is what Detect reads from the machine; tests inject fakes.
 type Env struct {
-	Home     string
-	HiveBin  string
-	LookPath func(string) (string, error)
-	ReadFile func(string) ([]byte, error)
+	Home        string
+	InscribeBin string
+	LookPath    func(string) (string, error)
+	ReadFile    func(string) ([]byte, error)
 }
 
 type AgentInfo struct {
@@ -36,7 +36,7 @@ type Detected struct {
 	ClaudeMemID string
 	ConfigPath  string
 	HasHistory  bool
-	HiveBin     string
+	InscribeBin string
 	Current     config.Config
 }
 
@@ -67,7 +67,7 @@ var agentBinary = map[string]string{"claude-code": "claude", "codex": "codex", "
 var unverified = map[string]bool{"gemini": true}
 
 func Detect(env Env) (Detected, error) {
-	d := Detected{ConfigPath: filepath.Join(config.Home(), "config.toml"), HiveBin: env.HiveBin}
+	d := Detected{ConfigPath: filepath.Join(config.Home(), "config.toml"), InscribeBin: env.InscribeBin}
 	cur, _, err := config.Load(config.Home(), "")
 	if err != nil {
 		return d, err
@@ -129,24 +129,24 @@ func Plan(d Detected, c Choices) []Action {
 	var out []Action
 	for _, a := range d.Agents {
 		if slices.Contains(c.Agents, a.Name) {
-			out = append(out, Action{Kind: "install-hooks", Desc: "install Hive hooks for " + a.Name, Files: []string{a.Settings}, Agent: a.Name})
+			out = append(out, Action{Kind: "install-hooks", Desc: "install Inscribe hooks for " + a.Name, Files: []string{a.Settings}, Agent: a.Name})
 		}
 	}
 	if c.DisableClaudeMem && d.ClaudeMem {
-		out = append(out, Action{Kind: "disable-plugin", Desc: "disable claude-mem, which Hive replaces",
+		out = append(out, Action{Kind: "disable-plugin", Desc: "disable claude-mem, which Inscribe replaces",
 			Files: []string{d.Agents[0].Settings}, Command: []string{"claude", "plugin", "disable", d.ClaudeMemID}})
 	}
 	if c.ImportSince != "" && d.HasHistory {
 		out = append(out, Action{Kind: "import", Desc: "import Claude Code history, " + importLabel(c.ImportSince),
-			Files: []string{filepath.Join(filepath.Dir(d.ConfigPath), "hive.db")}, Since: c.ImportSince})
+			Files: []string{filepath.Join(filepath.Dir(d.ConfigPath), "inscribe.db")}, Since: c.ImportSince})
 	}
 	if keys := changedKeys(d, c); len(keys) > 0 {
 		out = append(out, Action{Kind: "write-config", Desc: "write changed retention and consolidation settings",
 			Files: []string{d.ConfigPath}, Keys: keys})
 	}
 	if c.MCP {
-		out = append(out, Action{Kind: "mcp-add", Desc: "add Hive as an MCP server to Claude Code for all projects",
-			Command: []string{"claude", "mcp", "add", "--scope", "user", "hive", "--", d.HiveBin, "mcp"}})
+		out = append(out, Action{Kind: "mcp-add", Desc: "add Inscribe as an MCP server to Claude Code for all projects",
+			Command: []string{"claude", "mcp", "add", "--scope", "user", "inscribe", "--", d.InscribeBin, "mcp"}})
 	}
 	return out
 }

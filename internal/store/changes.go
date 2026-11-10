@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // LatestChange is the newest memory update or deletion time, or 0 for an empty store.

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/RoaringBitmap/roaring/v2"
-	"github.com/a6n-ai/hive/internal/text"
+	"github.com/a6n-ai/inscribe/internal/text"
 )
 
 const (

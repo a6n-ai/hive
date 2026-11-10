@@ -11,20 +11,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/extract"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/extract"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const maxHookInput = 8 << 20
 
-// hookCmd always exits 0 with no output on failure, so a broken Hive never
-// breaks the agent. Errors go to hive.log instead.
+// hookCmd always exits 0 with no output on failure, so a broken Inscribe never
+// breaks the agent. Errors go to inscribe.log instead.
 func hookCmd(args []string, stdin io.Reader, stdout io.Writer) int {
-	if os.Getenv("HIVE_DISABLED") == "1" {
+	if os.Getenv("INSCRIBE_DISABLED") == "1" {
 		return 0
 	}
 	home := config.Home()
@@ -61,7 +61,7 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive", Project: e.Project})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe", Project: e.Project})
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 // followUps starts the background work an event implies. The hook never waits for it.
 // Consolidation needs the agent to run headless, so it is skipped for agents
 // that cannot.
-func followUps(event string, e hive.Event, auto bool) error {
+func followUps(event string, e inscribe.Event, auto bool) error {
 	if ad, err := agent.Get(e.Agent); err == nil && len(ad.Headless("").Command) == 0 {
 		auto = false
 	}
@@ -112,29 +112,29 @@ func followUps(event string, e hive.Event, auto bool) error {
 
 // hookQuery picks what to recall for an event by its kind, so every agent's
 // event names reach the same recall. ok is false when the event should inject nothing.
-func hookQuery(e hive.Event, scrub func(string) string) (hive.Query, bool) {
+func hookQuery(e inscribe.Event, scrub func(string) string) (inscribe.Query, bool) {
 	switch e.Kind {
 	case model.SessionStart:
-		return hive.Query{Project: e.Project, Mode: recall.SessionStart}, true
+		return inscribe.Query{Project: e.Project, Mode: recall.SessionStart}, true
 	case model.Prompt:
-		return hive.Query{Project: e.Project, Text: e.PromptText, Mode: recall.Prompt}, true
+		return inscribe.Query{Project: e.Project, Text: e.PromptText, Mode: recall.Prompt}, true
 	case model.PostTool:
 		errText, _ := e.Payload["error"].(string)
 		if errText == "" {
-			return hive.Query{}, false
+			return inscribe.Query{}, false
 		}
-		return hive.Query{Project: e.Project, ErrorSignature: extract.Signature(scrub(errText)), Mode: recall.PostToolError}, true
+		return inscribe.Query{Project: e.Project, ErrorSignature: extract.Signature(scrub(errText)), Mode: recall.PostToolError}, true
 	}
-	return hive.Query{}, false
+	return inscribe.Query{}, false
 }
 
-// logLine appends one timestamped line to hive.log in home. Errors writing
+// logLine appends one timestamped line to inscribe.log in home. Errors writing
 // the log are dropped: there is nowhere left to report them.
 func logLine(home, format string, args ...any) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(home, "hive.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: the log path is under the user's HIVE_HOME
+	f, err := os.OpenFile(filepath.Join(home, "inscribe.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: the log path is under the user's INSCRIBE_HOME
 	if err != nil {
 		return
 	}

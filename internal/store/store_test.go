@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func openTemp(t *testing.T) (*Store, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "home", "hive.db")
+	path := filepath.Join(t.TempDir(), "home", "inscribe.db")
 	st, err := Open(path, false)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

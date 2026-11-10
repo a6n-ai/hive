@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	begin = "<!-- hive:begin -->"
-	end   = "<!-- hive:end -->"
+	begin = "<!-- inscribe:begin -->"
+	end   = "<!-- inscribe:end -->"
 )
 
 func TestWriteBlockAppendsCreatesReplaces(t *testing.T) {

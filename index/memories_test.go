@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func TestMemoryDocFieldsAndTags(t *testing.T) {

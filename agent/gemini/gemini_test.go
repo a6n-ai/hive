@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -101,11 +101,11 @@ func TestGeminiInstallKeepsOtherSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := New()
-	if err := a.Install(path, "/usr/local/bin/hive"); err != nil {
+	if err := a.Install(path, "/usr/local/bin/inscribe"); err != nil {
 		t.Fatal(err)
 	}
 	installed, _ := os.ReadFile(path)
-	for _, want := range []string{`"theme": "dark"`, `"mcpServers"`, `"other-tool"`, `"matcher": "*"`, `"name": "hive"`} {
+	for _, want := range []string{`"theme": "dark"`, `"mcpServers"`, `"other-tool"`, `"matcher": "*"`, `"name": "inscribe"`} {
 		if !strings.Contains(string(installed), want) {
 			t.Fatalf("missing %s in:\n%s", want, installed)
 		}
@@ -119,7 +119,7 @@ func TestGeminiInstallKeepsOtherSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)
-	if strings.Contains(string(after), "hive") || !strings.Contains(string(after), "other-tool") || !strings.Contains(string(after), `"theme"`) {
+	if strings.Contains(string(after), "inscribe") || !strings.Contains(string(after), "other-tool") || !strings.Contains(string(after), `"theme"`) {
 		t.Fatalf("uninstall did not restore other settings: %s", after)
 	}
 }

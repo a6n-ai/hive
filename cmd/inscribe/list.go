@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func listCmd(args []string, stdout io.Writer) error {
@@ -18,14 +18,14 @@ func listCmd(args []string, stdout io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	f := hive.ListFilter{Project: *project}
+	f := inscribe.ListFilter{Project: *project}
 	if *typ != "" {
 		f.Types = []model.MemoryType{model.MemoryType(*typ)}
 	}
 	if *status != "" {
 		f.Statuses = []model.Status{model.Status(*status)}
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive", Project: *project})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe", Project: *project})
 	if err != nil {
 		return err
 	}

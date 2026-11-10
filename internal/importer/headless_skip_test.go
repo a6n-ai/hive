@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/importer"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/importer"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // TestImportSkipsConsolidationTranscripts: a headless review transcript must not

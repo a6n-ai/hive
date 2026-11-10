@@ -13,7 +13,7 @@ func Lock(home string) (release func(), ok bool, err error) {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return nil, false, err
 	}
-	f, err := os.OpenFile(filepath.Join(home, "consolidate.lock"), os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // G304: the lock path is under HIVE_HOME
+	f, err := os.OpenFile(filepath.Join(home, "consolidate.lock"), os.O_CREATE|os.O_RDWR, 0o600) //nolint:gosec // G304: the lock path is under INSCRIBE_HOME
 	if err != nil {
 		return nil, false, err
 	}

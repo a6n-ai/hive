@@ -9,16 +9,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 var now = time.UnixMilli(1_800_000_000_000)
 
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "hive.db"), false)
+	st, err := store.Open(filepath.Join(t.TempDir(), "inscribe.db"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestRender(t *testing.T) {
 
 func TestRecallSkipsMarkUsedAfterLock(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "hive.db")
+	path := filepath.Join(t.TempDir(), "inscribe.db")
 	st, err := store.Open(path, false)
 	if err != nil {
 		t.Fatal(err)

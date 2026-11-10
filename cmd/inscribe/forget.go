@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/a6n-ai/hive"
+	"github.com/a6n-ai/inscribe"
 )
 
 func forgetCmd(args []string, stdout io.Writer) error {
@@ -18,9 +18,9 @@ func forgetCmd(args []string, stdout io.Writer) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: hive forget ID [--purge]")
+		return errors.New("usage: inscribe forget ID [--purge]")
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
 	}

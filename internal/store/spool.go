@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // openSpool opens a claimed spool file; a seam so tests can simulate a file that vanishes.
@@ -42,7 +42,7 @@ func (s *Store) Spool(e *model.Event) error {
 	line = append(line, '\n')
 	path := filepath.Join(dir, fmt.Sprintf("%d.jsonl", os.Getpid()))
 	for attempt := 0; attempt < 5; attempt++ {
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600) //nolint:gosec // G304: spool paths are under the user's HIVE_HOME
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600) //nolint:gosec // G304: spool paths are under the user's INSCRIBE_HOME
 		if err != nil {
 			return err
 		}
@@ -64,7 +64,7 @@ func (s *Store) Spool(e *model.Event) error {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		_ = f.Close()
 	}
-	return fmt.Errorf("hive: spool file %s kept moving", path)
+	return fmt.Errorf("inscribe: spool file %s kept moving", path)
 }
 
 func sameFile(f *os.File, path string) bool {

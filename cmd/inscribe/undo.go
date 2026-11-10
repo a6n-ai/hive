@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/a6n-ai/hive"
+	"github.com/a6n-ai/inscribe"
 )
 
 func undoCmd(args []string, stdout io.Writer) error {
@@ -16,9 +16,9 @@ func undoCmd(args []string, stdout io.Writer) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return errors.New("usage: hive undo RUN_ID")
+		return errors.New("usage: inscribe undo RUN_ID")
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
 	}

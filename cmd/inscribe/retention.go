@@ -9,17 +9,17 @@ import (
 	"io"
 	"strings"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/retention"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/retention"
 )
 
-const retentionUsage = "usage: hive retention apply [--yes] | hive retention auto"
+const retentionUsage = "usage: inscribe retention apply [--yes] | inscribe retention auto"
 
 func retentionCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(retentionUsage)
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func retentionCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 }
 
 // retentionApply shows a dry-run count, then applies it after a y answer (or at once with --yes).
-func retentionApply(ctx context.Context, h *hive.Hive, args []string, stdin io.Reader, stdout io.Writer) error {
+func retentionApply(ctx context.Context, h *inscribe.Inscribe, args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("retention apply", flag.ContinueOnError)
 	yes := fs.Bool("yes", false, "apply without asking")
 	if _, err := parseInterspersed(fs, args); err != nil {

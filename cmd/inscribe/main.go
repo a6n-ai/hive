@@ -1,4 +1,4 @@
-// Command hive is the Hive CLI: agent hooks and memory management.
+// Command inscribe is the Inscribe CLI: agent hooks and memory management.
 package main
 
 import (
@@ -7,14 +7,14 @@ import (
 	"io"
 	"os"
 
-	"github.com/a6n-ai/hive/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/capture"
 
-	_ "github.com/a6n-ai/hive/agent/claudecode"
-	_ "github.com/a6n-ai/hive/agent/codex"
-	_ "github.com/a6n-ai/hive/agent/gemini"
+	_ "github.com/a6n-ai/inscribe/agent/claudecode"
+	_ "github.com/a6n-ai/inscribe/agent/codex"
+	_ "github.com/a6n-ai/inscribe/agent/gemini"
 )
 
-const usage = `usage: hive <command> [args]
+const usage = `usage: inscribe <command> [args]
 commands: setup, hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, undo, sync, mcp, version`
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
@@ -31,7 +31,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "setup":
 		code, serr := setupCmd(args[1:], stdin, stdout)
 		if serr != nil {
-			fmt.Fprintln(stderr, "hive:", serr)
+			fmt.Fprintln(stderr, "inscribe:", serr)
 		}
 		return code
 	case "install":
@@ -68,7 +68,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
 	if err != nil {
-		fmt.Fprintln(stderr, "hive:", err)
+		fmt.Fprintln(stderr, "inscribe:", err)
 		return 1
 	}
 	return 0

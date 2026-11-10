@@ -1,4 +1,4 @@
-// Package agent is the seam between Hive and a coding agent: how an agent's
+// Package agent is the seam between Inscribe and a coding agent: how an agent's
 // hook payloads become events, what it is told back, and how its hooks are
 // installed. Each agent lives in its own subpackage and registers itself.
 package agent
@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
-// Caps describes what an agent's hooks allow Hive to do.
+// Caps describes what an agent's hooks allow Inscribe to do.
 type Caps struct {
 	CanInject, CanBlock, HasPreTool, HasSessionEnd bool
 }
@@ -25,7 +25,7 @@ type Adapter interface {
 	Reply(event string, lines []recall.Line) []byte
 	Capabilities() Caps
 	SettingsPath() string
-	Install(settingsPath, hiveBin string) error
+	Install(settingsPath, inscribeBin string) error
 	Uninstall(settingsPath string) error
 	InstructionsFile() string
 	SkillDirs() []string
@@ -63,7 +63,7 @@ func HookCommand(bin, agentName, event string) string {
 	return ShellQuote(bin) + " hook --agent " + agentName + " " + event
 }
 
-// IsHookCommand reports whether cmd is a hook Hive installed for agentName,
+// IsHookCommand reports whether cmd is a hook Inscribe installed for agentName,
 // from any binary path.
 func IsHookCommand(cmd, agentName string) bool {
 	return strings.Contains(cmd, " hook --agent "+agentName+" ")
@@ -136,7 +136,7 @@ func ResponseText(resp any) string {
 }
 
 // Warner is implemented by an adapter that reports problems with its own
-// settings file, given the file's bytes, when Hive hooks are installed.
+// settings file, given the file's bytes, when Inscribe hooks are installed.
 type Warner interface {
 	Warnings(settings []byte) []string
 }

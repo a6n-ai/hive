@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const (
@@ -21,7 +21,7 @@ var keptKeys = map[string]bool{
 	"error": true, "rule": true, "text": true, "type": true, "scope": true,
 }
 
-// ApplyPolicy enforces Hive's storage limits on e in place.
+// ApplyPolicy enforces Inscribe's storage limits on e in place.
 func ApplyPolicy(e *model.Event) {
 	e.PromptText = truncRunes(e.PromptText, maxPromptRunes)
 	if e.Payload == nil {

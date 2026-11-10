@@ -1,4 +1,4 @@
-package hive
+package inscribe
 
 import (
 	"bytes"
@@ -13,21 +13,21 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
-func openIndexed(t *testing.T, home string) *Hive {
+func openIndexed(t *testing.T, home string) *Inscribe {
 	t.Helper()
-	h, err := Open(Options{Home: home, Caller: "hive", Index: true})
+	h, err := Open(Options{Home: home, Caller: "inscribe", Index: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return h
 }
 
-func indexLen(t *testing.T, h *Hive) int {
+func indexLen(t *testing.T, h *Inscribe) int {
 	t.Helper()
 	if h.index == nil {
 		t.Fatal("Options.Index did not build an index")
@@ -35,7 +35,7 @@ func indexLen(t *testing.T, h *Hive) int {
 	return h.index.Len()
 }
 
-func promptIDs(t *testing.T, h *Hive, text string) []string {
+func promptIDs(t *testing.T, h *Inscribe, text string) []string {
 	t.Helper()
 	lines, err := h.Recall(context.Background(), recall.Query{Project: "/p", Text: text, Mode: recall.Prompt})
 	if err != nil {
@@ -98,7 +98,7 @@ func TestIndexSurvivesReopen(t *testing.T) {
 	}
 
 	// Another process, without the index, writes while this one is closed.
-	other, err := Open(Options{Home: home, Caller: "hive"})
+	other, err := Open(Options{Home: home, Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestRecallSeesOtherProcessForget(t *testing.T) {
 		t.Fatalf("recall before forget = %v, want [%s]", ids, id)
 	}
 
-	other, err := Open(Options{Home: home, Caller: "hive"})
+	other, err := Open(Options{Home: home, Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,12 +160,12 @@ func TestSnapshotFromOtherDatabaseRebuilt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, f := range []string{"hive.db", "hive.db-wal", "hive.db-shm"} {
+	for _, f := range []string{"inscribe.db", "inscribe.db-wal", "inscribe.db-shm"} {
 		if err := os.Remove(filepath.Join(home, f)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			t.Fatal(err)
 		}
 	}
-	fresh, err := Open(Options{Home: home, Caller: "hive"})
+	fresh, err := Open(Options{Home: home, Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestSnapshotNewerThanStoreRebuilt(t *testing.T) {
 	}
 
 	// Restoring an older copy of the database leaves the snapshot's cursor ahead of every change.
-	raw, err := sql.Open("sqlite", "file:"+filepath.Join(home, "hive.db"))
+	raw, err := sql.Open("sqlite", "file:"+filepath.Join(home, "inscribe.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-// Package hookjson installs and removes Hive's hook entries in an agent's JSON
+// Package hookjson installs and removes Inscribe's hook entries in an agent's JSON
 // settings file. Claude Code, Codex and Gemini CLI share the shape
 // "hooks": {event: [{matcher?, hooks: [{type, command, ...}]}]}.
 package hookjson
@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/a6n-ai/hive/agent"
+	"github.com/a6n-ai/inscribe/agent"
 )
 
 // Entry is one hook to install. Extra keys are merged in: "matcher" sets the
@@ -22,14 +22,14 @@ type Entry struct {
 	Extra          map[string]any
 }
 
-// Owns reports whether a command was installed by Hive for the named agent,
+// Owns reports whether a command was installed by Inscribe for the named agent,
 // whatever binary path it was installed from.
 func Owns(agentName string) func(cmd string) bool {
 	return func(cmd string) bool { return agent.IsHookCommand(cmd, agentName) }
 }
 
 // errComments means a settings file has comments, which a rewrite would drop.
-var errComments = errors.New("settings have comments, so hive cannot edit them safely")
+var errComments = errors.New("settings have comments, so inscribe cannot edit them safely")
 
 // Install replaces every hook owns recognises with entries. It writes only
 // when the file changes. A file with comments is refused, with the hooks to
@@ -264,7 +264,7 @@ func editSettings(path string, change func(map[string]any) (bool, error)) error 
 		return err
 	}
 	if raw != nil {
-		backup := path + ".hive-backup"
+		backup := path + ".inscribe-backup"
 		if _, err := os.Stat(backup); errors.Is(err, os.ErrNotExist) {
 			if err := os.WriteFile(backup, raw, mode); err != nil { //nolint:gosec // G703: the settings path is the user's own file, chosen on the command line
 				return err
@@ -299,7 +299,7 @@ func decodeSettings(raw []byte, m *map[string]any) error {
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".hive-settings-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".inscribe-settings-*")
 	if err != nil {
 		return err
 	}

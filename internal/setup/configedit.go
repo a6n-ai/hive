@@ -19,7 +19,7 @@ var sectionRe = regexp.MustCompile(`^\s*\[([^\[\]]+)\]`)
 // SetConfigKeys sets "section.key" values in a TOML file. It edits lines in
 // place, so comments and other keys survive. The result must parse and hold
 // the new values, or the file is left alone. The first change keeps a
-// .hive-backup copy, and the write replaces the file atomically.
+// .inscribe-backup copy, and the write replaces the file atomically.
 func SetConfigKeys(path string, kv map[string]any) error {
 	if r, err := filepath.EvalSymlinks(path); err == nil {
 		path = r
@@ -100,7 +100,7 @@ func sameValue(got, want any) bool {
 
 // keepBackup writes the original beside the file, unless a backup already exists.
 func keepBackup(path string, raw []byte, mode os.FileMode) error {
-	backup := path + ".hive-backup"
+	backup := path + ".inscribe-backup"
 	if _, err := os.Stat(backup); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {

@@ -5,14 +5,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func openHive(t *testing.T, proj string) *hive.Hive {
+func openInscribe(t *testing.T, proj string) *inscribe.Inscribe {
 	t.Helper()
-	h, err := hive.Open(hive.Options{Home: t.TempDir(), Caller: "test", Project: proj})
+	h, err := inscribe.Open(inscribe.Options{Home: t.TempDir(), Caller: "test", Project: proj})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func openHive(t *testing.T, proj string) *hive.Hive {
 	return h
 }
 
-func connect(t *testing.T, h *hive.Hive, project string) *mcp.ClientSession {
+func connect(t *testing.T, h *inscribe.Inscribe, project string) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	clientT, serverT := mcp.NewInMemoryTransports()
@@ -53,7 +53,7 @@ func call(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any)
 
 func TestMCPRememberRecall(t *testing.T) {
 	proj := t.TempDir()
-	cs := connect(t, openHive(t, proj), proj)
+	cs := connect(t, openInscribe(t, proj), proj)
 	id, isErr := call(t, cs, "remember", map[string]any{"text": "use make deploy for releases", "type": "note", "scope": "project", "project": proj})
 	if isErr || strings.TrimSpace(id) == "" {
 		t.Fatalf("remember = %q, error %v", id, isErr)
@@ -66,14 +66,14 @@ func TestMCPRememberRecall(t *testing.T) {
 
 func TestMCPForgetNeverPurges(t *testing.T) {
 	proj := t.TempDir()
-	h := openHive(t, proj)
+	h := openInscribe(t, proj)
 	cs := connect(t, h, proj)
 	id, _ := call(t, cs, "remember", map[string]any{"text": "deploys go through make deploy", "type": "note", "scope": "project", "project": proj})
 	status, isErr := call(t, cs, "forget", map[string]any{"id": strings.TrimSpace(id)})
 	if isErr || !strings.Contains(status, "forgotten") {
 		t.Fatalf("forget = %q, error %v", status, isErr)
 	}
-	left, err := h.List(context.Background(), hive.ListFilter{Project: proj, Statuses: []model.Status{model.Forgotten}})
+	left, err := h.List(context.Background(), inscribe.ListFilter{Project: proj, Statuses: []model.Status{model.Forgotten}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestMCPForgetNeverPurges(t *testing.T) {
 }
 
 func TestMCPBadArgs(t *testing.T) {
-	cs := connect(t, openHive(t, t.TempDir()), t.TempDir())
+	cs := connect(t, openInscribe(t, t.TempDir()), t.TempDir())
 	long := strings.Repeat("x", 5000)
 	cases := map[string]struct {
 		tool string
@@ -108,7 +108,7 @@ func TestMCPBadArgs(t *testing.T) {
 
 func TestMCPScrubsRemember(t *testing.T) {
 	proj := t.TempDir()
-	cs := connect(t, openHive(t, proj), proj)
+	cs := connect(t, openInscribe(t, proj), proj)
 	secret := "AKIAABCDEFGHIJKLMNOP"
 	if _, isErr := call(t, cs, "remember", map[string]any{"text": "deploy key " + secret + " lives in ci", "type": "note", "scope": "project", "project": proj}); isErr {
 		t.Fatal("remember failed")
@@ -121,7 +121,7 @@ func TestMCPScrubsRemember(t *testing.T) {
 
 func TestMCPRecallDefaultsToServerProject(t *testing.T) {
 	projA, projB := t.TempDir(), t.TempDir()
-	h := openHive(t, projA)
+	h := openInscribe(t, projA)
 	ctx := context.Background()
 	if _, err := h.Remember(ctx, "projA uses make deploy", model.Note, model.ProjectScope, projA); err != nil {
 		t.Fatal(err)
@@ -141,7 +141,7 @@ func TestMCPRecallDefaultsToServerProject(t *testing.T) {
 
 func TestMCPForgetWhyRefuseOtherProject(t *testing.T) {
 	projA, projB := t.TempDir(), t.TempDir()
-	h := openHive(t, projA)
+	h := openInscribe(t, projA)
 	id, err := h.Remember(context.Background(), "projB secret is banana", model.Note, model.ProjectScope, projB)
 	if err != nil {
 		t.Fatal(err)
@@ -156,12 +156,12 @@ func TestMCPForgetWhyRefuseOtherProject(t *testing.T) {
 
 func TestMCPRememberDefaultsToProject(t *testing.T) {
 	projA := t.TempDir()
-	h := openHive(t, projA)
+	h := openInscribe(t, projA)
 	cs := connect(t, h, projA)
 	if _, isErr := call(t, cs, "remember", map[string]any{"text": "deploy with make deploy"}); isErr {
 		t.Fatal("remember failed")
 	}
-	ms, err := h.List(context.Background(), hive.ListFilter{Project: projA})
+	ms, err := h.List(context.Background(), inscribe.ListFilter{Project: projA})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestMCPRememberDefaultsToProject(t *testing.T) {
 
 func TestMCPQueryAndProjectCapped(t *testing.T) {
 	proj := t.TempDir()
-	cs := connect(t, openHive(t, proj), proj)
+	cs := connect(t, openInscribe(t, proj), proj)
 	cases := map[string]map[string]any{
 		"long query":   {"query": strings.Repeat("x", 2001)},
 		"long project": {"project": strings.Repeat("p", 4097)},

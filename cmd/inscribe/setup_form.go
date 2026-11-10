@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/a6n-ai/hive/internal/setup"
+	"github.com/a6n-ai/inscribe/internal/setup"
 )
 
 // runSetupForm asks each step in the approved order, then shows the review.
@@ -52,7 +52,7 @@ func agentsGroup(d setup.Detected, c *setup.Choices) *huh.Group {
 }
 
 func claudeMemGroup(c *setup.Choices) *huh.Group {
-	return huh.NewGroup(huh.NewConfirm().Title("Disable claude-mem? Hive replaces it.").
+	return huh.NewGroup(huh.NewConfirm().Title("Disable claude-mem? Inscribe replaces it.").
 		Value(&c.DisableClaudeMem))
 }
 
@@ -80,5 +80,5 @@ func consolidateGroup(c *setup.Choices) *huh.Group {
 }
 
 func mcpGroup(c *setup.Choices) *huh.Group {
-	return huh.NewGroup(huh.NewConfirm().Title("Add Hive as an MCP server to Claude Code for all projects?").Value(&c.MCP))
+	return huh.NewGroup(huh.NewConfirm().Title("Add Inscribe as an MCP server to Claude Code for all projects?").Value(&c.MCP))
 }

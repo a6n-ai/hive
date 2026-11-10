@@ -5,19 +5,19 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
-// rememberedTypes are the memory types `hive remember` may create.
+// rememberedTypes are the memory types `inscribe remember` may create.
 var rememberedTypes = map[string]model.MemoryType{
 	"note": model.Note, "preference": model.Preference, "decision": model.Decision,
 }
 
 type noteX struct{}
 
-// NewNote turns `hive remember` events into memories.
+// NewNote turns `inscribe remember` events into memories.
 func NewNote() Extractor { return noteX{} }
 
 func (noteX) Kinds() []model.EventKind { return []model.EventKind{model.Remembered} }

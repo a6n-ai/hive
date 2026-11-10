@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/retention"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/retention"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 var now = time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
@@ -28,7 +28,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "hive.db")
+	path := filepath.Join(t.TempDir(), "inscribe.db")
 	st, err := store.Open(path, false)
 	if err != nil {
 		t.Fatal(err)

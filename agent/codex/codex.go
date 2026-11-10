@@ -1,4 +1,4 @@
-// Package codex adapts Codex CLI hook payloads to Hive events.
+// Package codex adapts Codex CLI hook payloads to Inscribe events.
 package codex
 
 import (
@@ -9,10 +9,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/capture"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const name = "codex"
@@ -69,7 +69,7 @@ func (a *Adapter) Parse(event string, stdin []byte) (model.Event, error) {
 	return e, nil
 }
 
-// normalize maps a Codex tool call to Hive's canonical tool name and payload.
+// normalize maps a Codex tool call to Inscribe's canonical tool name and payload.
 // A non-zero exit code makes the response text the error.
 func normalize(tool string, input map[string]any, resp any) (string, map[string]any) {
 	out := map[string]any{}

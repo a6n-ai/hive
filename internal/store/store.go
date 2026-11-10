@@ -1,4 +1,4 @@
-// Package store owns Hive's SQLite database: schema, writes, and reads.
+// Package store owns Inscribe's SQLite database: schema, writes, and reads.
 package store
 
 import (
@@ -15,20 +15,20 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/text"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/text"
+	"github.com/a6n-ai/inscribe/model"
 	sqlite "modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
 var (
 	// ErrLocked means another writer held the database past busy_timeout.
-	ErrLocked = errors.New("hive: database locked")
-	// ErrSchemaNewer means the database was migrated by a newer Hive; this
+	ErrLocked = errors.New("inscribe: database locked")
+	// ErrSchemaNewer means the database was migrated by a newer Inscribe; this
 	// binary may read but not write.
-	ErrSchemaNewer = errors.New("hive: database schema is newer than this binary; update hive")
+	ErrSchemaNewer = errors.New("inscribe: database schema is newer than this binary; update inscribe")
 	// ErrReadOnly means the store was opened read-only.
-	ErrReadOnly = errors.New("hive: store opened read-only")
+	ErrReadOnly = errors.New("inscribe: store opened read-only")
 )
 
 type Store struct {
@@ -66,7 +66,7 @@ func Open(path string, readOnly bool) (*Store, error) {
 		return nil, err
 	}
 	if !readOnly {
-		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: the database path comes from the user's HIVE_HOME
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: the database path comes from the user's INSCRIBE_HOME
 		if err != nil {
 			return nil, err
 		}

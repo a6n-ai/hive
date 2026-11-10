@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // holdLock keeps a write transaction open on st until release is closed.

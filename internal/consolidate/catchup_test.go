@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/consolidate"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 // seedSessionAt stores n prompts in session, the last one age before now.

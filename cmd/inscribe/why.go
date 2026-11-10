@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/a6n-ai/hive"
+	"github.com/a6n-ai/inscribe"
 )
 
 func whyCmd(args []string, stdout io.Writer) error {
 	if len(args) != 1 {
-		return errors.New("usage: hive why ID")
+		return errors.New("usage: inscribe why ID")
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
 	}

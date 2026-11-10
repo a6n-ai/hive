@@ -3,7 +3,7 @@ package consolidate_test
 import (
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/consolidate"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
 )
 
 func TestAddScopeLimitedToSessionProject(t *testing.T) {

@@ -1,11 +1,11 @@
 #!/bin/sh
-# Installs the hive CLI from a GitHub release. HIVE_VERSION pins a tag; the
-# archive and checksums.txt come from HIVE_INSTALL_BASE_URL.
+# Installs the inscribe CLI from a GitHub release. INSCRIBE_VERSION pins a tag; the
+# archive and checksums.txt come from INSCRIBE_INSTALL_BASE_URL.
 set -eu
 
-REPO="a6n-ai/hive"
-BASE_URL="${HIVE_INSTALL_BASE_URL:-https://github.com/$REPO/releases/download}"
-INSTALL_DIR="${HIVE_INSTALL_DIR:-$HOME/.local/bin}"
+REPO="a6n-ai/inscribe"
+BASE_URL="${INSCRIBE_INSTALL_BASE_URL:-https://github.com/$REPO/releases/download}"
+INSTALL_DIR="${INSCRIBE_INSTALL_DIR:-$HOME/.local/bin}"
 
 case "$BASE_URL" in
 	http://*) echo "install.sh: refusing plain http download from $BASE_URL; use https" >&2; exit 1 ;;
@@ -43,7 +43,7 @@ fetch() {
 			*) wget -qO "$2" "$1" ;;
 		esac
 	else
-		fail "need curl or wget to download hive"
+		fail "need curl or wget to download inscribe"
 	fi
 }
 
@@ -53,7 +53,7 @@ sha256_of() {
 	elif command -v sha256sum >/dev/null 2>&1; then
 		sha256sum "$1" | cut -d' ' -f1
 	else
-		fail "need shasum or sha256sum to verify hive"
+		fail "need shasum or sha256sum to verify inscribe"
 	fi
 }
 
@@ -75,11 +75,11 @@ main() {
 	tmp=$(mktemp -d)
 	trap 'rm -rf "$tmp"' EXIT
 
-	tag=${HIVE_VERSION:-}
+	tag=${INSCRIBE_VERSION:-}
 	[ -n "$tag" ] || tag=$(latest_tag "$tmp")
-	[ -n "$tag" ] || fail "could not find the latest hive release"
+	[ -n "$tag" ] || fail "could not find the latest inscribe release"
 
-	archive="hive_${tag#v}_${os}_${arch}.tar.gz"
+	archive="inscribe_${tag#v}_${os}_${arch}.tar.gz"
 	fetch "$BASE_URL/$tag/checksums.txt" "$tmp/checksums.txt"
 	fetch "$BASE_URL/$tag/$archive" "$tmp/$archive"
 	verify "$tmp" "$archive"
@@ -87,18 +87,18 @@ main() {
 	mkdir -p "$tmp/x"
 	tar -xzf "$tmp/$archive" -C "$tmp/x"
 	mkdir -p "$INSTALL_DIR"
-	# A rename gives the new binary a new inode, so a running hive is not overwritten.
-	staged="$INSTALL_DIR/.hive.$$"
-	cp "$tmp/x/hive" "$staged"
+	# A rename gives the new binary a new inode, so a running inscribe is not overwritten.
+	staged="$INSTALL_DIR/.inscribe.$$"
+	cp "$tmp/x/inscribe" "$staged"
 	chmod 0755 "$staged"
-	mv -f "$staged" "$INSTALL_DIR/hive"
+	mv -f "$staged" "$INSTALL_DIR/inscribe"
 
-	echo "installed hive $tag to $INSTALL_DIR/hive"
+	echo "installed inscribe $tag to $INSTALL_DIR/inscribe"
 	case ":$PATH:" in
 		*":$INSTALL_DIR:"*) ;;
 		*) echo "add $INSTALL_DIR to your PATH" ;;
 	esac
-	echo "run: hive setup"
+	echo "run: inscribe setup"
 }
 
 main "$@"

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/consolidate"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func TestInputOnlySessionProjectAndGlobal(t *testing.T) {

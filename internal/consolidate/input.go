@@ -3,9 +3,9 @@ package consolidate
 import (
 	"strings"
 
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/internal/text"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/internal/text"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const (

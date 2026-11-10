@@ -1,7 +1,7 @@
 #!/bin/sh
 # Test double for a headless agent. Prints a Claude-style result; with FAKE_ADD set,
 # it adds a decision citing the first event in its input.
-[ "$HIVE_DISABLED" = "1" ] || exit 3
+[ "$INSCRIBE_DISABLED" = "1" ] || exit 3
 IN=$(cat)
 [ -n "$FAKE_SLEEP" ] && sleep "$FAKE_SLEEP"
 if [ -n "$FAKE_ADD" ]; then

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/internal/recall"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/recall"
 )
 
 func recallCmd(args []string, stdout io.Writer) error {
@@ -18,7 +18,7 @@ func recallCmd(args []string, stdout io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive", Project: *project})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe", Project: *project})
 	if err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func recallCmd(args []string, stdout io.Writer) error {
 	if *query != "" {
 		mode = recall.Prompt
 	}
-	lines, err := h.Recall(context.Background(), hive.Query{Project: *project, Text: *query, Budget: *budget, Mode: mode})
+	lines, err := h.Recall(context.Background(), inscribe.Query{Project: *project, Text: *query, Budget: *budget, Mode: mode})
 	if err != nil {
 		return err
 	}

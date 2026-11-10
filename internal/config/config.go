@@ -1,5 +1,5 @@
-// Package config loads Hive settings: defaults, then $HIVE_HOME/config.toml,
-// then <project>/.hive.toml.
+// Package config loads Inscribe settings: defaults, then $INSCRIBE_HOME/config.toml,
+// then <project>/.inscribe.toml.
 package config
 
 import (
@@ -80,22 +80,22 @@ func (t *Tristate) UnmarshalTOML(v any) error {
 	return nil
 }
 
-// Home is $HIVE_HOME or ~/.hive.
+// Home is $INSCRIBE_HOME or ~/.inscribe.
 func Home() string {
-	if h := os.Getenv("HIVE_HOME"); h != "" {
+	if h := os.Getenv("INSCRIBE_HOME"); h != "" {
 		return h
 	}
 	h, err := os.UserHomeDir()
 	if err != nil {
-		return ".hive"
+		return ".inscribe"
 	}
-	return filepath.Join(h, ".hive")
+	return filepath.Join(h, ".inscribe")
 }
 
 // Load returns the effective config for project (which may be ""), plus a
 // warning per unknown or ignored key.
 //
-// A project's .hive.toml comes from whatever repository is checked out, so it
+// A project's .inscribe.toml comes from whatever repository is checked out, so it
 // is untrusted: it may tune [recall] and [skills], may add to exclude.paths and
 // scrub.patterns, and nothing else.
 func Load(home, project string) (Config, []string, error) {
@@ -113,7 +113,7 @@ func Load(home, project string) (Config, []string, error) {
 	if project != "" {
 		// A project file is untrusted and optional: its errors are warnings, and the
 		// global config still applies.
-		pw, err := overlayProject(&c, filepath.Join(project, ".hive.toml"))
+		pw, err := overlayProject(&c, filepath.Join(project, ".inscribe.toml"))
 		warns = append(warns, pw...)
 		if err != nil {
 			warns = append(warns, err.Error()+" (project file ignored)")

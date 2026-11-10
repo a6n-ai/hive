@@ -1,4 +1,4 @@
-// Package importer backfills Hive's events from existing agent transcripts.
+// Package importer backfills Inscribe's events from existing agent transcripts.
 package importer
 
 import (
@@ -16,10 +16,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a6n-ai/hive/agent/claudecode"
-	"github.com/a6n-ai/hive/internal/capture"
-	"github.com/a6n-ai/hive/internal/consolidate"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/agent/claudecode"
+	"github.com/a6n-ai/inscribe/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const agentName = "claude-code"

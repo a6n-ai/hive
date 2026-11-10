@@ -1,5 +1,5 @@
-// Package model holds the types shared by every Hive package. It imports
-// nothing from Hive so that internal packages and the public API can share it.
+// Package model holds the types shared by every Inscribe package. It imports
+// nothing from Inscribe so that internal packages and the public API can share it.
 package model
 
 type EventKind string
@@ -14,7 +14,7 @@ const (
 	SkillLoaded   EventKind = "skill_loaded"
 	CommandResult EventKind = "command_result"
 	Correction    EventKind = "correction"
-	// Remembered is written by `hive remember`; payload {text, type, scope}.
+	// Remembered is written by `inscribe remember`; payload {text, type, scope}.
 	Remembered EventKind = "remembered"
 )
 

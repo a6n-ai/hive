@@ -9,12 +9,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/consolidate"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
 )
 
-const consolidateUsage = "usage: hive consolidate (--session S | --catch-up) [--agent A] [--dry-run]"
+const consolidateUsage = "usage: inscribe consolidate (--session S | --catch-up) [--agent A] [--dry-run]"
 
 func consolidateCmd(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("consolidate", flag.ContinueOnError)
@@ -32,7 +32,7 @@ func consolidateCmd(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
 	}
@@ -56,11 +56,11 @@ func consolidateCmd(args []string, stdout io.Writer) error {
 	return nil
 }
 
-// headlessSpec is the adapter's headless command. HIVE_TEST_HEADLESS, when set,
+// headlessSpec is the adapter's headless command. INSCRIBE_TEST_HEADLESS, when set,
 // replaces the executable: a test-only override so tests never call a real model.
 func headlessSpec(ad agent.Adapter, model string) agent.HeadlessSpec {
 	spec := ad.Headless(model)
-	if p := os.Getenv("HIVE_TEST_HEADLESS"); p != "" {
+	if p := os.Getenv("INSCRIBE_TEST_HEADLESS"); p != "" {
 		spec.Command = []string{p}
 	}
 	return spec

@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/capture"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
-const syncHeading = "## Hive memory (generated; edits here are replaced)"
+const syncHeading = "## Inscribe memory (generated; edits here are replaced)"
 
 // syncBudget is the token budget of the synced block. syncFetchBudget is large
 // enough that the scope filter, not the budget, decides what is fetched.
@@ -48,22 +48,22 @@ func syncCmd(args []string, stdout io.Writer) error {
 		}
 		proj = capture.ResolveProject(abs)
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive", Project: proj})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe", Project: proj})
 	if err != nil {
 		return err
 	}
 	defer func() { _ = h.Close() }()
 	ctx := context.Background()
-	ms, err := h.List(ctx, hive.ListFilter{Statuses: []model.Status{model.Active}})
+	ms, err := h.List(ctx, inscribe.ListFilter{Statuses: []model.Status{model.Active}})
 	if err != nil {
 		return err
 	}
-	lines, err := h.Recall(ctx, hive.Query{Project: proj, Mode: recall.SessionStart, Budget: syncFetchBudget})
+	lines, err := h.Recall(ctx, inscribe.Query{Project: proj, Mode: recall.SessionStart, Budget: syncFetchBudget})
 	if err != nil {
 		return err
 	}
 	allowed := syncableIDs(ms, proj, *includeGlobal)
-	var kept []hive.Line
+	var kept []inscribe.Line
 	for _, l := range lines {
 		if allowed[l.MemoryID] {
 			l.Text = h.Scrub(safeLine(l.Text))
@@ -91,7 +91,7 @@ func safeLine(s string) string {
 
 // syncableIDs are the memories a committable file may show: this project's
 // project- and file-scoped memories, plus global ones when asked for.
-func syncableIDs(ms []hive.Memory, proj string, includeGlobal bool) map[string]bool {
+func syncableIDs(ms []inscribe.Memory, proj string, includeGlobal bool) map[string]bool {
 	ok := map[string]bool{}
 	for _, m := range ms {
 		switch m.ScopeKind {

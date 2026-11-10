@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/store"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/store"
 )
 
 // RunReport is the outcome of one consolidation attempt.

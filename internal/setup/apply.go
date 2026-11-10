@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a6n-ai/hive"
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/internal/importer"
+	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/importer"
 )
 
 // Runner runs an external command and returns its output.
@@ -45,7 +45,7 @@ func applyOne(ctx context.Context, env Env, a Action, run Runner) error {
 		if err != nil {
 			return err
 		}
-		return ad.Install(a.Files[0], env.HiveBin)
+		return ad.Install(a.Files[0], env.InscribeBin)
 	case "disable-plugin":
 		_, err := run(ctx, a.Command[0], a.Command[1:]...)
 		return err
@@ -59,9 +59,9 @@ func applyOne(ctx context.Context, env Env, a Action, run Runner) error {
 	return fmt.Errorf("unknown action %q", a.Kind)
 }
 
-// addMCP adds the Hive MCP server at user scope unless `claude mcp get hive` finds it.
+// addMCP adds the Inscribe MCP server at user scope unless `claude mcp get inscribe` finds it.
 func addMCP(ctx context.Context, add []string, run Runner) error {
-	if _, err := run(ctx, "claude", "mcp", "get", "hive"); err == nil {
+	if _, err := run(ctx, "claude", "mcp", "get", "inscribe"); err == nil {
 		return nil
 	}
 	_, err := run(ctx, add[0], add[1:]...)
@@ -73,7 +73,7 @@ func importHistory(ctx context.Context, since string, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	h, err := hive.Open(hive.Options{Caller: "hive"})
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-// Package scrub removes secrets from text before Hive stores it.
+// Package scrub removes secrets from text before Inscribe stores it.
 package scrub
 
 import (

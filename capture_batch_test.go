@@ -1,4 +1,4 @@
-package hive
+package inscribe
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func promptBatch(n int, prefix string) []Event {
@@ -70,13 +70,13 @@ func spooledLines(t *testing.T, home string) int {
 func TestCaptureBatchOneTransaction(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	h, err := Open(Options{Home: home, Caller: "hive"})
+	h, err := Open(Options{Home: home, Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = h.Close() }()
 
-	release := holdWriteLock(t, filepath.Join(home, "hive.db"))
+	release := holdWriteLock(t, filepath.Join(home, "inscribe.db"))
 	if err := h.CaptureBatch(ctx, promptBatch(100, "locked")); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func (poisonExtractor) Extract(_ context.Context, e *model.Event, _ *store.Tx, _
 func TestCaptureBatchPoisonIsolated(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
-	h, err := Open(Options{Home: home, Caller: "hive"})
+	h, err := Open(Options{Home: home, Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func (f batchFaults) Extract(ctx context.Context, e *model.Event, _ *store.Tx, _
 
 func TestBatchCtxCancelDoesNotQuarantine(t *testing.T) {
 	home := t.TempDir()
-	h, err := Open(Options{Home: home, Caller: "hive"})
+	h, err := Open(Options{Home: home, Caller: "inscribe"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestBatchCtxCancelDoesNotQuarantine(t *testing.T) {
 
 func TestWriterKeepsIndexCurrent(t *testing.T) {
 	ctx := context.Background()
-	h, err := Open(Options{Home: t.TempDir(), Caller: "hive", Writer: true})
+	h, err := Open(Options{Home: t.TempDir(), Caller: "inscribe", Writer: true})
 	if err != nil {
 		t.Fatal(err)
 	}

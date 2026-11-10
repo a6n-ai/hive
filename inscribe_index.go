@@ -1,20 +1,20 @@
-package hive
+package inscribe
 
 import (
 	"os"
 	"path/filepath"
 
-	"github.com/a6n-ai/hive/index"
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/index"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
-// indexFile is the index snapshot, kept under HIVE_HOME.
+// indexFile is the index snapshot, kept under INSCRIBE_HOME.
 const indexFile = "index.snap"
 
 // openIndex loads the snapshot when it matches this schema and starts empty
 // otherwise. Either way the index then catches up with the store.
-func (h *Hive) openIndex() error {
+func (h *Inscribe) openIndex() error {
 	schema, err := h.store.SchemaVersion()
 	if err != nil {
 		return err
@@ -40,7 +40,7 @@ func (h *Hive) openIndex() error {
 // loadSnapshot reports false for a missing, stale, or damaged snapshot; the
 // caller rebuilds.
 func loadSnapshot(path string, want index.Stamp) (*index.Index, index.Stamp, bool) {
-	f, err := os.Open(path) //nolint:gosec // G304: the snapshot path is under the user's HIVE_HOME
+	f, err := os.Open(path) //nolint:gosec // G304: the snapshot path is under the user's INSCRIBE_HOME
 	if err != nil {
 		return nil, index.Stamp{}, false
 	}
@@ -53,7 +53,7 @@ func loadSnapshot(path string, want index.Stamp) (*index.Index, index.Stamp, boo
 // Changes stamped with the cursor's own millisecond are read again, because a
 // write in that millisecond after the last sync would otherwise be skipped.
 // The cursor moves only after both are applied.
-func (h *Hive) syncIndex() error {
+func (h *Inscribe) syncIndex() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	changed, gone, next, err := h.store.ChangesSince(h.stamp.Cursor - 1)
@@ -78,7 +78,7 @@ func (h *Hive) syncIndex() error {
 
 // afterWrite brings the index up to date after a write. A failed sync leaves
 // the cursor in place, so the next write or open retries it.
-func (h *Hive) afterWrite() {
+func (h *Inscribe) afterWrite() {
 	if h.index != nil {
 		_ = h.syncIndex()
 	}
@@ -86,7 +86,7 @@ func (h *Hive) afterWrite() {
 
 // saveIndex writes the snapshot through a temp file, so a crash never leaves a
 // half-written one.
-func (h *Hive) saveIndex() error {
+func (h *Inscribe) saveIndex() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	tmp, err := os.CreateTemp(h.home, indexFile+".*")
@@ -105,7 +105,7 @@ func (h *Hive) saveIndex() error {
 }
 
 // source is where recall reads candidates: the index when one is open, else the store.
-func (h *Hive) source() recall.Source {
+func (h *Inscribe) source() recall.Source {
 	if h.index == nil {
 		return nil
 	}
@@ -113,7 +113,7 @@ func (h *Hive) source() recall.Source {
 }
 
 // closeIndex saves the index unless the store is read-only.
-func (h *Hive) closeIndex() error {
+func (h *Inscribe) closeIndex() error {
 	if h.index == nil || h.readOnly {
 		return nil
 	}

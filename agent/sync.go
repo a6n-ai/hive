@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	blockBegin = "<!-- hive:begin -->"
-	blockEnd   = "<!-- hive:end -->"
+	blockBegin = "<!-- inscribe:begin -->"
+	blockEnd   = "<!-- inscribe:end -->"
 )
 
 // WriteBlock replaces the managed block in an instructions file with body, or
@@ -45,7 +45,7 @@ func WriteBlock(path, body string) error {
 // writeReplace writes data to a temp file beside path, then renames it over path,
 // so a crash never leaves a half-written instructions file.
 func writeReplace(path string, data []byte, mode fs.FileMode) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".hive-instructions-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".inscribe-instructions-*")
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func writeReplace(path string, data []byte, mode fs.FileMode) (err error) {
 func spliceBlock(text, body string) (string, error) {
 	for _, l := range strings.Split(body, "\n") {
 		if t := strings.TrimRight(l, "\r"); t == blockBegin || t == blockEnd {
-			return "", errors.New("body contains a hive marker line")
+			return "", errors.New("body contains an inscribe marker line")
 		}
 	}
 	eol := "\n"
@@ -107,23 +107,23 @@ func markerLines(lines []string) (begin, end int, err error) {
 		switch strings.TrimRight(l, "\r\n") {
 		case blockBegin:
 			if begin >= 0 {
-				return 0, 0, errors.New("two hive:begin markers")
+				return 0, 0, errors.New("two inscribe:begin markers")
 			}
 			begin = i
 		case blockEnd:
 			if end >= 0 {
-				return 0, 0, errors.New("two hive:end markers")
+				return 0, 0, errors.New("two inscribe:end markers")
 			}
 			end = i
 		}
 	}
 	switch {
 	case begin < 0 && end >= 0:
-		return 0, 0, errors.New("hive:end without hive:begin")
+		return 0, 0, errors.New("inscribe:end without inscribe:begin")
 	case begin >= 0 && end < 0:
-		return 0, 0, errors.New("hive:begin without hive:end")
+		return 0, 0, errors.New("inscribe:begin without inscribe:end")
 	case end < begin:
-		return 0, 0, errors.New("hive:end before hive:begin")
+		return 0, 0, errors.New("inscribe:end before inscribe:begin")
 	}
 	return begin, end, nil
 }

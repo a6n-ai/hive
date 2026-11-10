@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/a6n-ai/hive/agent"
-	"github.com/a6n-ai/hive/agent/claudecode"
-	"github.com/a6n-ai/hive/internal/config"
-	"github.com/a6n-ai/hive/internal/consolidate"
-	"github.com/a6n-ai/hive/internal/scrub"
-	"github.com/a6n-ai/hive/internal/store"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/agent/claudecode"
+	"github.com/a6n-ai/inscribe/internal/config"
+	"github.com/a6n-ai/inscribe/internal/consolidate"
+	"github.com/a6n-ai/inscribe/internal/scrub"
+	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const session = "s1"
@@ -44,7 +44,7 @@ type env struct {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	home := t.TempDir()
-	st, err := store.Open(filepath.Join(home, "hive.db"), false)
+	st, err := store.Open(filepath.Join(home, "inscribe.db"), false)
 	if err != nil {
 		t.Fatal(err)
 	}

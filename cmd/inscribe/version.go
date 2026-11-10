@@ -13,6 +13,6 @@ var (
 )
 
 func versionCmd(stdout io.Writer) error {
-	_, err := fmt.Fprintf(stdout, "hive %s (%s, %s)\n", version, commit, date)
+	_, err := fmt.Fprintf(stdout, "inscribe %s (%s, %s)\n", version, commit, date)
 	return err
 }

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/hive/internal/recall"
-	"github.com/a6n-ai/hive/model"
+	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 func fixture(t *testing.T, name string) []byte {
@@ -91,11 +91,11 @@ func TestCodexInstallIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := New()
-	if err := a.Install(path, "/usr/local/bin/hive"); err != nil {
+	if err := a.Install(path, "/usr/local/bin/inscribe"); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := os.ReadFile(path)
-	if err := a.Install(path, "/usr/local/bin/hive"); err != nil {
+	if err := a.Install(path, "/usr/local/bin/inscribe"); err != nil {
 		t.Fatal(err)
 	}
 	second, _ := os.ReadFile(path)
@@ -108,7 +108,7 @@ func TestCodexInstallIdempotent(t *testing.T) {
 		}
 	}
 	if strings.Contains(string(first), "PreToolUse") {
-		t.Fatal("Hive must not install a PreToolUse hook")
+		t.Fatal("Inscribe must not install a PreToolUse hook")
 	}
 	if !strings.Contains(string(first), `"model": "o3"`) {
 		t.Fatalf("unrelated key lost: %s", first)
@@ -117,8 +117,8 @@ func TestCodexInstallIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)
-	if strings.Contains(string(after), "hive") || strings.Contains(string(after), `"hooks"`) {
-		t.Fatalf("uninstall left hive entries: %s", after)
+	if strings.Contains(string(after), "inscribe") || strings.Contains(string(after), `"hooks"`) {
+		t.Fatalf("uninstall left inscribe entries: %s", after)
 	}
 }
 
