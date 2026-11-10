@@ -1,0 +1,35 @@
+name: brew
+
+# Installs the published cask from a6n-ai/homebrew-tap on clean runners, after
+# each release and on demand.
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Put brew on PATH (Linux)
+        if: runner.os == 'Linux'
+        run: echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+      - name: Install with --cask
+        run: |
+          brew install --cask a6n-ai/tap/inscribe
+          inscribe version
+          inscribe doctor || true
+      - name: Install without --cask
+        run: |
+          brew uninstall --cask inscribe
+          brew install a6n-ai/tap/inscribe
+          inscribe version
