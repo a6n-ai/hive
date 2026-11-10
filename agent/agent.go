@@ -134,3 +134,9 @@ func ResponseText(resp any) string {
 	}
 	return ""
 }
+
+// Warner is implemented by an adapter that reports problems with its own
+// settings file, given the file's bytes, when Hive hooks are installed.
+type Warner interface {
+	Warnings(settings []byte) []string
+}

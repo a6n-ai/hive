@@ -9,22 +9,22 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/a6n-ai/hive/agent"
 	"github.com/a6n-ai/hive/internal/config"
 	"github.com/a6n-ai/hive/internal/scrub"
 	"github.com/a6n-ai/hive/internal/store"
 )
 
+// doctorAgents are the agents doctor reports on, in print order.
+var doctorAgents = []string{"claude-code", "codex", "gemini"}
+
 func doctorCmd(stdout io.Writer) error {
 	home := config.Home()
-	settings, err := defaultSettings()
-	if err != nil {
-		return err
+	for _, name := range doctorAgents {
+		if err := doctorAgent(stdout, name); err != nil {
+			return err
+		}
 	}
-	hiveHooks, claudeMem, err := countHooks(settings)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "hooks: %d hive hook(s) in %s\n", hiveHooks, settings)
 
 	dbPath := filepath.Join(home, "hive.db")
 	if st, err := store.Open(dbPath, true); err != nil {
@@ -41,29 +41,60 @@ func doctorCmd(stdout io.Writer) error {
 	fmt.Fprintf(stdout, "scrubber: %s\n", scrubberSelfTest())
 	entries, _ := os.ReadDir(filepath.Join(home, "spool"))
 	fmt.Fprintf(stdout, "spool: %d file(s) pending\n", len(entries))
+	return nil
+}
+
+// doctorAgent reports one agent's settings file: its Hive hooks, the warnings
+// that apply to an agent with hooks installed, and any claude-mem hooks.
+func doctorAgent(stdout io.Writer, name string) error {
+	ad, err := agent.Get(name)
+	if err != nil {
+		return err
+	}
+	settings := ad.SettingsPath()
+	raw, err := readSettings(settings)
+	if err != nil {
+		return err
+	}
+	hiveHooks, claudeMem, err := countHooks(raw, name)
+	if err != nil {
+		return fmt.Errorf("%s: %w", settings, err)
+	}
+	fmt.Fprintf(stdout, "%s hooks: %d hive hook(s) in %s\n", name, hiveHooks, settings)
+	if hiveHooks > 0 {
+		printWarnings(stdout, ad, raw)
+	}
 	if claudeMem > 0 {
 		fmt.Fprintf(stdout, "WARNING: %s has %d claude-mem hook(s); Hive replaces claude-mem, so remove them\n", settings, claudeMem)
 	}
 	return nil
 }
 
-func defaultSettings() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+func printWarnings(stdout io.Writer, ad agent.Adapter, raw []byte) {
+	if !ad.Capabilities().HasPreTool {
+		fmt.Fprintf(stdout, "%s: no pre-tool hook\n", ad.Name())
 	}
-	return filepath.Join(home, ".claude", "settings.json"), nil
+	if w, ok := ad.(agent.Warner); ok {
+		for _, msg := range w.Warnings(raw) {
+			fmt.Fprintln(stdout, msg)
+		}
+	}
 }
 
-// countHooks counts the Claude Code hook commands that run Hive and the ones
-// that run claude-mem. A missing settings file has none.
-func countHooks(settings string) (hive, claudeMem int, err error) {
-	raw, err := os.ReadFile(settings) //nolint:gosec // G304: the settings path is the user's own file, chosen on the command line
+// readSettings returns a settings file's bytes, or nil when it does not exist.
+func readSettings(settings string) ([]byte, error) {
+	raw, err := os.ReadFile(settings) //nolint:gosec // G304: the settings path is the user's own file
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, 0, nil
+		return nil, nil
 	}
-	if err != nil {
-		return 0, 0, err
+	return raw, err
+}
+
+// countHooks counts the hook commands in a settings file that run Hive for
+// agent name, and the ones that run claude-mem.
+func countHooks(raw []byte, name string) (hive, claudeMem int, err error) {
+	if raw == nil {
+		return 0, 0, nil
 	}
 	var m struct {
 		Hooks map[string][]struct {
@@ -73,13 +104,13 @@ func countHooks(settings string) (hive, claudeMem int, err error) {
 		} `json:"hooks"`
 	}
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return 0, 0, fmt.Errorf("%s: %w", settings, err)
+		return 0, 0, err
 	}
 	for _, groups := range m.Hooks {
 		for _, g := range groups {
 			for _, h := range g.Hooks {
 				switch {
-				case strings.Contains(h.Command, " hook --agent claude-code "):
+				case agent.IsHookCommand(h.Command, name):
 					hive++
 				case strings.Contains(h.Command, "claude-mem"):
 					claudeMem++

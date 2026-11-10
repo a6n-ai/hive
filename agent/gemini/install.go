@@ -1,6 +1,8 @@
 package gemini
 
 import (
+	"encoding/json"
+
 	"github.com/a6n-ai/hive/agent"
 	"github.com/a6n-ai/hive/agent/hookjson"
 )
@@ -20,4 +22,20 @@ func (a *Adapter) Install(settingsPath, hiveBin string) error {
 
 func (a *Adapter) Uninstall(settingsPath string) error {
 	return hookjson.Uninstall(settingsPath, hookjson.Owns(name))
+}
+
+// Warnings reports that Gemini's hooks are unverified, and that a disabled
+// hooksConfig stops them from running at all.
+func (a *Adapter) Warnings(settings []byte) []string {
+	var m struct {
+		HooksConfig struct {
+			Enabled *bool `json:"enabled"`
+		} `json:"hooksConfig"`
+	}
+	_ = json.Unmarshal(settings, &m)
+	out := []string{"gemini adapter: written from documentation, not verified against a live Gemini CLI"}
+	if m.HooksConfig.Enabled != nil && !*m.HooksConfig.Enabled {
+		out = append(out, "gemini: hooksConfig.enabled is false — hooks will not run")
+	}
+	return out
 }

@@ -25,3 +25,8 @@ func (a *Adapter) Uninstall(settingsPath string) error {
 func (a *Adapter) InstallNote() string {
 	return "Codex: open /hooks in codex and approve the hive hooks before they run."
 }
+
+// Warnings reminds the user that Codex runs Hive's hooks only once approved.
+func (a *Adapter) Warnings([]byte) []string {
+	return []string{"codex: approve hooks in /hooks"}
+}

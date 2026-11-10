@@ -379,3 +379,49 @@ func TestSessionEndNoSpawnWhenAutoOff(t *testing.T) {
 		t.Errorf("runs = %d with consolidate.auto off, want 0", n)
 	}
 }
+
+func TestInstallCodexAndGemini(t *testing.T) {
+	home, dir := t.TempDir(), t.TempDir()
+	codexFile := filepath.Join(dir, "codex-hooks.json")
+	geminiFile := filepath.Join(dir, "gemini-settings.json")
+	if err := os.WriteFile(geminiFile, []byte(`{"theme":"dark"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := runOK(t, home, "", "install", "--agent", "codex", "--settings", codexFile); !strings.Contains(out, "approve the hive hooks") {
+		t.Fatalf("codex install did not say to approve hooks: %q", out)
+	}
+	runOK(t, home, "", "install", "--agent", "gemini", "--settings", geminiFile)
+	codexText := readText(t, codexFile)
+	geminiText := readText(t, geminiFile)
+	for _, want := range []string{"hook --agent codex SessionStart", "hook --agent codex Stop"} {
+		if !strings.Contains(codexText, want) {
+			t.Fatalf("codex hooks lack %q:\n%s", want, codexText)
+		}
+	}
+	for _, want := range []string{`"theme": "dark"`, "hook --agent gemini AfterTool", `"matcher": "*"`} {
+		if !strings.Contains(geminiText, want) {
+			t.Fatalf("gemini settings lack %q:\n%s", want, geminiText)
+		}
+	}
+	runOK(t, home, "", "uninstall", "--agent", "codex", "--settings", codexFile)
+	if strings.Contains(readText(t, codexFile), "hook --agent codex") {
+		t.Fatal("codex uninstall left hive hooks")
+	}
+}
+
+func TestDoctorWarnsGeminiHooksDisabled(t *testing.T) {
+	home, fakeHome := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(fakeHome, ".gemini"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settings := `{"hooksConfig":{"enabled":false},"hooks":{"BeforeAgent":[{"matcher":"*","hooks":[{"name":"hive","type":"command","command":"/bin/hive hook --agent gemini BeforeAgent"}]}]}}`
+	if err := os.WriteFile(filepath.Join(fakeHome, ".gemini", "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, _, _ := runCLI(t, home, "", []string{"HOME=" + fakeHome}, "doctor")
+	for _, want := range []string{"gemini: hooksConfig.enabled is false — hooks will not run", "gemini adapter: written from documentation, not verified against a live Gemini CLI"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor output lacks %q:\n%s", want, out)
+		}
+	}
+}

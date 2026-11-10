@@ -12,10 +12,12 @@ Claude Code is supported today. Hive replaces claude-mem for this use.
     go install github.com/a6n-ai/hive/cmd/hive@latest
     hive install --agent claude-code
 
-`install` adds one hook per event to `~/.claude/settings.json`, keeps every other
-hook, and writes a one-time backup to `settings.json.hive-backup`. Invalid JSON is
-refused and left untouched. `hive uninstall --agent claude-code` removes only
-Hive's hooks.
+`install` adds one hook per event to the agent's settings file, keeps every other
+hook, and writes a one-time backup beside it. Invalid JSON is refused and left
+untouched. `hive uninstall --agent NAME` removes only Hive's hooks. Agents:
+`claude-code` (default settings `~/.claude/settings.json`), `codex`
+(`~/.codex/hooks.json`) and `gemini` (`~/.gemini/settings.json`). See
+[docs/agents.md](docs/agents.md) for what each one supports.
 
 ## Privacy defaults
 
@@ -57,6 +59,8 @@ fails processing is quarantined in `spool/bad` while the rest commit.
     hive retention apply [--yes]
     hive consolidate (--session S | --catch-up) [--agent A] [--dry-run]
     hive undo RUN_ID
+    hive sync --agent claude-code|codex|gemini [--project P] [--include-global]
+    hive mcp
 
 `import` backfills events and memories from `~/.claude/projects`; running it
 again adds nothing. `retention apply` shows a dry-run count and asks before
@@ -69,9 +73,13 @@ the session's new events and proposes merges, promotions, rejections, and
 decisions. Each run costs one model call. Every change is audited, and
 `hive undo RUN_ID` reverses a run, leaving alone any memory changed since.
 
-`doctor` reports installed hooks, the database and schema version, a scrubber
-self-test, and pending spool files. It warns when claude-mem hooks are still in
-`~/.claude/settings.json`.
+`doctor` reports each agent's installed hooks and its warnings, the database and
+schema version, a scrubber self-test, and pending spool files. It warns when
+claude-mem hooks are still in an agent's settings file.
+
+`sync` writes this project's memories into the agent's instructions file for agents
+without hooks. It writes only project and file memories unless `--include-global`
+is given, and it refuses symlinks.
 
 ## Removing claude-mem
 
