@@ -34,3 +34,9 @@ homebrew_casks:
     license: Apache-2.0
     binaries:
       - hive
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/hive"]
+          end
