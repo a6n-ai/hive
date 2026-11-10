@@ -5,17 +5,16 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/a6n-ai/hive/agent"
 )
 
 // settingsCmd parses the --agent and --settings flags shared by install and
-// uninstall. The default settings file is Claude Code's.
+// uninstall. The default settings file is the adapter's.
 func settingsCmd(name string, args []string) (agent.Adapter, string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	agentName := fs.String("agent", "", "agent to hook (claude-code)")
-	settings := fs.String("settings", "", "settings file (default ~/.claude/settings.json)")
+	agentName := fs.String("agent", "", "agent to hook (claude-code, codex)")
+	settings := fs.String("settings", "", "settings file (default is the agent's own)")
 	if err := fs.Parse(args); err != nil {
 		return nil, "", err
 	}
@@ -24,11 +23,7 @@ func settingsCmd(name string, args []string) (agent.Adapter, string, error) {
 		return nil, "", err
 	}
 	if *settings == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, "", err
-		}
-		*settings = filepath.Join(home, ".claude", "settings.json")
+		*settings = ad.SettingsPath()
 	}
 	return ad, *settings, nil
 }
@@ -45,8 +40,14 @@ func installCmd(args []string, stdout io.Writer) error {
 	if err := ad.Install(settings, bin); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(stdout, "installed %s hooks in %s\n", ad.Name(), settings)
-	return err
+	if _, err := fmt.Fprintf(stdout, "installed %s hooks in %s\n", ad.Name(), settings); err != nil {
+		return err
+	}
+	if n, ok := ad.(agent.InstallNoter); ok {
+		_, err = fmt.Fprintln(stdout, n.InstallNote())
+		return err
+	}
+	return nil
 }
 
 func uninstallCmd(args []string, stdout io.Writer) error {

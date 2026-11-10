@@ -4,7 +4,11 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/a6n-ai/hive/internal/recall"
 	"github.com/a6n-ai/hive/model"
@@ -20,11 +24,18 @@ type Adapter interface {
 	Parse(event string, stdin []byte) (model.Event, error)
 	Reply(event string, lines []recall.Line) []byte
 	Capabilities() Caps
+	SettingsPath() string
 	Install(settingsPath, hiveBin string) error
 	Uninstall(settingsPath string) error
 	InstructionsFile() string
 	SkillDirs() []string
 	Headless(model string) HeadlessSpec
+}
+
+// InstallNoter is implemented by an adapter whose hooks need a manual step
+// after install, such as approving them in the agent.
+type InstallNoter interface {
+	InstallNote() string
 }
 
 // HeadlessSpec describes a one-shot, non-interactive model call: the prompt is
@@ -45,4 +56,45 @@ func Get(name string) (Adapter, error) {
 		return nil, fmt.Errorf("agent: unknown agent %q", name)
 	}
 	return a, nil
+}
+
+// HookCommand is the command line an agent runs for one hook event.
+func HookCommand(bin, agentName, event string) string {
+	return ShellQuote(bin) + " hook --agent " + agentName + " " + event
+}
+
+// IsHookCommand reports whether cmd is a hook Hive installed for agentName,
+// from any binary path.
+func IsHookCommand(cmd, agentName string) bool {
+	return strings.Contains(cmd, " hook --agent "+agentName+" ")
+}
+
+// ShellQuote quotes a word for the shell that runs hook commands.
+func ShellQuote(p string) string {
+	if p != "" && strings.Trim(p, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./-") == "" {
+		return p
+	}
+	return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
+}
+
+// UserPath joins elem under the user's home directory.
+func UserPath(elem ...string) string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(append([]string{home}, elem...)...)
+}
+
+// ContextJSON is the hook reply that injects recalled lines into an agent's
+// context, or nil when there is nothing to inject.
+func ContextJSON(event string, lines []recall.Line) []byte {
+	if len(lines) == 0 {
+		return nil
+	}
+	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName":     event,
+		"additionalContext": recall.Render(lines),
+	}})
+	if err != nil {
+		return nil
+	}
+	return out
 }

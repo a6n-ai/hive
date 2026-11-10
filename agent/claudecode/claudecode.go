@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -119,20 +117,9 @@ func shellPayload(input map[string]any, failed bool, errText string) map[string]
 func (a *Adapter) Reply(event string, lines []recall.Line) []byte {
 	switch event {
 	case "SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure":
-	default:
-		return nil
+		return agent.ContextJSON(event, lines)
 	}
-	if len(lines) == 0 {
-		return nil
-	}
-	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
-		"hookEventName":     event,
-		"additionalContext": recall.Render(lines),
-	}})
-	if err != nil {
-		return nil
-	}
-	return out
+	return nil
 }
 
 func (a *Adapter) Capabilities() agent.Caps {
@@ -140,6 +127,8 @@ func (a *Adapter) Capabilities() agent.Caps {
 }
 
 func (a *Adapter) InstructionsFile() string { return "CLAUDE.md" }
+
+func (a *Adapter) SettingsPath() string { return agent.UserPath(".claude", "settings.json") }
 
 // Headless runs Claude Code in print mode with the given model and no tools, so
 // text from transcripts cannot make it act. It keeps its normal auth (no --bare).
@@ -170,6 +159,5 @@ func parseHeadless(out []byte) (string, error) {
 }
 
 func (a *Adapter) SkillDirs() []string {
-	home, _ := os.UserHomeDir()
-	return []string{filepath.Join(home, ".claude", "skills"), filepath.Join(home, ".claude", "plugins", "cache")}
+	return []string{agent.UserPath(".claude", "skills"), agent.UserPath(".claude", "plugins", "cache")}
 }

@@ -1,0 +1,1 @@
+{"session_id":"s1","cwd":"/tmp","hook_event_name":"PostToolUse","tool_name":"bash","tool_input":{"command":"go test"},"tool_response":{"output":"boom","metadata":{"exit_code":2}},"turn_id":"t1"}

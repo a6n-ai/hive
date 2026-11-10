@@ -1,0 +1,1 @@
+{"session_id":"s1","cwd":"/tmp","hook_event_name":"PostToolUse","tool_name":"apply_patch","tool_input":{"input":"*** Begin Patch\n*** Update File: a.go\n*** Add File: b.go\n*** End Patch"},"tool_response":{"exit_code":0},"turn_id":"t1"}

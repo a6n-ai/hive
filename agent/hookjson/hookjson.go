@@ -11,7 +11,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/a6n-ai/hive/agent"
 )
 
 // Entry is one hook to install. Extra keys are merged in: "matcher" sets the
@@ -23,9 +24,8 @@ type Entry struct {
 
 // Owns reports whether a command was installed by Hive for the named agent,
 // whatever binary path it was installed from.
-func Owns(agent string) func(cmd string) bool {
-	marker := " hook --agent " + agent + " "
-	return func(cmd string) bool { return strings.Contains(cmd, marker) }
+func Owns(agentName string) func(cmd string) bool {
+	return func(cmd string) bool { return agent.IsHookCommand(cmd, agentName) }
 }
 
 // Install replaces every hook owns recognises with entries. It writes only
