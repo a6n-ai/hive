@@ -117,6 +117,9 @@ func aboveThreshold(lines []Line, min float64) []Line {
 
 // withinBudget keeps lines in order until the token budget or line cap
 // (0 = none) is reached.
+// FitBudget keeps the leading lines that fit in budget tokens.
+func FitBudget(lines []Line, budget int) []Line { return withinBudget(lines, budget, 0) }
+
 func withinBudget(lines []Line, budget, maxLines int) []Line {
 	used := 0
 	for i, l := range lines {

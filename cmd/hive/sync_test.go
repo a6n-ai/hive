@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/a6n-ai/hive"
+	"github.com/a6n-ai/hive/model"
 )
 
 func TestSyncCommand(t *testing.T) {
@@ -79,5 +85,35 @@ func TestSyncNeutralizesMarkerInMemory(t *testing.T) {
 	}
 	if n := strings.Count(text, "<!-- hive:end -->"); n != 1 {
 		t.Fatalf("end markers = %d, want 1:\n%s", n, text)
+	}
+}
+
+func TestSyncBudgetAfterFilter(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	// Old project notes rank below recent global ones, so only a budget applied
+	// after the scope filter keeps them.
+	h, err := hive.Open(hive.Options{Home: home, Caller: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-1000 * 24 * time.Hour).UnixMilli()
+	projNotes := []string{"project alpha uses make", "project beta runs go vet", "project gamma ships docker"}
+	for _, n := range projNotes {
+		err := h.Capture(context.Background(), hive.Event{Agent: "cli", Session: "cli", Project: proj, Kind: model.Remembered, TS: old,
+			Payload: map[string]any{"text": n, "type": "note", "scope": "project"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = h.Close()
+	for i := range 50 {
+		runOK(t, home, "", "remember", fmt.Sprintf("global note %02d about shared editor settings", i), "--type", "note", "--scope", "global")
+	}
+	runOK(t, home, "", "sync", "--agent", "claude-code", "--project", proj)
+	text := readText(t, filepath.Join(proj, "CLAUDE.md"))
+	for _, n := range projNotes {
+		if !strings.Contains(text, n) {
+			t.Fatalf("project memory %q cut by the budget:\n%s", n, text)
+		}
 	}
 }

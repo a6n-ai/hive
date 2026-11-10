@@ -16,6 +16,13 @@ import (
 
 const syncHeading = "## Hive memory (generated; edits here are replaced)"
 
+// syncBudget is the token budget of the synced block. syncFetchBudget is large
+// enough that the scope filter, not the budget, decides what is fetched.
+const (
+	syncBudget      = 400
+	syncFetchBudget = 1 << 20
+)
+
 const syncReview = "This file may be committed to your repository; review the block before committing."
 
 // syncCmd writes the project's session-start recall into the agent's
@@ -46,7 +53,7 @@ func syncCmd(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	lines, err := h.Recall(ctx, hive.Query{Project: proj, Mode: recall.SessionStart, Budget: 400})
+	lines, err := h.Recall(ctx, hive.Query{Project: proj, Mode: recall.SessionStart, Budget: syncFetchBudget})
 	if err != nil {
 		return err
 	}
@@ -58,6 +65,7 @@ func syncCmd(args []string, stdout io.Writer) error {
 			kept = append(kept, l)
 		}
 	}
+	kept = recall.FitBudget(kept, syncBudget)
 	path := filepath.Join(proj, ad.InstructionsFile())
 	if err := agent.WriteBlock(path, syncHeading+"\n\n"+recall.Render(kept)); err != nil {
 		return err
