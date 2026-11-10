@@ -15,7 +15,7 @@ import (
 )
 
 const usage = `usage: inscribe <command> [args]
-commands: setup, hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, undo, sync, mcp, version`
+commands: setup, hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, undo, sync, mcp, update, version`
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
@@ -38,6 +38,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = installCmd(args[1:], stdout)
 	case "uninstall":
 		err = uninstallCmd(args[1:], stdout)
+	case "update":
+		err = updateCmd(stdout, stderr)
 	case "recall":
 		err = recallCmd(args[1:], stdout)
 	case "remember":

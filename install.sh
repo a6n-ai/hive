@@ -119,6 +119,15 @@ main() {
 	[ -n "$tag" ] || fail "could not find the latest inscribe release"
 	say "version: $tag"
 
+	if [ -x "$INSTALL_DIR/inscribe" ]; then
+		case "$("$INSTALL_DIR/inscribe" version 2>/dev/null)" in
+			"inscribe ${tag#v} "*)
+				echo "inscribe $tag is already up to date in $INSTALL_DIR"
+				return
+				;;
+		esac
+	fi
+
 	archive="inscribe_${tag#v}_${os}_${arch}.tar.gz"
 	say "downloading checksums.txt"
 	fetch "$BASE_URL/$tag/checksums.txt" "$tmp/checksums.txt"

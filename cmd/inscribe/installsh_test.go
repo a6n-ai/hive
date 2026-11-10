@@ -225,3 +225,20 @@ func TestInstallShPurgeNeedsUninstall(t *testing.T) {
 		t.Fatalf("install.sh --purge: err %v, output %q", err, out)
 	}
 }
+
+func TestInstallShSkipsWhenUpToDate(t *testing.T) {
+	base, installDir, env := installEnv(t, "Linux", "x86_64")
+	if err := os.MkdirAll(installDir, 0o755); err != nil { //nolint:gosec // G301: test dir
+		t.Fatal(err)
+	}
+	current := "#!/bin/sh\necho 'inscribe 1.2.3 (abc, today)'\n"
+	if err := os.WriteFile(filepath.Join(installDir, "inscribe"), []byte(current), 0o755); err != nil { //nolint:gosec // G306: test fake must be executable
+		t.Fatal(err)
+	}
+	// No release files exist under base, so any download would fail.
+	_ = base
+	out, code := runInstallSh(t, env...)
+	if code != 0 || !strings.Contains(out, "already up to date") {
+		t.Fatalf("exit %d, output %q; want an up-to-date skip", code, out)
+	}
+}

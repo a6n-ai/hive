@@ -30,6 +30,14 @@ project sees it. It shows
 every file and command before it runs. `inscribe setup --yes` applies the defaults
 without prompts; without a terminal it prints the plan and exits 2.
 
+## Update
+
+    inscribe update          # script install: fetches the latest release, verifies it, swaps the binary
+    brew upgrade inscribe    # Homebrew install (inscribe update tells you this)
+
+Running the install script again does the same as `inscribe update`; it does
+nothing when the installed version is already the latest.
+
 ## Uninstall
 
     inscribe uninstall           # hooks for every agent and the MCP server; keeps your data
