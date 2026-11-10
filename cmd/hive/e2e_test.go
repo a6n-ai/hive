@@ -615,3 +615,29 @@ func TestSetupYesDoesNotResetUserConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupDevNullStdinExits2(t *testing.T) {
+	home := t.TempDir()
+	env, _ := fakeClaudeEnv(t, home)
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = devNull.Close() }()
+	cmd := exec.Command(binPath, "setup")
+	cmd.Env = append(append(os.Environ(), "HIVE_HOME="+home), env...)
+	cmd.Stdin = devNull
+	var out, errOut bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	err = cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("setup with /dev/null stdin: err %v, want exit 2\n%s\n%s", err, out.String(), errOut.String())
+	}
+	if strings.Contains(out.String()+errOut.String(), "TTY") {
+		t.Errorf("setup tried to open a terminal:\n%s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "- ") || !strings.Contains(out.String(), "hive setup --yes") {
+		t.Errorf("output lacks the plan or the --yes hint:\n%s", out.String())
+	}
+}

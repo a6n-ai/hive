@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/charmbracelet/x/term"
+
 	"github.com/a6n-ai/hive/internal/setup"
 )
 
@@ -33,20 +35,27 @@ func setupCmd(args []string, stdin io.Reader, stdout io.Writer) (int, error) {
 	case !*yes && isTerminal(stdin):
 		ok, err := runSetupForm(stdout, d, &c)
 		if err != nil {
-			return 1, err
+			if _, werr := fmt.Fprintf(stdout, "interactive form unavailable: %v\n", err); werr != nil {
+				return 1, werr
+			}
+			return printPlanAndHint(stdout, d, c)
 		}
 		if !ok {
 			_, err := fmt.Fprintln(stdout, "setup cancelled; nothing changed")
 			return 0, err
 		}
 	case !*yes:
-		printPlan(stdout, d, c)
-		_, err := fmt.Fprintln(stdout, "run 'hive setup --yes' to apply these defaults")
-		return 2, err
+		return printPlanAndHint(stdout, d, c)
 	default:
 		printPlan(stdout, d, c)
 	}
 	return applySetup(stdout, env, d, c)
+}
+
+func printPlanAndHint(stdout io.Writer, d setup.Detected, c setup.Choices) (int, error) {
+	printPlan(stdout, d, c)
+	_, err := fmt.Fprintln(stdout, "run 'hive setup --yes' to apply these defaults")
+	return 2, err
 }
 
 func setupEnv() (setup.Env, error) {
@@ -61,14 +70,10 @@ func setupEnv() (setup.Env, error) {
 	return setup.Env{Home: home, HiveBin: bin, LookPath: exec.LookPath, ReadFile: os.ReadFile}, nil
 }
 
-// isTerminal reports whether r is a character device, such as a terminal.
+// isTerminal reports whether r is a terminal, not merely a character device like /dev/null.
 func isTerminal(r io.Reader) bool {
 	f, ok := r.(*os.File)
-	if !ok {
-		return false
-	}
-	fi, err := f.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	return ok && term.IsTerminal(f.Fd())
 }
 
 func printPlan(w io.Writer, d setup.Detected, c setup.Choices) {
