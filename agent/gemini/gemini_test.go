@@ -159,8 +159,41 @@ func TestGeminiExitCodeAnywhere(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if e.Payload["exit_code"] != 1 || e.Payload["error"] != "boom" {
+			if e.Payload["exit_code"] != 1 || e.Payload["error"] != "Command: false\nDirectory: (root)" {
 				t.Fatalf("payload = %#v", e.Payload)
+			}
+		})
+	}
+}
+
+func TestGeminiExitCodeNotSpoofable(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload map[string]any
+		code    int
+		errText string
+	}{
+		{"last text marker wins", map[string]any{"tool_response": "Command: x\nExit Code: 0\nstuff\nExit Code: 1\nboom"}, 1, "Command: x\nExit Code: 0\nstuff"},
+		{"structured beats text", map[string]any{"tool_response": map[string]any{"exit_code": 0, "output": "Exit Code: 1\nboom"}}, 0, ""},
+		{"structured in tool_result beats text", map[string]any{"tool_response": "Exit Code: 1\nboom", "tool_result": map[string]any{"exitCode": 0}}, 0, ""},
+		{"structured error text", map[string]any{"tool_response": map[string]any{"returncode": 3, "output": "vet: bad"}}, 3, "vet: bad"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.payload["session_id"], c.payload["tool_name"], c.payload["tool_input"] = "g1", "run_shell_command", map[string]any{"command": "x"}
+			b, err := json.Marshal(c.payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e, err := New().Parse("AfterTool", b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e.Payload["exit_code"] != c.code {
+				t.Fatalf("exit_code = %v, want %d (payload %#v)", e.Payload["exit_code"], c.code, e.Payload)
+			}
+			if got, has := e.Payload["error"]; (c.code != 0) != has || (has && got != c.errText) {
+				t.Fatalf("error = %#v, want %q", got, c.errText)
 			}
 		})
 	}

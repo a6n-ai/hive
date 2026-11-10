@@ -451,7 +451,7 @@ func TestGeminiPromptAndToolRecall(t *testing.T) {
 	file := filepath.Join(proj, "auth.ts")
 	shell := func(session, exit, text string) map[string]any {
 		return map[string]any{"session_id": session, "cwd": proj, "tool_name": "run_shell_command",
-			"tool_input": map[string]any{"command": "go test ./..."}, "tool_response": map[string]any{"output": "Exit Code: " + exit + "\n" + text}}
+			"tool_input": map[string]any{"command": "go test ./..."}, "tool_response": map[string]any{"output": text + "\nExit Code: " + exit}}
 	}
 	errAt := func(line int) string {
 		return fmt.Sprintf("TypeError: cannot read properties of undefined (reading 'map') at %s:%d:5\n    at next", file, line)

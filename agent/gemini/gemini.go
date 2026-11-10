@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/a6n-ai/hive/agent"
 	"github.com/a6n-ai/hive/internal/capture"
@@ -66,7 +67,7 @@ func (a *Adapter) Parse(event string, stdin []byte) (model.Event, error) {
 	case model.Prompt:
 		e.PromptText = p.promptText()
 	case model.PostTool:
-		e.Tool, e.Payload = normalize(p.ToolName, orMap(p.ToolInput, p.ToolArgs), orAny(p.ToolResp, p.ToolResult))
+		e.Tool, e.Payload = normalize(p.ToolName, orMap(p.ToolInput, p.ToolArgs), p.response())
 	}
 	return e, nil
 }
@@ -80,6 +81,17 @@ func (p hookPayload) promptText() string {
 	}
 	s, _ := p.LLMRequest.(string)
 	return s
+}
+
+// response is the tool response that carries a structured exit code if either
+// field does, so text can never override a code the agent reported.
+func (p hookPayload) response() any {
+	for _, r := range []any{p.ToolResp, p.ToolResult} {
+		if _, ok := agent.ExitCode(r); ok {
+			return r
+		}
+	}
+	return orAny(p.ToolResp, p.ToolResult)
 }
 
 func orAny(a, b any) any {
@@ -121,9 +133,9 @@ func normalize(tool string, input map[string]any, resp any) (string, map[string]
 	return tool, out
 }
 
-// shellResult takes the exit code from the response keys, or from an
-// "Exit Code: N" line anywhere in the response text. A non-zero code makes the
-// text after that line the error.
+// shellResult takes the exit code from the response keys, or else from the
+// last "Exit Code: N" line in the text, so output that echoes an earlier marker
+// cannot spoof it. A non-zero code makes the text before that line the error.
 func shellResult(out map[string]any, resp any) {
 	if code, ok := agent.ExitCode(resp); ok {
 		out["exit_code"] = code
@@ -133,15 +145,16 @@ func shellResult(out map[string]any, resp any) {
 		return
 	}
 	text := agent.ResponseText(resp)
-	m := exitLine.FindStringSubmatchIndex(text)
-	if m == nil {
+	all := exitLine.FindAllStringSubmatchIndex(text, -1)
+	if len(all) == 0 {
 		return
 	}
+	last := all[len(all)-1]
 	var code int
-	_, _ = fmt.Sscanf(text[m[2]:m[3]], "%d", &code)
+	_, _ = fmt.Sscanf(text[last[2]:last[3]], "%d", &code)
 	out["exit_code"] = code
 	if code != 0 {
-		out["error"] = text[m[1]:]
+		out["error"] = strings.TrimSpace(text[:last[0]])
 	}
 }
 
