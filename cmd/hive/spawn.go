@@ -8,7 +8,7 @@ import (
 
 // spawnDetached re-runs this binary with args in a new session and returns
 // without waiting for it. Its output goes to the null device.
-func spawnDetached(args ...string) error {
+var spawnDetached = func(args ...string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err

@@ -88,7 +88,12 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 }
 
 // followUps starts the background work an event implies. The hook never waits for it.
+// Consolidation needs the agent to run headless, so it is skipped for agents
+// that cannot.
 func followUps(event string, e hive.Event, auto bool) error {
+	if ad, err := agent.Get(e.Agent); err == nil && len(ad.Headless("").Command) == 0 {
+		auto = false
+	}
 	switch event {
 	case "SessionStart":
 		if err := spawnDetached("retention", "auto"); err != nil {

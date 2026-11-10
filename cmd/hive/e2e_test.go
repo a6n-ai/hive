@@ -506,3 +506,30 @@ func TestInstallRefusesJSONCWithInstructions(t *testing.T) {
 		}
 	}
 }
+
+func TestNoConsolidateSpawnWithoutHeadless(t *testing.T) {
+	var spawned [][]string
+	old := spawnDetached
+	spawnDetached = func(args ...string) error {
+		spawned = append(spawned, args)
+		return nil
+	}
+	t.Cleanup(func() { spawnDetached = old })
+	for _, ev := range []string{"SessionStart", "SessionEnd"} {
+		if err := followUps(ev, hive.Event{Agent: "gemini", Session: "s1"}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range spawned {
+		if args[0] == "consolidate" {
+			t.Fatalf("gemini spawned consolidate %v", args)
+		}
+	}
+	spawned = nil
+	if err := followUps("SessionEnd", hive.Event{Agent: "claude-code", Session: "s1"}, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(spawned) != 1 || spawned[0][0] != "consolidate" {
+		t.Fatalf("claude-code did not spawn consolidate: %v", spawned)
+	}
+}
