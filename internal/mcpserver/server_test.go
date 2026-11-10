@@ -20,11 +20,11 @@ func openHive(t *testing.T, proj string) *hive.Hive {
 	return h
 }
 
-func connect(t *testing.T, h *hive.Hive) *mcp.ClientSession {
+func connect(t *testing.T, h *hive.Hive, project string) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	clientT, serverT := mcp.NewInMemoryTransports()
-	if _, err := New(h).Connect(ctx, serverT, nil); err != nil {
+	if _, err := New(h, project).Connect(ctx, serverT, nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, clientT, nil)
@@ -53,7 +53,7 @@ func call(t *testing.T, cs *mcp.ClientSession, name string, args map[string]any)
 
 func TestMCPRememberRecall(t *testing.T) {
 	proj := t.TempDir()
-	cs := connect(t, openHive(t, proj))
+	cs := connect(t, openHive(t, proj), proj)
 	id, isErr := call(t, cs, "remember", map[string]any{"text": "use make deploy for releases", "type": "note", "scope": "project", "project": proj})
 	if isErr || strings.TrimSpace(id) == "" {
 		t.Fatalf("remember = %q, error %v", id, isErr)
@@ -67,7 +67,7 @@ func TestMCPRememberRecall(t *testing.T) {
 func TestMCPForgetNeverPurges(t *testing.T) {
 	proj := t.TempDir()
 	h := openHive(t, proj)
-	cs := connect(t, h)
+	cs := connect(t, h, proj)
 	id, _ := call(t, cs, "remember", map[string]any{"text": "deploys go through make deploy", "type": "note", "scope": "project", "project": proj})
 	status, isErr := call(t, cs, "forget", map[string]any{"id": strings.TrimSpace(id)})
 	if isErr || !strings.Contains(status, "forgotten") {
@@ -83,7 +83,7 @@ func TestMCPForgetNeverPurges(t *testing.T) {
 }
 
 func TestMCPBadArgs(t *testing.T) {
-	cs := connect(t, openHive(t, t.TempDir()))
+	cs := connect(t, openHive(t, t.TempDir()), t.TempDir())
 	long := strings.Repeat("x", 5000)
 	cases := map[string]struct {
 		tool string
@@ -108,7 +108,7 @@ func TestMCPBadArgs(t *testing.T) {
 
 func TestMCPScrubsRemember(t *testing.T) {
 	proj := t.TempDir()
-	cs := connect(t, openHive(t, proj))
+	cs := connect(t, openHive(t, proj), proj)
 	secret := "AKIAABCDEFGHIJKLMNOP"
 	if _, isErr := call(t, cs, "remember", map[string]any{"text": "deploy key " + secret + " lives in ci", "type": "note", "scope": "project", "project": proj}); isErr {
 		t.Fatal("remember failed")
@@ -117,4 +117,58 @@ func TestMCPScrubsRemember(t *testing.T) {
 	if strings.Contains(out, secret) {
 		t.Fatalf("secret recalled: %q", out)
 	}
+}
+
+func TestMCPRecallDefaultsToServerProject(t *testing.T) {
+	projA, projB := t.TempDir(), t.TempDir()
+	h := openHive(t, projA)
+	ctx := context.Background()
+	if _, err := h.Remember(ctx, "projA uses make deploy", model.Note, model.ProjectScope, projA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Remember(ctx, "projB secret is banana", model.Note, model.ProjectScope, projB); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t, h, projA)
+	out, isErr := call(t, cs, "recall", map[string]any{})
+	if isErr || !strings.Contains(out, "projA uses make deploy") || strings.Contains(out, "banana") {
+		t.Fatalf("recall = %q, error %v", out, isErr)
+	}
+	if _, isErr := call(t, cs, "recall", map[string]any{"project": projB}); !isErr {
+		t.Fatal("recall accepted another project")
+	}
+}
+
+func TestMCPForgetWhyRefuseOtherProject(t *testing.T) {
+	projA, projB := t.TempDir(), t.TempDir()
+	h := openHive(t, projA)
+	id, err := h.Remember(context.Background(), "projB secret is banana", model.Note, model.ProjectScope, projB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t, h, projA)
+	for _, tool := range []string{"forget", "why"} {
+		if _, isErr := call(t, cs, tool, map[string]any{"id": id}); !isErr {
+			t.Fatalf("%s acted on another project's memory", tool)
+		}
+	}
+}
+
+func TestMCPRememberDefaultsToProject(t *testing.T) {
+	projA := t.TempDir()
+	h := openHive(t, projA)
+	cs := connect(t, h, projA)
+	if _, isErr := call(t, cs, "remember", map[string]any{"text": "deploy with make deploy"}); isErr {
+		t.Fatal("remember failed")
+	}
+	ms, err := h.List(context.Background(), hive.ListFilter{Project: projA})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms {
+		if m.ScopeKind == model.ProjectScope && m.Scope == projA {
+			return
+		}
+	}
+	t.Fatalf("remember without scope did not default to project scope: %v", ms)
 }

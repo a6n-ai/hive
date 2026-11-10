@@ -53,7 +53,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "sync":
 		err = syncCmd(args[1:], stdout)
 	case "mcp":
-		err = mcpCmd()
+		err = mcpCmd(args[1:])
 	case "version":
 		err = versionCmd(stdout)
 	case "doctor":
