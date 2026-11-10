@@ -7,8 +7,13 @@ import (
 )
 
 // spawnDetached re-runs this binary with args in a new session and returns
-// without waiting for it. Its output goes to the null device.
+// without waiting for it. Its output goes to the null device. HIVE_TEST_NO_SPAWN=1,
+// when set, makes it a no-op: a test-only switch so e2e tests do not leave
+// background children writing into a temp HIVE_HOME during cleanup.
 var spawnDetached = func(args ...string) error {
+	if os.Getenv("HIVE_TEST_NO_SPAWN") == "1" {
+		return nil
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/a6n-ai/hive"
+	"github.com/a6n-ai/hive/internal/consolidate"
 	"github.com/a6n-ai/hive/model"
 	_ "modernc.org/sqlite"
 )
@@ -37,11 +38,12 @@ func TestMain(m *testing.M) {
 }
 
 // runCLI runs the built binary with HIVE_HOME set to home. extraEnv entries
-// override the inherited environment.
+// override the inherited environment; background spawns are off unless extraEnv
+// sets HIVE_TEST_NO_SPAWN=0.
 func runCLI(t *testing.T, home, stdin string, extraEnv []string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := exec.Command(binPath, args...)
-	cmd.Env = append(append(os.Environ(), "HIVE_HOME="+home), extraEnv...)
+	cmd.Env = append(append(os.Environ(), "HIVE_HOME="+home, "HIVE_TEST_NO_SPAWN=1"), extraEnv...)
 	cmd.Stdin = strings.NewReader(stdin)
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
@@ -289,14 +291,37 @@ func runRows(t *testing.T, home string) int {
 }
 
 // sessionEnd sends a SessionEnd hook for session, with the test agent in the environment.
+// It allows the background consolidation spawn; callers must wait with waitHomeQuiet.
 func sessionEnd(t *testing.T, home, session, agentPath string) {
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{"session_id": session, "cwd": "/p", "hook_event_name": "SessionEnd"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, errOut, code := runCLI(t, home, string(payload), []string{"HIVE_TEST_HEADLESS=" + agentPath}, "hook", "--agent", "claude-code", "SessionEnd"); code != 0 {
+	env := []string{"HIVE_TEST_HEADLESS=" + agentPath, "HIVE_TEST_NO_SPAWN=0"}
+	if _, errOut, code := runCLI(t, home, string(payload), env, "hook", "--agent", "claude-code", "SessionEnd"); code != 0 {
 		t.Fatalf("hook exit %d: %s", code, errOut)
+	}
+}
+
+// waitHomeQuiet blocks until no consolidation holds home's lock, so a spawned
+// child has stopped writing into home before the test returns.
+func waitHomeQuiet(t *testing.T, home string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		release, ok, err := consolidate.Lock(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			release()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("consolidation still holds the lock 10 s after its run was recorded")
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -368,6 +393,7 @@ func TestSessionEndSpawnsWhenAuto(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	waitHomeQuiet(t, home)
 }
 
 func TestSessionEndNoSpawnWhenAutoOff(t *testing.T) {
