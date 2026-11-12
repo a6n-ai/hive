@@ -555,8 +555,8 @@ func TestNoConsolidateSpawnWithoutHeadless(t *testing.T) {
 	if err := followUps("SessionEnd", inscribe.Event{Agent: "claude-code", Session: "s1"}, true); err != nil {
 		t.Fatal(err)
 	}
-	if len(spawned) != 1 || spawned[0][0] != "consolidate" {
-		t.Fatalf("claude-code did not spawn consolidate: %v", spawned)
+	if len(spawned) != 2 || spawned[0][0] != "score" || spawned[1][0] != "consolidate" {
+		t.Fatalf("claude-code session end spawned %v, want score train then consolidate", spawned)
 	}
 }
 

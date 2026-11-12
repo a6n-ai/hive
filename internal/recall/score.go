@@ -9,24 +9,65 @@ import (
 	"github.com/a6n-ai/inscribe/model"
 )
 
-// relevance is the share of terms that match, taking the better of the
-// query's view and the memory's view. It does not depend on corpus size,
-// unlike bm25, so one threshold works for a new and an old database.
-func relevance(queryGroups [][]string, memText string) float64 {
-	memTerms := text.Terms(memText)
-	if len(queryGroups) == 0 || len(memTerms) == 0 {
+// promptScore scores one memory against a prompt. It is a local Jev: a few
+// yes/no checks, then one graded score. Nothing is sent to a model.
+//
+//	relevant?  no shared word            → 0, and the memory is not injected
+//	phrase?    prompt words occur in order → grade 1
+//	covered?   every prompt word matches   → grade 0.85
+//	otherwise                              → grade = share of prompt words that match
+//
+// Confidence, recency, and scope then scale the grade, the same way a Jev
+// score is combined with signals the code already knows.
+func promptScore(groups [][]string, m model.Memory, now time.Time, halfLife float64, files []string) float64 {
+	return grade(groups, text.Terms(m.Text)) * m.Confidence * recency(m, now, halfLife) * scopeWeight(m, files)
+}
+
+// grade is the leaf shared by the text and by every stored column.
+// No shared word is 0. Prompt words in order is 1. Every word in any order
+// is 0.85. Otherwise it is the share of prompt words that match.
+func grade(groups [][]string, terms []string) float64 {
+	if len(groups) == 0 || len(terms) == 0 {
 		return 0
 	}
-	var queryTerms []string
-	matchedWords := 0
-	for _, g := range queryGroups {
-		queryTerms = append(queryTerms, g...)
-		if countMatched(g, memTerms) > 0 {
-			matchedWords++
+	matched := 0
+	for _, g := range groups {
+		if countMatched(g, terms) > 0 {
+			matched++
 		}
 	}
-	m := countMatched(memTerms, queryTerms)
-	return math.Max(float64(matchedWords)/float64(len(queryGroups)), float64(m)/float64(len(memTerms)))
+	if matched == 0 {
+		return 0
+	}
+	g := float64(matched) / float64(len(groups))
+	switch {
+	case phraseHit(groups, terms):
+		g = 1
+	case matched == len(groups):
+		g = 0.85
+	}
+	return g
+}
+
+// phraseHit reports whether the prompt words occur in the memory in order.
+// test matches tests, the same prefix rule as the rest of recall.
+func phraseHit(groups [][]string, memTerms []string) bool {
+	at := 0
+	for _, g := range groups {
+		found := false
+		for at < len(memTerms) {
+			if countMatched(g, memTerms[at:at+1]) > 0 {
+				found = true
+				at++
+				break
+			}
+			at++
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // countMatched counts terms in a that match some term in b.

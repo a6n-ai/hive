@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/a6n-ai/inscribe/internal/config"
 	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/internal/text"
 	"github.com/a6n-ai/inscribe/model"
 )
 
@@ -80,6 +82,101 @@ func TestSessionStartRespectsBudget(t *testing.T) {
 		if lines[i].Score > lines[i-1].Score {
 			t.Fatal("lines not sorted by score")
 		}
+	}
+}
+
+func TestPromptRanksSimilarMemories(t *testing.T) {
+	st := newStore(t)
+	memories := []model.Memory{
+		{Type: model.Fix, Key: "login-fix", Text: "login bug fixed in auth.ts"},
+		{Type: model.Note, Key: "login-note", Text: "login failure in auth handler"},
+		{Type: model.Command, Key: "test", Text: "tests: go test ./..."},
+		{Type: model.Note, Key: "deploy", Text: "deploy with make"},
+		{Type: model.Preference, Key: "tabs", Text: "use tabs not spaces", ScopeKind: model.Global, Scope: ""},
+	}
+	for _, m := range memories {
+		put(t, st, m)
+	}
+	const prompt = "fix the login bug in auth"
+	lines, err := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: prompt, Mode: Prompt}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("prompt: %q", prompt)
+	t.Logf("%-6s  %-44s  %s", "score", "memory", "injected")
+	injected := map[string]bool{}
+	for _, l := range lines {
+		injected[l.Text] = true
+	}
+	groups := text.Groups(prompt)
+	type row struct {
+		text  string
+		score float64
+	}
+	var ranked []row
+	for _, m := range memories {
+		m.Confidence = 0.9
+		m.LastSeen = now.UnixMilli()
+		if m.ScopeKind == "" {
+			m.ScopeKind = model.ProjectScope
+		}
+		ranked = append(ranked, row{m.Text, promptScore(groups, m, now, 30, nil)})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		return ranked[i].text < ranked[j].text
+	})
+	for _, r := range ranked {
+		mark := "no"
+		if injected[r.text] {
+			mark = "yes"
+		}
+		t.Logf("%6.3f  %-44s  %s", r.score, r.text, mark)
+	}
+
+	if len(lines) != 2 {
+		t.Fatalf("injected %d lines, want the two login memories: %+v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0].Text, "login bug fixed") || !strings.Contains(lines[1].Text, "login failure") {
+		t.Fatalf("rank = %q then %q", lines[0].Text, lines[1].Text)
+	}
+	if lines[0].Score <= lines[1].Score {
+		t.Fatalf("scores not descending: %+v", lines)
+	}
+}
+
+func TestPromptInjectsTheMatchingMemory(t *testing.T) {
+	st := newStore(t)
+	put(t, st, model.Memory{Type: model.Command, Key: "test", Text: "tests: go test ./..."})
+	put(t, st, model.Memory{Type: model.Note, Key: "deploy", Text: "deploy with make"})
+	put(t, st, model.Memory{Type: model.Fix, Key: "login", Text: "login bug fixed in auth.ts"})
+	put(t, st, model.Memory{Type: model.Preference, Key: "tabs", Text: "use tabs not spaces", ScopeKind: model.Global, Scope: ""})
+
+	login, err := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "fix the login bug", Mode: Prompt}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(login) != 1 || !strings.Contains(login[0].Text, "login bug") {
+		t.Fatalf("login prompt injected %+v, want only the login fix", login)
+	}
+
+	tests, err := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "run the tests", Mode: Prompt}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tests) != 1 || !strings.Contains(tests[0].Text, "go test") {
+		t.Fatalf("test prompt injected %+v, want the go test command", tests)
+	}
+
+	tabs, err := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "please use tabs", Mode: Prompt}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tabs) != 1 || !strings.Contains(tabs[0].Text, "tabs") {
+		t.Fatalf("tabs prompt injected %+v, want the preference", tabs)
 	}
 }
 

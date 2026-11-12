@@ -18,6 +18,7 @@ import (
 	"github.com/a6n-ai/inscribe/internal/extract"
 	"github.com/a6n-ai/inscribe/internal/scrub"
 	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/internal/trajectory"
 	"github.com/a6n-ai/inscribe/model"
 )
 
@@ -220,8 +221,12 @@ func quarantine(dbPath string, e *model.Event) error {
 	return os.WriteFile(name, append(line, '\n'), 0o600)
 }
 
-// process runs on an event that is already inserted.
+// process runs on an event that is already inserted. It saves the shared
+// trajectory record for that event, then derives and extracts.
 func (p *Pipeline) process(ctx context.Context, tx *store.Tx, e *model.Event) error {
+	if err := tx.InsertTrajectory(e, trajectory.Normalize(e)); err != nil {
+		return err
+	}
 	prev, err := tx.LastEvent(e.Session, e.ID)
 	if err != nil {
 		return err

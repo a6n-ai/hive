@@ -24,6 +24,7 @@ type Event struct {
 	Agent      string
 	Session    string
 	Project    string
+	Cwd        string // agent working directory; stored on the trajectory record, not on events
 	Kind       EventKind
 	Tool       string
 	Payload    map[string]any

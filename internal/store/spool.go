@@ -41,7 +41,7 @@ func (s *Store) Spool(e *model.Event) error {
 	}
 	line = append(line, '\n')
 	path := filepath.Join(dir, fmt.Sprintf("%d.jsonl", os.Getpid()))
-	for attempt := 0; attempt < 5; attempt++ {
+	for range 5 {
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600) //nolint:gosec // G304: spool paths are under the user's INSCRIBE_HOME
 		if err != nil {
 			return err

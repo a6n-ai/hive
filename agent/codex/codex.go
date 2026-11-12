@@ -59,7 +59,7 @@ func (a *Adapter) Parse(event string, stdin []byte) (model.Event, error) {
 	if p.SessionID == "" {
 		return model.Event{}, errors.New("codex: payload has no session_id")
 	}
-	e := model.Event{Agent: name, Session: p.SessionID, Project: capture.ResolveProject(p.Cwd), Kind: kind, Payload: map[string]any{}}
+	e := model.Event{Agent: name, Session: p.SessionID, Project: capture.ResolveProject(p.Cwd), Cwd: p.Cwd, Kind: kind, Payload: map[string]any{}}
 	switch kind {
 	case model.Prompt:
 		e.PromptText = p.Prompt

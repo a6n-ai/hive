@@ -99,10 +99,18 @@ func followUps(event string, e inscribe.Event, auto bool) error {
 		if err := spawnDetached("retention", "auto"); err != nil {
 			return err
 		}
+		// The previous session is idle. Update the score model before this one recalls.
+		if err := spawnDetached("score", "train"); err != nil {
+			return err
+		}
 		if auto {
 			return spawnDetached("consolidate", "--catch-up", "--agent", e.Agent)
 		}
 	case "SessionEnd":
+		// The agent stopped. Label what it just did. This pass does not call a model.
+		if err := spawnDetached("score", "train"); err != nil {
+			return err
+		}
 		if auto {
 			return spawnDetached("consolidate", "--session", e.Session, "--agent", e.Agent)
 		}
@@ -117,7 +125,7 @@ func hookQuery(e inscribe.Event, scrub func(string) string) (inscribe.Query, boo
 	case model.SessionStart:
 		return inscribe.Query{Project: e.Project, Mode: recall.SessionStart}, true
 	case model.Prompt:
-		return inscribe.Query{Project: e.Project, Text: e.PromptText, Mode: recall.Prompt}, true
+		return inscribe.Query{Project: e.Project, Text: e.PromptText, Agent: e.Agent, Session: e.Session, Mode: recall.Prompt}, true
 	case model.PostTool:
 		errText, _ := e.Payload["error"].(string)
 		if errText == "" {

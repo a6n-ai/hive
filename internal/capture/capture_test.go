@@ -3,6 +3,7 @@ package capture
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -340,6 +341,45 @@ func TestExcludeExpandsHomeAndSymlinks(t *testing.T) {
 		}
 		if len(evs) != want {
 			t.Errorf("session %s: %d events stored, want %d", session, len(evs), want)
+		}
+	}
+}
+
+func TestCaptureSavesTrajectoryForEveryAgent(t *testing.T) {
+	ctx := context.Background()
+	for _, agent := range []string{"claude-code", "codex", "gemini"} {
+		p, _ := newPipeline(t)
+		base := model.Event{Agent: agent, Session: "s", Project: t.TempDir(), Cwd: "/work/app", TS: 1_700_000_000_000}
+		steps := []model.Event{
+			{Kind: model.SessionStart},
+			{Kind: model.Prompt, PromptText: "fix the build"},
+			{Kind: model.PostTool, Tool: "shell", Payload: map[string]any{"command": "go test", "exit_code": 0}},
+		}
+		for _, step := range steps {
+			e := base
+			e.Kind, e.PromptText, e.Tool, e.Payload = step.Kind, step.PromptText, step.Tool, step.Payload
+			if err := p.Capture(ctx, e); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, err := p.Store.TrajectoryJSON("s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var roles []string
+		for _, raw := range got {
+			var rec map[string]any
+			if err := json.Unmarshal([]byte(raw), &rec); err != nil {
+				t.Fatal(err)
+			}
+			roles = append(roles, rec["role"].(string))
+			if rec["role"] == "meta" && rec["source"] != agent {
+				t.Fatalf("%s source = %v", agent, rec["source"])
+			}
+		}
+		want := []string{"meta", "user", "assistant", "tool"}
+		if strings.Join(roles, ",") != strings.Join(want, ",") {
+			t.Fatalf("%s roles = %v, want %v", agent, roles, want)
 		}
 	}
 }
