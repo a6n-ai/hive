@@ -16,7 +16,7 @@ type Answer struct {
 	ID      string `json:"id"`
 	Used    string `json:"used"`
 	Helpful string `json:"helpful"`
-	How     string `json:"how"`
+	How     string `json:"how,omitempty"`
 }
 
 const (

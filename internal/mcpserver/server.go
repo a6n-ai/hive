@@ -13,6 +13,7 @@ import (
 
 	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/internal/capture"
+	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -44,8 +45,13 @@ type idIn struct {
 	ID string `json:"id" jsonschema:"memory id"`
 }
 
-// New returns a server with the remember, recall, forget and why tools. Calls
-// act on project only; memories of other projects are invisible to them.
+type feedbackIn struct {
+	Ask   string            `json:"ask" jsonschema:"the ask id from the feedback question"`
+	Items []feedback.Answer `json:"items" jsonschema:"one answer per memory id the question lists"`
+}
+
+// New returns a server with the remember, recall, forget, why and feedback
+// tools. Calls act on project only; memories of other projects are invisible to them.
 func New(h *inscribe.Inscribe, project string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "inscribe", Version: "dev"}, nil)
 	no := false
@@ -53,10 +59,13 @@ func New(h *inscribe.Inscribe, project string) *mcp.Server {
 	// all stay inside the local store, none erases data (forget keeps it).
 	write := &mcp.ToolAnnotations{DestructiveHint: &no, IdempotentHint: true, OpenWorldHint: &no}
 	read := &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &no}
+	// A second answer to the same ask is refused, so this is not idempotent.
+	answer := &mcp.ToolAnnotations{DestructiveHint: &no, OpenWorldHint: &no}
 	mcp.AddTool(s, &mcp.Tool{Name: "remember", Description: "Store a memory for this project or globally.", Annotations: write}, rememberTool(h, project))
 	mcp.AddTool(s, &mcp.Tool{Name: "recall", Description: "Recall memories relevant to a query or the session start.", Annotations: read}, recallTool(h, project))
 	mcp.AddTool(s, &mcp.Tool{Name: "forget", Description: "Mark a memory forgotten. Data is kept.", Annotations: write}, forgetTool(h, project))
 	mcp.AddTool(s, &mcp.Tool{Name: "why", Description: "Show the events that evidence a memory.", Annotations: read}, whyTool(h, project))
+	mcp.AddTool(s, &mcp.Tool{Name: "feedback", Description: "Answer an inscribe feedback question: for each memory it lists, whether you used it, whether it helped, and why.", Annotations: answer}, feedbackTool(h, project))
 	return s
 }
 
@@ -195,6 +204,16 @@ func whyTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[idIn, any]
 			b.WriteByte('\n')
 		}
 		return textResult(b.String()), nil, nil
+	}
+}
+
+func feedbackTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[feedbackIn, any] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in feedbackIn) (*mcp.CallToolResult, any, error) {
+		labeled, wrong, err := h.Feedback(ctx, project, in.Ask, in.Items)
+		if err != nil {
+			return nil, nil, err
+		}
+		return textResult(fmt.Sprintf("labeled %d rows, %d wrong", labeled, wrong)), nil, nil
 	}
 }
 
