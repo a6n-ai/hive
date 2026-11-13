@@ -137,15 +137,9 @@ func (s *Store) queryGroups(q string, args ...any) ([][]ScoreOutcome, error) {
 	index := map[key]int{}
 	var out [][]ScoreOutcome
 	for rows.Next() {
-		var o ScoreOutcome
-		var label sql.NullInt64
-		if err := rows.Scan(&o.ID, &o.MemoryID, &o.Session, &o.Agent, &o.TS, &o.Features, &o.Score,
-			&o.PromptDigest, &o.ShownKey, &o.ShownText, &o.Reason, &o.LabelRule, &label, &o.Scale, &o.Ended); err != nil {
+		o, err := scanOutcome(rows)
+		if err != nil {
 			return nil, err
-		}
-		if label.Valid {
-			v := int(label.Int64)
-			o.Label = &v
 		}
 		k := key{o.Session, o.PromptDigest}
 		i, ok := index[k]
@@ -157,6 +151,21 @@ func (s *Store) queryGroups(q string, args ...any) ([][]ScoreOutcome, error) {
 		out[i] = append(out[i], o)
 	}
 	return out, rows.Err()
+}
+
+// scanOutcome reads one outcomeSelect row.
+func scanOutcome(rows *sql.Rows) (ScoreOutcome, error) {
+	var o ScoreOutcome
+	var label sql.NullInt64
+	if err := rows.Scan(&o.ID, &o.MemoryID, &o.Session, &o.Agent, &o.TS, &o.Features, &o.Score,
+		&o.PromptDigest, &o.ShownKey, &o.ShownText, &o.Reason, &o.LabelRule, &label, &o.Scale, &o.Ended); err != nil {
+		return o, err
+	}
+	if label.Valid {
+		v := int(label.Int64)
+		o.Label = &v
+	}
+	return o, nil
 }
 
 // ScoreOutcomeCount returns how many injections have been recorded.
