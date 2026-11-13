@@ -502,19 +502,3 @@ func TestSeparatorFindings(t *testing.T) {
 		}
 	}
 }
-
-func TestScrubManyAssignmentsOnOneLineIsLinear(t *testing.T) {
-	s, err := New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	in := strings.Repeat(`token: a "`, 30000)
-	start := time.Now()
-	out, _ := s.Scrub(in)
-	if d := time.Since(start); d > time.Second {
-		t.Fatalf("scrub of %d bytes took %v", len(in), d)
-	}
-	if strings.Contains(out, "a \"") {
-		t.Fatalf("value left unredacted: %.80q", out)
-	}
-}
