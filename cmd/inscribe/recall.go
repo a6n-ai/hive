@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/internal/recall"
@@ -15,8 +16,12 @@ func recallCmd(args []string, stdout io.Writer) error {
 	project := fs.String("project", defaultProject(), "project path")
 	query := fs.String("query", "", "prompt text to recall for; empty recalls for session start")
 	budget := fs.Int("budget", 0, "token budget (0 uses the configured default)")
-	if err := fs.Parse(args); err != nil {
+	pos, err := parseInterspersed(fs, args)
+	if err != nil {
 		return err
+	}
+	if *query == "" {
+		*query = strings.Join(pos, " ")
 	}
 	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe", Project: *project})
 	if err != nil {

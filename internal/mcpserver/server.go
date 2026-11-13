@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/capture"
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -26,12 +28,12 @@ type rememberIn struct {
 	Text    string `json:"text" jsonschema:"the memory to keep, at most 2000 characters"`
 	Type    string `json:"type,omitempty" jsonschema:"note, preference or decision (default note)"`
 	Scope   string `json:"scope,omitempty" jsonschema:"project or global (default project)"`
-	Project string `json:"project,omitempty" jsonschema:"project directory; only this server's project is allowed"`
+	Project string `json:"project,omitempty" jsonschema:"optional; a directory inside this session's folder, resolved to its git root. Omit to use the session project. Recall always adds global memories"`
 }
 
 type recallIn struct {
 	Query   string `json:"query,omitempty" jsonschema:"text to match; empty recalls session-start memories"`
-	Project string `json:"project,omitempty" jsonschema:"project directory; only this server's project is allowed"`
+	Project string `json:"project,omitempty" jsonschema:"optional; a directory inside this session's folder, resolved to its git root. Omit to use the session project. Recall always adds global memories"`
 	Budget  int    `json:"budget,omitempty" jsonschema:"token budget, 0 to 2000 (0 uses the configured default)"`
 }
 
@@ -43,23 +45,36 @@ type idIn struct {
 // act on project only; memories of other projects are invisible to them.
 func New(h *inscribe.Inscribe, project string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "inscribe", Version: "dev"}, nil)
-	mcp.AddTool(s, &mcp.Tool{Name: "remember", Description: "Store a memory for this project or globally."}, rememberTool(h, project))
-	mcp.AddTool(s, &mcp.Tool{Name: "recall", Description: "Recall memories relevant to a query or the session start."}, recallTool(h, project))
-	mcp.AddTool(s, &mcp.Tool{Name: "forget", Description: "Mark a memory forgotten. Data is kept."}, forgetTool(h, project))
-	mcp.AddTool(s, &mcp.Tool{Name: "why", Description: "Show the events that evidence a memory."}, whyTool(h, project))
+	no := false
+	// Annotations let Claude Code auto mode run these tools without a prompt:
+	// all stay inside the local store, none erases data (forget keeps it).
+	write := &mcp.ToolAnnotations{DestructiveHint: &no, IdempotentHint: true, OpenWorldHint: &no}
+	read := &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &no}
+	mcp.AddTool(s, &mcp.Tool{Name: "remember", Description: "Store a memory for this project or globally.", Annotations: write}, rememberTool(h, project))
+	mcp.AddTool(s, &mcp.Tool{Name: "recall", Description: "Recall memories relevant to a query or the session start.", Annotations: read}, recallTool(h, project))
+	mcp.AddTool(s, &mcp.Tool{Name: "forget", Description: "Mark a memory forgotten. Data is kept.", Annotations: write}, forgetTool(h, project))
+	mcp.AddTool(s, &mcp.Tool{Name: "why", Description: "Show the events that evidence a memory.", Annotations: read}, whyTool(h, project))
 	return s
 }
 
-// scopedProject returns the project a call acts on: the server's, unless the
-// call names another project, which is refused.
+// scopedProject returns the project a call acts on: the server's, or the git
+// root of a directory inside it, so a session opened in a workspace folder can
+// reach the repositories under it. Sibling and parent projects are refused.
 func scopedProject(arg, project string) (string, error) {
 	if len(arg) > maxProject {
 		return "", fmt.Errorf("project is over %d characters", maxProject)
 	}
-	if arg != "" && arg != project {
-		return "", fmt.Errorf("project %q is not this server's project", arg)
+	if arg == "" || arg == project {
+		return project, nil
 	}
-	return project, nil
+	root, got := capture.ResolveProject(project), capture.ResolveProject(arg)
+	if got == root {
+		return project, nil
+	}
+	if strings.HasPrefix(got, root+string(filepath.Separator)) {
+		return got, nil
+	}
+	return "", fmt.Errorf("project %q is not inside this server's project %q", arg, project)
 }
 
 func textResult(s string) *mcp.CallToolResult {
@@ -176,20 +191,27 @@ func whyTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[idIn, any]
 }
 
 // requireMemory fails unless a memory with id exists in any status and is
-// visible to project (its own, global, or a file inside it).
+// visible to project: global, the project's own, or scoped to a repository or
+// file inside it.
 func requireMemory(ctx context.Context, h *inscribe.Inscribe, project, id string) error {
 	if id == "" {
 		return errors.New("id is required")
 	}
 	all := []model.Status{model.Active, model.Candidate, model.Superseded, model.Stale, model.Forgotten}
-	ms, err := h.List(ctx, inscribe.ListFilter{Statuses: all, Project: project})
+	// shortcut: scans every memory to find one id; add an ID filter to ListFilter if the store grows large.
+	ms, err := h.List(ctx, inscribe.ListFilter{Statuses: all})
 	if err != nil {
 		return err
 	}
 	for _, m := range ms {
-		if m.ID == id {
+		if m.ID == id && visible(m, project) {
 			return nil
 		}
 	}
 	return fmt.Errorf("no memory %q", id)
+}
+
+func visible(m model.Memory, project string) bool {
+	return m.ScopeKind == model.Global || m.Scope == project ||
+		strings.HasPrefix(m.Scope, project+string(filepath.Separator))
 }

@@ -90,7 +90,7 @@ fails processing is quarantined in `spool/bad` while the rest commit.
 
 ## CLI
 
-    inscribe recall [--project P] [--query Q] [--budget N]
+    inscribe recall [QUERY] [--project P] [--query Q] [--budget N]
     inscribe remember TEXT [--type note|preference|decision] [--scope global|project] [--project P]
     inscribe forget ID [--purge]
     inscribe why ID
@@ -105,6 +105,13 @@ fails processing is quarantined in `spool/bad` while the rest commit.
     inscribe score (train|show [--outcomes]|combine --dir DIR)
     inscribe serve [--addr 127.0.0.1:7331]
     inscribe mcp
+
+`inscribe mcp` serves `remember`, `recall`, `forget` and `why` for the project it
+starts in (the git root of its working directory). Every argument except the
+text or query is optional. A tool call may name a directory inside that project,
+such as a repository under a workspace folder; it resolves to that directory's git
+root. Sibling and parent projects are refused. Recall always merges global
+memories, so `remember --scope global` shares a memory across projects.
 
 `import` backfills events and memories from `~/.claude/projects`; running it
 again adds nothing. `import claude-mem` reads decisions and bugfixes from

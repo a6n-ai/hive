@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -186,5 +188,68 @@ func TestMCPQueryAndProjectCapped(t *testing.T) {
 				t.Fatal("oversized argument accepted")
 			}
 		})
+	}
+}
+
+func TestMCPReachesRepoInsideWorkspace(t *testing.T) {
+	workspace, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(workspace, "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := openInscribe(t, workspace)
+	cs := connect(t, h, workspace)
+	if _, isErr := call(t, cs, "remember", map[string]any{"text": "repo deploys with make ship", "project": filepath.Join(repo, "sub")}); isErr {
+		t.Fatal("remember refused a repo inside the workspace")
+	}
+	if _, err := h.Remember(context.Background(), "shared tip: prefer rg", model.Preference, model.Global, ""); err != nil {
+		t.Fatal(err)
+	}
+	out, isErr := call(t, cs, "recall", map[string]any{"project": repo})
+	if isErr || !strings.Contains(out, "make ship") || !strings.Contains(out, "prefer rg") {
+		t.Fatalf("recall = %q, error %v", out, isErr)
+	}
+	ms, err := h.List(context.Background(), inscribe.ListFilter{Project: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	for _, m := range ms {
+		if m.Scope == repo {
+			id = m.ID
+		}
+	}
+	for _, tool := range []string{"why", "forget"} {
+		if out, isErr := call(t, cs, tool, map[string]any{"id": id}); isErr {
+			t.Fatalf("%s refused a memory in a repo inside the workspace: %s", tool, out)
+		}
+	}
+	if _, isErr := call(t, cs, "recall", map[string]any{"project": filepath.Dir(workspace)}); !isErr {
+		t.Fatal("recall accepted a parent of the server project")
+	}
+}
+
+func TestMCPToolsAnnotatedForAutoMode(t *testing.T) {
+	proj := t.TempDir()
+	cs := connect(t, openInscribe(t, proj), proj)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readOnly := map[string]bool{"recall": true, "why": true, "remember": false, "forget": false}
+	for _, tool := range res.Tools {
+		a := tool.Annotations
+		if a == nil || a.OpenWorldHint == nil || *a.OpenWorldHint || a.ReadOnlyHint != readOnly[tool.Name] {
+			t.Fatalf("%s annotations = %+v", tool.Name, a)
+		}
+		if !a.ReadOnlyHint && (a.DestructiveHint == nil || *a.DestructiveHint) {
+			t.Fatalf("%s is marked destructive", tool.Name)
+		}
 	}
 }
