@@ -10,12 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/a6n-ai/inscribe/internal/capture"
 	"github.com/a6n-ai/inscribe/model"
 	_ "modernc.org/sqlite"
 )
 
 // ClaudeMemOptions selects claude-mem observations. DB defaults to ~/.claude-mem/claude-mem.db
-// and Types to decision and bugfix. Project matches the session cwd exactly.
+// and Types to decision and bugfix. Project matches the git root of the session cwd.
 type ClaudeMemOptions struct {
 	DB      string
 	Types   []string
@@ -58,6 +59,21 @@ func ReadClaudeMem(ctx context.Context, o ClaudeMemOptions) ([]model.Event, Clau
 		}
 		o.DB = filepath.Join(home, ".claude-mem", "claude-mem.db")
 	}
+	if o.Project != "" {
+		o.Project = capture.ResolveProject(o.Project)
+	}
+	projects := map[string]string{}
+	resolve := func(cwd string) string {
+		if cwd == "" {
+			return ""
+		}
+		p, ok := projects[cwd]
+		if !ok {
+			p = capture.ResolveProject(cwd)
+			projects[cwd] = p
+		}
+		return p
+	}
 	db, err := sql.Open("sqlite", "file:"+o.DB+"?mode=ro")
 	if err != nil {
 		return nil, rep, err
@@ -82,7 +98,8 @@ func ReadClaudeMem(ctx context.Context, o ClaudeMemOptions) ([]model.Event, Clau
 		if ts != 0 && ts < 1e11 { // claude-mem stores seconds in older rows
 			ts *= 1000
 		}
-		reason := claudeMemSkip(o, want, claudeMemRow{typ: typ.String, title: title.String, paths: read.String + "\n" + modified.String, cwd: cwd.String, ts: ts})
+		project := resolve(cwd.String)
+		reason := claudeMemSkip(o, want, claudeMemRow{typ: typ.String, title: title.String, paths: read.String + "\n" + modified.String, cwd: cwd.String, project: project, ts: ts})
 		if reason != "" {
 			rep.SkippedByReason[reason]++
 			continue
@@ -92,7 +109,7 @@ func ReadClaudeMem(ctx context.Context, o ClaudeMemOptions) ([]model.Event, Clau
 		if json.Unmarshal([]byte(facts.String), &list) == nil && len(list) > 0 && list[0] != "" {
 			text += ". " + list[0]
 		}
-		evs = append(evs, model.Event{TS: ts, Agent: "claude-mem", Session: "claude-mem-import", Project: cwd.String,
+		evs = append(evs, model.Event{TS: ts, Agent: "claude-mem", Session: "claude-mem-import", Project: project,
 			Kind: model.Remembered, Payload: map[string]any{"text": text, "type": claudeMemTypes[typ.String],
 				"scope": "project", "confidence": claudeMemConfidence}})
 	}
@@ -105,8 +122,8 @@ func ReadClaudeMem(ctx context.Context, o ClaudeMemOptions) ([]model.Event, Clau
 }
 
 type claudeMemRow struct {
-	typ, title, paths, cwd string
-	ts                     int64
+	typ, title, paths, cwd, project string
+	ts                              int64
 }
 
 // claudeMemSkip returns why an observation is not imported, or "" when it is.
@@ -116,7 +133,7 @@ func claudeMemSkip(o ClaudeMemOptions, want map[string]bool, r claudeMemRow) str
 		return "no_cwd"
 	case r.typ == "sensitive":
 		return "sensitive"
-	case strings.Contains(r.paths, "apps/puchkaman"):
+	case strings.Contains(r.paths, "apps/puchkaman") || strings.Contains(r.cwd, "apps/puchkaman"):
 		return "puchkaman"
 	case r.ts == 0:
 		return "no_time"
@@ -124,7 +141,7 @@ func claudeMemSkip(o ClaudeMemOptions, want map[string]bool, r claudeMemRow) str
 		return "empty_title"
 	case !want[r.typ]:
 		return "type"
-	case o.Project != "" && r.cwd != o.Project:
+	case o.Project != "" && r.project != o.Project:
 		return "project"
 	case !o.Since.IsZero() && r.ts < o.Since.UnixMilli():
 		return "since"

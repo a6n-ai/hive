@@ -78,10 +78,11 @@ func TestReadClaudeMemMapsTypesAndScope(t *testing.T) {
 
 func TestReadClaudeMemSkips(t *testing.T) {
 	const at = 1700000000000
-	db := claudeMemDB(t, map[string]string{"s1": "/work/a"}, []cmRow{
+	db := claudeMemDB(t, map[string]string{"s1": "/work/a", "pk": "/work/apps/puchkaman"}, []cmRow{
 		{session: "ghost", typ: "decision", title: "No session", epoch: at},
 		{session: "s1", typ: "sensitive", title: "Secret", epoch: at},
 		{session: "s1", typ: "decision", title: "Touches app", filesModified: `["apps/puchkaman/main.ts"]`, epoch: at},
+		{session: "pk", typ: "decision", title: "Runs in app", epoch: at},
 		{session: "s1", typ: "decision", title: "Undated"},
 		{session: "s1", typ: "decision", title: "", epoch: at},
 		{session: "s1", typ: "discovery", title: "Found", epoch: at},
@@ -91,12 +92,37 @@ func TestReadClaudeMemSkips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]int{"no_cwd": 1, "sensitive": 1, "puchkaman": 1, "no_time": 1, "empty_title": 1, "type": 1}
-	if rep.Read != 7 || rep.Imported != 1 || rep.Skipped != 6 || len(evs) != 1 || evs[0].Payload["text"] != "Keep" {
+	want := map[string]int{"no_cwd": 1, "sensitive": 1, "puchkaman": 2, "no_time": 1, "empty_title": 1, "type": 1}
+	if rep.Read != 8 || rep.Imported != 1 || rep.Skipped != 7 || len(evs) != 1 || evs[0].Payload["text"] != "Keep" {
 		t.Fatalf("report = %+v events = %d", rep, len(evs))
 	}
 	if !reflect.DeepEqual(rep.SkippedByReason, want) {
 		t.Fatalf("SkippedByReason = %v, want %v", rep.SkippedByReason, want)
+	}
+}
+
+func TestReadClaudeMemScopesToGitRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cwd := filepath.Join(root, "sub", "dir")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := claudeMemDB(t, map[string]string{"s1": cwd}, []cmRow{{session: "s1", typ: "decision", title: "Keep", epoch: 1000}})
+	ctx := context.Background()
+	evs, _, err := importer.ReadClaudeMem(ctx, importer.ClaudeMemOptions{DB: db})
+	if err != nil || len(evs) != 1 || evs[0].Project != resolved {
+		t.Fatalf("event project: events=%+v want %q err=%v", evs, resolved, err)
+	}
+	evs, _, err = importer.ReadClaudeMem(ctx, importer.ClaudeMemOptions{DB: db, Project: filepath.Join(root, "sub")})
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("project filter inside repo: events=%d err=%v", len(evs), err)
 	}
 }
 
