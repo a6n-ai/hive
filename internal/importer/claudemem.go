@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +75,11 @@ func ReadClaudeMem(ctx context.Context, o ClaudeMemOptions) ([]model.Event, Clau
 		}
 		return p
 	}
-	db, err := sql.Open("sqlite", "file:"+o.DB+"?mode=ro")
+	abs, err := filepath.Abs(o.DB)
+	if err != nil {
+		return nil, rep, err
+	}
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: abs, RawQuery: "mode=ro"}).String())
 	if err != nil {
 		return nil, rep, err
 	}

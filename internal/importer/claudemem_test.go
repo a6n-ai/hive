@@ -234,3 +234,35 @@ func TestImportClaudeMemDryRunWritesNothing(t *testing.T) {
 		t.Fatalf("dry run stored %d memories", len(ms))
 	}
 }
+
+func TestReadClaudeMemSpecialPathChars(t *testing.T) {
+	src := claudeMemDB(t, map[string]string{"s1": "/work/a"}, []cmRow{{session: "s1", typ: "decision", title: "Keep", epoch: 1000}})
+	dir := t.TempDir()
+	hash := filepath.Join(dir, "ha#sh.db")
+	if err := os.Rename(src, hash); err != nil {
+		t.Fatal(err)
+	}
+	evs, _, err := importer.ReadClaudeMem(context.Background(), importer.ClaudeMemOptions{DB: hash})
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("# path: events=%d err=%v", len(evs), err)
+	}
+	if _, _, err := importer.ReadClaudeMem(context.Background(), importer.ClaudeMemOptions{DB: filepath.Join(dir, "we?ird.db")}); err == nil {
+		t.Fatal("missing ? path read without error")
+	}
+	if _, _, err := importer.ReadClaudeMem(context.Background(), importer.ClaudeMemOptions{DB: filepath.Join(dir, "ha#missing.db")}); err == nil {
+		t.Fatal("missing # path read without error")
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil || len(ents) != 1 {
+		t.Fatalf("directory changed: %v err=%v", ents, err)
+	}
+}
+
+func TestReadClaudeMemRelativePath(t *testing.T) {
+	src := claudeMemDB(t, map[string]string{"s1": "/work/a"}, []cmRow{{session: "s1", typ: "decision", title: "Keep", epoch: 1000}})
+	t.Chdir(filepath.Dir(src))
+	evs, _, err := importer.ReadClaudeMem(context.Background(), importer.ClaudeMemOptions{DB: filepath.Base(src)})
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("relative path: events=%d err=%v", len(evs), err)
+	}
+}
