@@ -110,6 +110,32 @@ func TestCommandClassifiedAndCounted(t *testing.T) {
 	}
 }
 
+func TestClassifyCommandReadsProgramsNotArguments(t *testing.T) {
+	cases := map[string]string{
+		"go test ./...":                      "test",
+		"cd /p && go test ./internal/x":      "test",
+		"CGO_ENABLED=0 go build ./cmd/x":     "build",
+		"npx tsc --noEmit":                   "lint",
+		"npm run lint":                       "lint",
+		"./gradlew test":                     "test",
+		"python -m pytest -q":                "test",
+		"make":                               "build",
+		"make dev":                           "run",
+		"docker compose up -d":               "run",
+		"git log --oneline && go vet ./... ": "lint",
+		`sqlite3 db "delete x"; inscribe recall "go test"`: "",
+		`git commit -m "fix: run the tests"`:               "",
+		"rg -n test src":                                   "",
+		`echo "go test" | tee out`:                         "",
+		"ls -la":                                           "",
+	}
+	for cmd, want := range cases {
+		if got := extract.ClassifyCommand(cmd); got != want {
+			t.Errorf("ClassifyCommand(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+}
+
 func TestCommandSkipsHeredocAndLongCommands(t *testing.T) {
 	h := newHarness(t, config.Defaults(), extract.NewCommand())
 	h.shell("s1", "cat > /p/report.md <<'EOF'\nran the tests\nEOF", 0, "")

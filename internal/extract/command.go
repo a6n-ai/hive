@@ -2,6 +2,7 @@ package extract
 
 import (
 	"context"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -27,12 +28,54 @@ var classLabel = map[string]string{"test": "tests", "lint": "lint", "build": "bu
 // NormalizeCommand collapses whitespace so equivalent commands share a key.
 func NormalizeCommand(cmd string) string { return strings.Join(strings.Fields(cmd), " ") }
 
+var (
+	quoted     = regexp.MustCompile(`"[^"]*"|'[^']*'`)
+	segmentSep = regexp.MustCompile(`&&|\|\||[;|&]`)
+	envAssign  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+)
+
+// classPrograms are the programs whose own words name a class. Any other
+// program (rg, git, sqlite3, echo) only mentions "test" as data.
+var classPrograms = map[string]bool{
+	"go": true, "cargo": true, "npm": true, "pnpm": true, "yarn": true, "bun": true, "bunx": true, "npx": true,
+	"deno": true, "make": true, "mvn": true, "mvnw": true, "gradle": true, "gradlew": true, "dotnet": true,
+	"uv": true, "poetry": true, "python": true, "python3": true, "swift": true, "mix": true, "zig": true,
+	"docker": true, "turbo": true, "nx": true,
+	"pytest": true, "jest": true, "vitest": true, "rspec": true, "eslint": true, "ruff": true,
+	"golangci-lint": true, "tsc": true,
+}
+
+// commandHeads returns the first words of each segment of a shell line that
+// runs a class program, with quoted text removed, so a class word inside an
+// argument or a commit message never counts.
+func commandHeads(cmd string) []string {
+	var heads []string
+	for _, seg := range segmentSep.Split(quoted.ReplaceAllString(cmd, "Q"), -1) {
+		f := strings.Fields(seg)
+		for len(f) > 0 && envAssign.MatchString(f[0]) {
+			f = f[1:]
+		}
+		if len(f) == 0 {
+			continue
+		}
+		f[0] = filepath.Base(f[0])
+		if !classPrograms[f[0]] {
+			continue
+		}
+		heads = append(heads, strings.Join(f[:min(len(f), 4)], " "))
+	}
+	return heads
+}
+
 // ClassifyCommand returns the command's class, or "" when it is not worth
 // remembering.
 func ClassifyCommand(cmd string) string {
+	heads := commandHeads(cmd)
 	for _, r := range classRules {
-		if r.re.MatchString(cmd) {
-			return r.class
+		for _, h := range heads {
+			if r.re.MatchString(h) {
+				return r.class
+			}
 		}
 	}
 	return ""
