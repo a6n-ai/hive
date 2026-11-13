@@ -18,6 +18,8 @@ import (
 // Caps describes what an agent's hooks allow Inscribe to do.
 type Caps struct {
 	CanInject, CanBlock, HasPreTool, HasSessionEnd bool
+	// ShowsStatus means a reply's systemMessage reaches the user.
+	ShowsStatus bool
 }
 
 type Adapter interface {
@@ -163,4 +165,22 @@ func ResponseText(resp any) string {
 // settings file, given the file's bytes, when Inscribe hooks are installed.
 type Warner interface {
 	Warnings(settings []byte) []string
+}
+
+// AddStatus appends note to the systemMessage of a status reply, creating the
+// reply when out is empty. Use it only for adapters whose Caps.ShowsStatus is set.
+func AddStatus(out []byte, note string) []byte {
+	reply := map[string]any{}
+	if len(out) > 0 && json.Unmarshal(out, &reply) != nil {
+		return out
+	}
+	if s, _ := reply["systemMessage"].(string); s != "" {
+		note = s + "\n" + note
+	}
+	reply["systemMessage"] = note
+	b, err := json.Marshal(reply)
+	if err != nil {
+		return out
+	}
+	return b
 }

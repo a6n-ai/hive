@@ -74,9 +74,15 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := followUps(event, e, h.Consolidation().Auto); err != nil {
 		logLine(config.Home(), "follow-up: %v", err)
 	}
+	var saved []inscribe.Memory
+	if h.Debug() {
+		if saved, err = h.SavedBy(e.Session, e.TS); err != nil {
+			logLine(config.Home(), "debug saved: %v", err)
+		}
+	}
 	q, ok := hookQuery(e, h.Scrub)
 	if !ok {
-		return nil
+		return writeDebug(stdout, h, ad, event, e, nil, nil, saved)
 	}
 	lines, err := h.Recall(ctx, q)
 	if err != nil {
@@ -99,10 +105,69 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 		}
 	}
 	logLine(config.Home(), "%s %s %s: injected %d line(s) %v", e.Agent, event, e.Project, len(lines), ids)
-	if out := ad.Reply(event, lines); out != nil {
-		_, err = stdout.Write(out)
+	return writeDebug(stdout, h, ad, event, e, ad.Reply(event, lines), lines, saved)
+}
+
+// writeDebug writes the adapter's reply. In debug mode it first logs what the
+// event loaded and saved, and adds that to the status line agents show the user.
+func writeDebug(stdout io.Writer, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, out []byte, lines []recall.Line, saved []inscribe.Memory) error {
+	if h.Debug() {
+		if note := debugNote(lines, saved, e.TS); note != "" {
+			logLine(config.Home(), "debug %s %s %s: %s", e.Agent, event, e.Project, note)
+			if ad.Capabilities().ShowsStatus {
+				out = agent.AddStatus(out, note)
+			}
+		}
 	}
+	if out == nil {
+		return nil
+	}
+	_, err := stdout.Write(out)
 	return err
+}
+
+const (
+	debugExamples = 3  // memories listed per kind
+	debugRunes    = 90 // each listed memory is cut to this many runes
+)
+
+// debugNote summarizes what one event loaded and saved, with a few examples.
+// A memory first seen at ts was created by this event; others were updated.
+func debugNote(lines []recall.Line, saved []inscribe.Memory, ts int64) string {
+	var loaded []string
+	for _, l := range lines {
+		if l.Type != "recent" {
+			loaded = append(loaded, fmt.Sprintf("[%s] %s", l.Type, l.Text))
+		}
+	}
+	created, out := 0, []string{}
+	for _, m := range saved {
+		verb := "updated"
+		if m.FirstSeen == ts {
+			verb, created = "new", created+1
+		}
+		out = append(out, fmt.Sprintf("%s [%s] %s", verb, m.Type, m.Text))
+	}
+	if len(loaded) == 0 && len(out) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "inscribe debug: loaded %d, saved %d (%d new)", len(loaded), len(saved), created)
+	for _, s := range loaded[:min(len(loaded), debugExamples)] {
+		b.WriteString("\n  loaded " + cutRunes(s, debugRunes))
+	}
+	for _, s := range out[:min(len(out), debugExamples)] {
+		b.WriteString("\n  saved " + cutRunes(s, debugRunes))
+	}
+	return b.String()
+}
+
+func cutRunes(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
+	}
+	return s
 }
 
 // followUps starts the background work an event implies. The hook never waits for it.

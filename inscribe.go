@@ -241,6 +241,14 @@ func (h *Inscribe) Consolidate(ctx context.Context, session string, runner conso
 // Consolidation returns the consolidation settings in effect.
 func (h *Inscribe) Consolidation() config.ConsolidateCfg { return h.cfg.Consolidate }
 
+// Debug reports whether config.toml or INSCRIBE_DEBUG=1 turned on diagnostics.
+func (h *Inscribe) Debug() bool { return h.cfg.Debug }
+
+// SavedBy returns the memories that the event of session at ts, and the events derived from it, saved or updated.
+func (h *Inscribe) SavedBy(session string, ts int64) ([]Memory, error) {
+	return h.store.SavedBy(session, ts)
+}
+
 // DueConsolidations lists the agent's idle sessions that have enough new events to review.
 func (h *Inscribe) DueConsolidations(agent string, now time.Time) ([]string, error) {
 	return consolidate.Due(h.store, h.cfg, agent, now)

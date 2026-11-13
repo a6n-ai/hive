@@ -774,3 +774,32 @@ func TestHookPromptDigestMatchesStoredEvent(t *testing.T) {
 		t.Fatal("no score_outcomes rows for the injected prompt")
 	}
 }
+
+func TestHookDebugShowsLoadedAndSaved(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	debugHook := func(payload map[string]any, event string) string {
+		t.Helper()
+		b, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, _, code := runCLI(t, home, string(b), []string{"INSCRIBE_DEBUG=1"}, "hook", "--agent", "claude-code", event)
+		if code != 0 {
+			t.Fatalf("hook exit %d", code)
+		}
+		return out
+	}
+	if out := hookOK(t, home, bashPayload("PostToolUse", "s1", proj, "go test ./...", ""), "PostToolUse"); strings.Contains(out, "inscribe debug") {
+		t.Fatalf("debug note shown without debug: %q", out)
+	}
+	out := debugHook(bashPayload("PostToolUse", "s1", proj, "go vet ./...", ""), "PostToolUse")
+	if !strings.Contains(out, "inscribe debug: loaded 0, saved") || !strings.Contains(out, `saved new [command]`) {
+		t.Fatalf("post-tool debug = %q", out)
+	}
+	runOK(t, home, "", "remember", "always run make lint before pushing", "--type", "note", "--scope", "global")
+	out = debugHook(map[string]any{"session_id": "s1", "cwd": proj, "hook_event_name": "UserPromptSubmit",
+		"prompt": "always run make lint before pushing"}, "UserPromptSubmit")
+	if !strings.Contains(out, "recalled") || !strings.Contains(out, "loaded [note] always run make lint") {
+		t.Fatalf("prompt debug = %q", out)
+	}
+}

@@ -145,7 +145,7 @@ func status(event string, lines []recall.Line) string {
 }
 
 func (a *Adapter) Capabilities() agent.Caps {
-	return agent.Caps{CanInject: true, CanBlock: true, HasPreTool: true, HasSessionEnd: true}
+	return agent.Caps{CanInject: true, CanBlock: true, HasPreTool: true, HasSessionEnd: true, ShowsStatus: true}
 }
 
 func (a *Adapter) InstructionsFile() string { return "CLAUDE.md" }

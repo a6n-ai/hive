@@ -23,6 +23,8 @@ type Config struct {
 	Scrub       ScrubCfg       `toml:"scrub"`
 	Exclude     ExcludeCfg     `toml:"exclude"`
 	Share       ShareCfg       `toml:"share"`
+	// Debug shows extra diagnostics, such as what each hook event saved. INSCRIBE_DEBUG=1 also turns it on.
+	Debug bool `toml:"debug"`
 }
 
 type RecallCfg struct {
@@ -125,6 +127,9 @@ func Load(home, project string) (Config, []string, error) {
 		if err != nil {
 			warns = append(warns, err.Error()+" (project file ignored)")
 		}
+	}
+	if os.Getenv("INSCRIBE_DEBUG") == "1" {
+		c.Debug = true
 	}
 	return c, warns, validate(c)
 }
