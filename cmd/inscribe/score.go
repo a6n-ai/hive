@@ -38,6 +38,7 @@ func scoreCmd(args []string, stdout io.Writer) error {
 	case "train":
 		res, err := h.TrainScores(context.Background(), time.Now())
 		if errors.Is(err, store.ErrLocked) {
+			logLine(home, "score train: skipped, another writer holds the store")
 			_, err := fmt.Fprintln(stdout, "skipped: another writer holds the store")
 			return err
 		}
@@ -60,7 +61,9 @@ func scoreCmd(args []string, stdout io.Writer) error {
 		if err := writeWeights(stdout, res.Weights); err != nil {
 			return err
 		}
-		shareSnapshot(h, home, res.Weights)
+		if res.Refit {
+			shareSnapshot(h, home, res.Weights)
+		}
 		return nil
 	case "show":
 		fs := flag.NewFlagSet("show", flag.ContinueOnError)

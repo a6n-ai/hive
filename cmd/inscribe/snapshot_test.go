@@ -7,11 +7,15 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/store"
 )
 
 func TestPostSnapshotBody(t *testing.T) {
@@ -52,7 +56,10 @@ func TestPostSnapshotBody(t *testing.T) {
 
 func TestPostSnapshotTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(4 * time.Second)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(4 * time.Second):
+		}
 	}))
 	defer srv.Close()
 	start := time.Now()
@@ -74,9 +81,99 @@ func TestPostSnapshotNon2xxIsError(t *testing.T) {
 	}
 }
 
+func TestPostSnapshotDoesNotFollowRedirects(t *testing.T) {
+	var hits int
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	if err := PostSnapshot(context.Background(), srv.URL, Snapshot{}); err == nil {
+		t.Fatal("want error for a 307")
+	}
+	if hits != 0 {
+		t.Fatalf("redirect target got %d requests, want 0", hits)
+	}
+}
+
+func shareFixture(t *testing.T, cfg string) (*inscribe.Inscribe, string) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("INSCRIBE_HOME", home)
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := inscribe.Open(inscribe.Options{Home: home, Caller: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.Close() })
+	return h, home
+}
+
+func TestShareSnapshotGates(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	defer srv.Close()
+	seen := recall.DefaultWeights()
+	seen.Seen = 5
+	cases := []struct {
+		name string
+		cfg  string
+		w    recall.Weights
+		want int
+	}{
+		{"analytics off", "[share]\nanalytics = false\nurl = \"" + srv.URL + "\"\n", seen, 0},
+		{"nothing seen", "[share]\nanalytics = true\nurl = \"" + srv.URL + "\"\n", recall.DefaultWeights(), 0},
+		{"unusable url", "[share]\nanalytics = true\nurl = \"ftp://x\"\n", seen, 0},
+		{"all gates open", "[share]\nanalytics = true\nurl = \"" + srv.URL + "\"\n", seen, 1},
+	}
+	for _, c := range cases {
+		hits = 0
+		h, home := shareFixture(t, c.cfg)
+		shareSnapshot(h, home, c.w)
+		if hits != c.want {
+			t.Errorf("%s: %d requests, want %d", c.name, hits, c.want)
+		}
+	}
+}
+
+func TestScoreTrainSharesOnlyWhenWeightsSaved(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	defer srv.Close()
+	_, home := shareFixture(t, "[share]\nanalytics = true\nurl = \""+srv.URL+"\"\n")
+	st, err := store.Open(filepath.Join(home, "inscribe.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := recall.DefaultWeights()
+	w.Seen = 5
+	if err := recall.SaveWeights(context.Background(), st, w); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+	if err := scoreCmd([]string{"train"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if hits != 0 {
+		t.Fatalf("train that wrote nothing posted %d times", hits)
+	}
+}
+
 func snap(id string, seen int, rule string, command float64) Snapshot {
 	return Snapshot{InstallID: id, LabelRule: recall.LabelRule, StepRule: rule, Seen: seen,
 		Weights: SnapshotWeights{Key: 1, Body: 1, Type: 1, Scope: 1, Agent: 1, Command: command, Trajectory: 1}}
+}
+
+func TestCombineClampsNegativeSeen(t *testing.T) {
+	prior := recall.DefaultWeights()
+	a, b := snap("a", -1000, recall.StepRule, 0.5), snap("b", 100, recall.StepRule, 0.6)
+	got := Combine(prior, []Snapshot{a, b}, []time.Time{time.Now(), time.Now()})
+	if math.Abs(got.Command-0.6) > 1e-9 {
+		t.Fatalf("Command = %v, want 0.6 (negative seen weighs 0)", got.Command)
+	}
 }
 
 func TestCombineFarApartKeepsPrior(t *testing.T) {

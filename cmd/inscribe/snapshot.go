@@ -41,6 +41,9 @@ type SnapshotWeights struct {
 	Trajectory float64 `json:"trajectory"`
 }
 
+// noRedirect keeps a 307 or 308 from re-POSTing the snapshot to a host the user never configured.
+var noRedirect = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
 // PostSnapshot sends s as one JSON POST. A non-2xx reply is an error.
 func PostSnapshot(ctx context.Context, endpoint string, s Snapshot) error {
 	body, err := json.Marshal(s)
@@ -54,7 +57,7 @@ func PostSnapshot(ctx context.Context, endpoint string, s Snapshot) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noRedirect.Do(req)
 	if err != nil {
 		return err
 	}
@@ -124,7 +127,7 @@ func Combine(prior recall.Weights, snaps []Snapshot, mtimes []time.Time) recall.
 		vals := make([]float64, 0, len(picks))
 		var sum, total float64
 		for _, s := range picks {
-			w := float64(min(s.Seen, 500))
+			w := float64(max(0, min(s.Seen, 500)))
 			vals = append(vals, get(s.Weights))
 			sum += get(s.Weights) * w
 			total += w
