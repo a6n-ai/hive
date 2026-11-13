@@ -41,6 +41,20 @@ func redactAssignments(s string, findings *[]Finding) string {
 	}
 	var b strings.Builder
 	last, spanStart, spanEnd := 0, -1, -1
+	// lineLo is the start of the line holding spanEnd when the span reaches that
+	// line's end, else -1. An unquoted value starting on that line cannot end
+	// past spanEnd, so it is skipped without a scan to end of line.
+	lineLo := -1
+	setLineLo := func() {
+		lineLo = -1
+		j := spanEnd
+		for j < len(s) && isSpace(s[j]) {
+			j++
+		}
+		if j >= len(s) || s[j] == '\n' || s[j] == '\r' {
+			lineLo = lineStart(s, spanEnd)
+		}
+	}
 	flush := func() {
 		if spanStart < 0 {
 			return
@@ -53,6 +67,9 @@ func redactAssignments(s string, findings *[]Finding) string {
 	}
 	for _, loc := range locs {
 		start := valueStart(s, loc[1])
+		if spanStart >= 0 && lineLo >= 0 && start >= lineLo && start <= spanEnd && start < len(s) && s[start] != '"' && s[start] != '\'' {
+			continue
+		}
 		end := valueEnd(s, start, loc[3] > loc[2], sepByte(s, loc[1]) == '=')
 		if end <= start || isRedaction(s, start, end) && yamlContinuation(s, loc[0], loc[1], start, end) == end {
 			continue
@@ -67,6 +84,7 @@ func redactAssignments(s string, findings *[]Finding) string {
 			end = yamlContinuation(s, loc[0], loc[1], start, end)
 			flush()
 			spanStart, spanEnd = start, end
+			setLineLo()
 		}
 	}
 	flush()
