@@ -65,7 +65,8 @@ func Train(ctx context.Context, st *store.Store, now time.Time) (TrainResult, er
 		}
 		id, lab, ts := o.ID, label, now.UnixMilli()
 		if err := st.Write(ctx, func(tx *store.Tx) error {
-			return tx.ResolveScoreOutcome(id, lab, ts)
+			_, err := tx.ResolveScoreOutcome(id, lab, "", 1, ts)
+			return err
 		}); err != nil {
 			return TrainResult{}, err
 		}

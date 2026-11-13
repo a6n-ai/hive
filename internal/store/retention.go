@@ -8,9 +8,16 @@ import (
 )
 
 // GetMeta returns a meta value and whether it exists.
-func (s *Store) GetMeta(k string) (string, bool, error) {
+func (s *Store) GetMeta(k string) (string, bool, error) { return getMeta(s.db, k) }
+
+// GetMeta returns a meta value inside the transaction.
+func (t *Tx) GetMeta(k string) (string, bool, error) { return getMeta(t.tx, k) }
+
+func getMeta(q interface {
+	QueryRow(query string, args ...any) *sql.Row
+}, k string) (string, bool, error) {
 	var v string
-	err := s.db.QueryRow(`SELECT v FROM meta WHERE k = ?`, k).Scan(&v)
+	err := q.QueryRow(`SELECT v FROM meta WHERE k = ?`, k).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

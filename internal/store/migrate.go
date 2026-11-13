@@ -50,8 +50,10 @@ func latestVersion() int {
 	return ms[len(ms)-1].version
 }
 
-// schemaVersion returns 0 for a fresh database.
-func schemaVersion(db *sql.DB) (int, error) {
+// schemaVersion returns 0 for a fresh database. It takes a *sql.DB or *sql.Tx.
+func schemaVersion(db interface {
+	QueryRow(query string, args ...any) *sql.Row
+}) (int, error) {
 	var exists int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'`).Scan(&exists); err != nil {
 		return 0, err
@@ -81,6 +83,10 @@ func migrate(db *sql.DB, current int) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Another process may have migrated since the caller read the version.
+	if current, err = schemaVersion(tx); err != nil {
+		return err
+	}
 	applied := current
 	for _, m := range ms {
 		if m.version <= current {

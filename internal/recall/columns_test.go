@@ -122,10 +122,10 @@ func TestTrainLearnsFromWhatTheAgentDid(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if err := tx.InsertScoreOutcome(worked.ID, "good", "codex", 100, good, 0.2); err != nil {
+		if err := tx.InsertScoreOutcome(store.OutcomeInput{MemoryID: worked.ID, Session: "good", Agent: "codex", TS: 100, Features: good, Score: 0.2}); err != nil {
 			return err
 		}
-		if err := tx.InsertScoreOutcome(failed.ID, "bad", "codex", 100, bad, 0.9); err != nil {
+		if err := tx.InsertScoreOutcome(store.OutcomeInput{MemoryID: failed.ID, Session: "bad", Agent: "codex", TS: 100, Features: bad, Score: 0.9}); err != nil {
 			return err
 		}
 		if _, err := tx.InsertEvent(&model.Event{TS: 200, Agent: "codex", Session: "good", Project: "/p", Kind: model.PostTool, Digest: "good-tool",

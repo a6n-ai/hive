@@ -616,6 +616,24 @@ func (t *Tx) SetStatus(memoryID string, s model.Status) error {
 	return err
 }
 
+// ForgetTime returns when a memory was forgotten: forgotten_at if set, else
+// when it was deleted. false when neither is known.
+func (s *Store) ForgetTime(memoryID string) (int64, bool, error) {
+	var at sql.NullInt64
+	err := s.db.QueryRow(`SELECT forgotten_at FROM memories WHERE id = ?`, memoryID).Scan(&at)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, false, err
+	}
+	if at.Valid {
+		return at.Int64, true, nil
+	}
+	var del sql.NullInt64
+	if err := s.db.QueryRow(`SELECT MIN(ts) FROM memory_deletions WHERE id = ?`, memoryID).Scan(&del); err != nil {
+		return 0, false, err
+	}
+	return del.Int64, del.Valid, nil
+}
+
 // DeleteMemory removes a memory and the evidence links that point at it.
 func (t *Tx) DeleteMemory(id string) error {
 	if _, err := t.tx.Exec(`DELETE FROM memory_evidence WHERE memory_id = ?`, id); err != nil {

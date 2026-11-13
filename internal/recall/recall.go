@@ -268,7 +268,8 @@ func markUsed(ctx context.Context, st *store.Store, hits []hit, q Query, now tim
 			if err != nil {
 				return err
 			}
-			if err := tx.InsertScoreOutcome(h.MemoryID, q.Session, q.Agent, ts, raw, h.Score); err != nil {
+			if err := tx.InsertScoreOutcome(store.OutcomeInput{MemoryID: h.MemoryID, Session: q.Session, Agent: q.Agent,
+				TS: ts, Features: raw, Score: h.Score}); err != nil {
 				return err
 			}
 		}
