@@ -101,6 +101,21 @@ func TestRateWrongPenalizes(t *testing.T) {
 	}
 }
 
+func TestUnratedCappedAtThirty(t *testing.T) {
+	e := newEnv(t)
+	ids := e.events(1)
+	for i := 0; i < 40; i++ {
+		e.injected(e.memory(fmt.Sprintf("m%d", i), ids[0]))
+	}
+	in, err := consolidate.BuildInput(e.st, session, 0, 8000, e.scrub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(in.Unrated) != 30 {
+		t.Fatalf("Unrated has %d memories, want 30", len(in.Unrated))
+	}
+}
+
 func TestRateRejectsIDNotUnrated(t *testing.T) {
 	e := newEnv(t)
 	ids := e.events(2)

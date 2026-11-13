@@ -1,6 +1,8 @@
 package consolidate
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/a6n-ai/inscribe/internal/store"
@@ -10,6 +12,7 @@ import (
 
 const (
 	maxEvents      = 500 // newest events read per run
+	maxUnrated     = 30  // unrated memories shown, newest first
 	ftsMemories    = 30  // memories found by term search
 	ftsTerms       = 50  // terms searched
 	eventOverhead  = 40  // approximate JSON characters around an event's fields
@@ -61,6 +64,7 @@ func BuildInput(st *store.Store, session string, fromEventID int64, budgetTokens
 	if in.Unrated, err = st.UnratedMemories(session); err != nil {
 		return Input{}, err
 	}
+	in.Unrated = newest(in.Unrated, maxUnrated)
 	trimToBudget(&in, budgetTokens)
 	return in, nil
 }
@@ -104,10 +108,18 @@ func relatedMemories(st *store.Store, eventIDs []int64, words, project string) (
 	return out, nil
 }
 
+// newest keeps the n most recently seen memories, newest first.
+func newest(ms []model.Memory, n int) []model.Memory {
+	slices.SortFunc(ms, func(a, b model.Memory) int { return cmp.Compare(b.LastSeen, a.LastSeen) })
+	return ms[:min(len(ms), n)]
+}
+
 func trimToBudget(in *Input, budgetTokens int) {
 	total := 0
-	for _, m := range in.Memories {
-		total += len(m.Text) + len(m.Key) + memoryOverhead
+	for _, ms := range [][]model.Memory{in.Memories, in.Unrated} {
+		for _, m := range ms {
+			total += len(m.Text) + len(m.Key) + memoryOverhead
+		}
 	}
 	for _, e := range in.Events {
 		total += eventSize(e)
