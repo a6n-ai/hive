@@ -11,6 +11,7 @@ import (
 
 	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/agent"
+	"github.com/a6n-ai/inscribe/internal/config"
 	"github.com/a6n-ai/inscribe/internal/consolidate"
 )
 
@@ -44,6 +45,7 @@ func consolidateCmd(args []string, stdout io.Writer) error {
 			return err
 		}
 	}
+	committed := false
 	for _, s := range sessions {
 		rep, err := h.Consolidate(context.Background(), s, runner, *dry)
 		if err != nil {
@@ -51,6 +53,13 @@ func consolidateCmd(args []string, stdout io.Writer) error {
 		}
 		if err := writeRun(stdout, s, rep, *dry); err != nil {
 			return err
+		}
+		committed = committed || (!*dry && (rep.Status == "ok" || rep.Status == "partial"))
+	}
+	// The SessionEnd and next-start trains usually run before the review commits, so refit on its labels now.
+	if committed {
+		if _, err := h.TrainScores(context.Background(), time.Now()); err != nil {
+			logLine(config.Home(), "consolidate: score train: %v", err)
 		}
 	}
 	return nil
