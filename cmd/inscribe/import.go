@@ -73,12 +73,19 @@ func importClaudeMemCmd(args []string, stdout io.Writer) error {
 		}
 		o.Since = t
 	}
-	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
-	if err != nil {
-		return err
+	var rep importer.ClaudeMemReport
+	var err error
+	if o.DryRun {
+		// Open would create and migrate inscribe.db; a dry run must touch nothing.
+		_, rep, err = importer.ReadClaudeMem(context.Background(), o)
+	} else {
+		var h *inscribe.Inscribe
+		if h, err = inscribe.Open(inscribe.Options{Caller: "inscribe"}); err != nil {
+			return err
+		}
+		defer func() { _ = h.Close() }()
+		rep, err = h.ImportClaudeMem(context.Background(), o)
 	}
-	defer func() { _ = h.Close() }()
-	rep, err := h.ImportClaudeMem(context.Background(), o)
 	if err != nil {
 		return err
 	}
