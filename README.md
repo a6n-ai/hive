@@ -72,7 +72,8 @@ untouched. `inscribe uninstall --agent NAME` removes only Inscribe's hooks. Agen
 - Set `INSCRIBE_DISABLED=1` to make hooks do nothing.
 - Set `debug = true` in `config.toml`, or `INSCRIBE_DEBUG=1`, to log what each
   hook event loaded and saved to `inscribe.log`, with up to 3 examples of each.
-  Claude Code also shows it in the status line.
+  Claude Code also shows it in the status line. Debug also notes each feedback ask
+  there and logs each answer.
 
 Data lives in `$INSCRIBE_HOME/inscribe.db` (default `~/.inscribe`). Hooks never fail the
 agent: errors are appended to `$INSCRIBE_HOME/inscribe.log`.
@@ -109,13 +110,20 @@ fails processing is quarantined in `spool/bad` while the rest commit.
     inscribe serve [--addr 127.0.0.1:7331]
     inscribe mcp
 
-`inscribe mcp` serves `remember`, `recall`, `forget` and `why` for the project it
+`inscribe mcp` serves `remember`, `recall`, `forget`, `why` and `feedback` for the project it
 starts in (the git root of its working directory). Every argument except the
 text or query is optional. A tool call may name a directory inside that project,
 such as a repository under a workspace folder; it resolves to that directory's git
 root. A relative path starts at the project. Sibling and parent projects are
 refused. `why` prints one short line per evidence event. Recall always merges global
 memories, so `remember --scope global` shares a memory across projects.
+
+After a save, Claude Code is asked which recalled memories it used. It answers with
+the `feedback` tool: the ask id, then for each memory `used` (yes, partly or no),
+`helpful` (yes, no or wrong) and, for a used memory, a short `how`. Answers become
+score-model labels. `wrong` also adds a lasting penalty that lowers that memory's
+ranking: 0.2 for a project memory, 0.05 for a global one. Session-end consolidation
+rates the memories no ask covered.
 
 `import` backfills events and memories from `~/.claude/projects`; running it
 again adds nothing. `import claude-mem` reads decisions and bugfixes from
