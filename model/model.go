@@ -65,18 +65,27 @@ const (
 )
 
 type Memory struct {
-	ID           string
-	Type         MemoryType
-	ScopeKind    ScopeKind
-	Scope        string
-	Key          string
-	Body         map[string]any
-	Text         string
-	Count        int
-	Confidence   float64
+	ID         string
+	Type       MemoryType
+	ScopeKind  ScopeKind
+	Scope      string
+	Key        string
+	Body       map[string]any
+	Text       string
+	Count      int
+	Confidence float64
+	// Penalty is subtracted from Confidence at recall. Agents add it when they
+	// call a memory wrong; it never changes Confidence itself.
+	Penalty      float64
 	Status       Status
 	SupersededBy string
 	FirstSeen    int64
 	LastSeen     int64
 	LastUsed     int64
+}
+
+// EffectiveConfidence is the confidence recall scores with: Confidence less
+// Penalty, never below 0.
+func (m Memory) EffectiveConfidence() float64 {
+	return max(m.Confidence-m.Penalty, 0)
 }

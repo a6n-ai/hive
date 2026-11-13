@@ -358,7 +358,7 @@ func (t *Tx) TouchSession(e *model.Event) error {
 }
 
 const memorySelect = `SELECT id, type, scope_kind, scope, key, body, text, count, confidence, status,
-	superseded_by, first_seen, last_seen, last_used FROM memories`
+	superseded_by, first_seen, last_seen, last_used, penalty FROM memories`
 
 type rowScanner interface{ Scan(dest ...any) error }
 
@@ -455,7 +455,7 @@ func (s *Store) SearchFTS(terms []string, f ListFilter, limit int) ([]model.Memo
 	where, args := filterSQL("m", f)
 	//nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	query := `SELECT m.id, m.type, m.scope_kind, m.scope, m.key, m.body, m.text, m.count, m.confidence, m.status,
-		m.superseded_by, m.first_seen, m.last_seen, m.last_used, bm25(memories_fts)
+		m.superseded_by, m.first_seen, m.last_seen, m.last_used, m.penalty, bm25(memories_fts)
 		FROM memories_fts JOIN memories m ON m.rowid = memories_fts.rowid
 		WHERE memories_fts MATCH ?` + where + ` ORDER BY bm25(memories_fts) LIMIT ?`
 	all := append([]any{strings.Join(q, " OR ")}, args...)
@@ -485,7 +485,7 @@ func scanMemoryWith(r rowScanner, extra ...any) (*model.Memory, error) {
 	var body, sup sql.NullString
 	var lastUsed sql.NullInt64
 	dest := append([]any{&m.ID, &typ, &sk, &m.Scope, &m.Key, &body, &m.Text, &m.Count, &m.Confidence, &status,
-		&sup, &m.FirstSeen, &m.LastSeen, &lastUsed}, extra...)
+		&sup, &m.FirstSeen, &m.LastSeen, &lastUsed, &m.Penalty}, extra...)
 	if err := r.Scan(dest...); err != nil {
 		return nil, err
 	}
@@ -620,6 +620,12 @@ func (t *Tx) AddEvidence(memoryID string, eventID int64) error {
 // SetStatus changes a memory's status.
 func (t *Tx) SetStatus(memoryID string, s model.Status) error {
 	_, err := t.tx.Exec(`UPDATE memories SET status = ? WHERE id = ?`, string(s), memoryID)
+	return err
+}
+
+// AddPenalty adds delta to a memory's penalty. Recall subtracts it from confidence.
+func (t *Tx) AddPenalty(memoryID string, delta float64) error {
+	_, err := t.tx.Exec(`UPDATE memories SET penalty = penalty + ? WHERE id = ?`, delta, memoryID)
 	return err
 }
 

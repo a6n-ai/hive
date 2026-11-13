@@ -20,7 +20,7 @@ import (
 // Confidence, recency, and scope then scale the grade, the same way a Jev
 // score is combined with signals the code already knows.
 func promptScore(groups [][]string, m model.Memory, now time.Time, halfLife float64, files []string) float64 {
-	return grade(groups, text.Terms(m.Text)) * m.Confidence * recency(m, now, halfLife) * scopeWeight(m, files)
+	return grade(groups, text.Terms(m.Text)) * m.EffectiveConfidence() * recency(m, now, halfLife) * scopeWeight(m, files)
 }
 
 // grade is the leaf shared by the text and by every stored column.

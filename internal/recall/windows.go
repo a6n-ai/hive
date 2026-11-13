@@ -143,7 +143,7 @@ func scoreWindows(ctx context.Context, src Source, f store.ListFilter, cfg confi
 func bestWindow(windows [][][]string, agent string, m model.Memory, traj string, now time.Time, halfLife float64, files []string, w Weights) (float64, Features) {
 	var best float64
 	var feat Features
-	scale := m.Confidence * recency(m, now, halfLife) * scopeWeight(m, files)
+	scale := m.EffectiveConfidence() * recency(m, now, halfLife) * scopeWeight(m, files)
 	for _, win := range windows {
 		f := applyTrajectory(fieldFeatures(win, chunkPrompt(strings.Join(flatten(win), " "), agent), m), win, traj)
 		score := blend(f, w) * scale

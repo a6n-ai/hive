@@ -249,8 +249,8 @@ func TestMigrateTwiceIsSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 7 {
-		t.Fatalf("schema_version = %d, want 7", v)
+	if v != 8 {
+		t.Fatalf("schema_version = %d, want 8", v)
 	}
 }
 
@@ -323,5 +323,41 @@ func TestForgetTimeFallsBackToDeletion(t *testing.T) {
 	}
 	if _, ok, err := st.ForgetTime("missing"); err != nil || ok {
 		t.Fatalf("ForgetTime(missing) = %v, %v, want false", ok, err)
+	}
+}
+
+func TestPenaltySurvivesUpsert(t *testing.T) {
+	st, _ := openTemp(t)
+	ctx := context.Background()
+	m := upsertTwice(t, st)
+	if err := st.Write(ctx, func(tx *Tx) error { return tx.AddPenalty(m.ID, 0.2) }); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.GetMemory(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Penalty != 0.2 || before.Confidence != m.Confidence {
+		t.Fatalf("after AddPenalty: penalty=%v confidence=%v, want 0.2 and %v", before.Penalty, before.Confidence, m.Confidence)
+	}
+	if err := st.Write(ctx, func(tx *Tx) error {
+		e := event("e3")
+		e.TS = 3000
+		if _, err := tx.InsertEvent(e); err != nil {
+			return err
+		}
+		_, err := tx.UpsertMemory(&model.Memory{Type: model.Command, ScopeKind: model.ProjectScope, Scope: "/p", Key: "go test ./...",
+			Body: map[string]any{"class": "test"}, Text: "tests: go test ./...", Confidence: 0.5, Status: model.Active,
+			FirstSeen: 3000, LastSeen: 3000}, nil, e.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.GetMemory(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Penalty != 0.2 {
+		t.Fatalf("penalty after re-upsert = %v, want 0.2", after.Penalty)
 	}
 }

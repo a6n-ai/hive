@@ -124,11 +124,11 @@ func scoreAll(src Source, f store.ListFilter, cfg config.RecallCfg, q Query, now
 	}
 	hits := make([]hit, 0, len(ms))
 	for _, m := range ms {
-		score := m.Confidence * recency(m, now, cfg.HalfLifeDays) * scopeWeight(m, q.Files)
+		score := m.EffectiveConfidence() * recency(m, now, cfg.HalfLifeDays) * scopeWeight(m, q.Files)
 		feat := Features{}
 		if groups != nil {
 			feat = applyTrajectory(fieldFeatures(groups, facets, m), groups, traj[m.ID])
-			score = blend(feat, w) * m.Confidence * recency(m, now, cfg.HalfLifeDays) * scopeWeight(m, q.Files)
+			score = blend(feat, w) * m.EffectiveConfidence() * recency(m, now, cfg.HalfLifeDays) * scopeWeight(m, q.Files)
 			if score == 0 {
 				continue
 			}
