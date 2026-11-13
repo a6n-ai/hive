@@ -22,6 +22,7 @@ type Config struct {
 	Skills      SkillsCfg      `toml:"skills"`
 	Scrub       ScrubCfg       `toml:"scrub"`
 	Exclude     ExcludeCfg     `toml:"exclude"`
+	Share       ShareCfg       `toml:"share"`
 }
 
 type RecallCfg struct {
@@ -59,6 +60,12 @@ type ScrubCfg struct {
 
 type ExcludeCfg struct {
 	Paths []string `toml:"paths"`
+}
+
+// ShareCfg is global-only: a project file cannot turn on uploads or pick the URL.
+type ShareCfg struct {
+	Analytics bool   `toml:"analytics"`
+	URL       string `toml:"url"`
 }
 
 // Tristate is "auto", "true", or "false"; TOML may give a bool or a string.

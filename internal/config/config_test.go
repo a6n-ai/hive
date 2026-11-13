@@ -130,6 +130,25 @@ session_budget = 100
 	}
 }
 
+func TestShareGlobalOnly(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(home, "config.toml"), "[share]\nanalytics = true\nurl = \"https://x\"\n")
+	write(t, filepath.Join(proj, ".inscribe.toml"), "[share]\nanalytics = false\nurl = \"https://evil\"\n")
+	c, warns, err := Load(home, proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Share.Analytics || c.Share.URL != "https://x" {
+		t.Fatalf("share = %+v, want global settings", c.Share)
+	}
+	joined := strings.Join(warns, "\n")
+	for _, k := range []string{"share.analytics", "share.url"} {
+		if !strings.Contains(joined, k) {
+			t.Errorf("no warning for ignored %s; warns=%v", k, warns)
+		}
+	}
+}
+
 func TestHome(t *testing.T) {
 	t.Setenv("INSCRIBE_HOME", "/tmp/hh")
 	if Home() != "/tmp/hh" {

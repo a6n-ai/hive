@@ -2,9 +2,12 @@ package inscribe
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"time"
 
 	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/store"
 )
 
 // TrainScores is the idle pass. It labels injections from sessions that have
@@ -16,4 +19,23 @@ func (h *Inscribe) TrainScores(ctx context.Context, now time.Time) (recall.Train
 // ScoreWeights returns the score model, or the defaults when none has been learned.
 func (h *Inscribe) ScoreWeights() (recall.Weights, error) {
 	return recall.LoadWeights(h.store)
+}
+
+// InstallID returns the random id that tags this install's share snapshots, creating it on first use.
+func (h *Inscribe) InstallID(ctx context.Context) (string, error) {
+	var id string
+	err := h.store.Write(ctx, func(tx *store.Tx) error {
+		v, ok, err := tx.GetMeta("install_id")
+		if err != nil || ok {
+			id = v
+			return err
+		}
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			return err
+		}
+		id = hex.EncodeToString(b)
+		return tx.SetMeta("install_id", id)
+	})
+	return id, err
 }

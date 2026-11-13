@@ -2,23 +2,32 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/config"
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/internal/store"
 )
 
-const scoreUsage = "usage: inscribe score (train|show)"
+const scoreUsage = "usage: inscribe score (train|show|combine --dir DIR)"
 
 func scoreCmd(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(scoreUsage)
 	}
+	if args[0] == "combine" {
+		return combineCmd(args[1:], stdout)
+	}
+	home := config.Home()
 	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
 	if err != nil {
 		return err
@@ -47,7 +56,11 @@ func scoreCmd(args []string, stdout io.Writer) error {
 		if _, err := fmt.Fprintf(stdout, "open=%d\n", res.Open); err != nil {
 			return err
 		}
-		return writeWeights(stdout, res.Weights)
+		if err := writeWeights(stdout, res.Weights); err != nil {
+			return err
+		}
+		shareSnapshot(h, home, res.Weights)
+		return nil
 	case "show":
 		w, err := h.ScoreWeights()
 		if err != nil {
@@ -64,4 +77,39 @@ func writeWeights(w io.Writer, weights recall.Weights) error {
 		weights.Text, weights.Key, weights.Body, weights.Type, weights.Scope, weights.Agent, weights.Command, weights.Trajectory,
 		weights.Seen, weights.Hits, weights.Misses)
 	return err
+}
+
+func combineCmd(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("combine", flag.ContinueOnError)
+	dir := fs.String("dir", "", "directory of snapshot *.json files")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *dir == "" {
+		return errors.New("usage: inscribe score combine --dir DIR")
+	}
+	files, err := filepath.Glob(filepath.Join(*dir, "*.json"))
+	if err != nil {
+		return err
+	}
+	var snaps []Snapshot
+	var mtimes []time.Time
+	for _, f := range files {
+		info, err := os.Stat(f)
+		if err != nil {
+			return err
+		}
+		raw, err := os.ReadFile(f) //nolint:gosec // G304: the maintainer names the directory
+		if err != nil {
+			return err
+		}
+		var s Snapshot
+		if err := json.Unmarshal(raw, &s); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "skipped %s: %v\n", f, err)
+			continue
+		}
+		snaps = append(snaps, s)
+		mtimes = append(mtimes, info.ModTime())
+	}
+	return writeWeights(stdout, Combine(recall.DefaultWeights(), snaps, mtimes))
 }
