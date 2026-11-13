@@ -486,6 +486,11 @@ func TestSeparatorFindings(t *testing.T) {
 		{"TOKEN=abc123 | base64", "TOKEN=[REDACTED:assignment] | base64"},
 		{`password: "abc" trailing`, "password: [REDACTED:assignment]"},
 		{"password: 'abc' then words", "password: [REDACTED:assignment]"},
+		{"TOKEN='abc' qq9x", "TOKEN=[REDACTED:assignment]"},
+		{"password='[REDACTED:assignment]' hunter2zz", "password=[REDACTED:assignment]"},
+		{"password: 'abc'\n  qq9x\nnext: ok", "password: [REDACTED:assignment]\nnext: ok"},
+		{"password: 'abc'|\n  qq9x", "password: [REDACTED:assignment]"},
+		{"TOKEN='abc' && make build", "TOKEN=[REDACTED:assignment] && make build"},
 	} {
 		out, _ := s.Scrub(c.in)
 		if out != c.want {

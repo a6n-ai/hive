@@ -115,7 +115,7 @@ func yamlContinuation(s string, keyStart, sepEnd, start, end int) int {
 		header, lineEnd := headerAt(s, start)
 		if blockIndicator.MatchString(header) {
 			from = lineEnd
-		} else if q := s[start]; q != '"' && q != '\'' && sepByte(s, sepEnd) == ':' && !isQuotedKey(s, keyStart, sepEnd) {
+		} else if q := s[start]; (q != '"' && q != '\'' || closedQuote(s, start, q)) && sepByte(s, sepEnd) == ':' && !isQuotedKey(s, keyStart, sepEnd) {
 			plain = true // same-line plain scalar: deeper lines that are not keys continue it
 		} else {
 			return end
@@ -196,11 +196,20 @@ func valueEnd(s string, i int, quotedKey, shell bool) int {
 	}
 	if q := s[i]; q == '"' || q == '\'' {
 		e := quotedEnd(s, i, q)
-		if quotedKey || shell || s[e-1] != q {
+		if quotedKey || s[e-1] != q {
 			return e
 		}
-		// Text after a closed quote on a plain key is redacted too, so a rescrub is stable.
-		return valueEnd(s, e, false, false)
+		// Text after a closed quote is redacted too, so a rescrub is stable;
+		// shell values still end at their separators.
+		i = e - 1
+		j := e
+		for j < len(s) && !valueStop(s, i, j, false, shell) {
+			j++
+		}
+		for j > e && isSpace(s[j-1]) {
+			j--
+		}
+		return j
 	}
 	j := i
 	for j < len(s) && !valueStop(s, i, j, quotedKey, shell) {
@@ -210,6 +219,11 @@ func valueEnd(s string, i int, quotedKey, shell bool) int {
 		j--
 	}
 	return j
+}
+
+func closedQuote(s string, i int, q byte) bool {
+	e := quotedEnd(s, i, q)
+	return e-i > 1 && s[e-1] == q
 }
 
 func isSpace(c byte) bool { return c == ' ' || c == '\t' }
