@@ -95,7 +95,7 @@ func TestPrepareTwiceIsStable(t *testing.T) {
 	}
 	defer func() { _ = h.Close() }()
 	e := Event{Agent: "a", Session: "s", Project: "/p", Kind: model.Prompt,
-		PromptText: "export ANTHROPIC_API_KEY=sk-ant-api03-" + strings.Repeat("Q", 30)}
+		PromptText: "export ANTHROPIC_API_KEY=sk-ant-api03-" + strings.Repeat("Q", 30) + ` {"password": "hunter2zz9"}`}
 	h.Prepare(&e)
 	first, redactions := e, h.pipeline.Redactions.Load()
 	h.Prepare(&e)

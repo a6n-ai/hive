@@ -6,11 +6,33 @@ import "strings"
 // keeping inputs with many unclosed values linear.
 const maxValueSpan = 64 * 1024
 
-// isRedaction reports whether v is exactly one redaction tag. A rescrub must not
-// count it again, or a prepared event scrubbed twice reports extra secrets.
-func isRedaction(v string) bool {
-	inner, ok := strings.CutPrefix(v, redactedPrefix)
-	return ok && strings.HasSuffix(inner, "]") && !strings.ContainsAny(inner[:len(inner)-1], "[]")
+// knownKinds is every kind the scrubber emits; only these tags are trusted.
+var knownKinds = func() map[string]bool {
+	m := map[string]bool{"assignment": true, "high_entropy": true, "custom": true}
+	for _, r := range builtin {
+		m[r.kind] = true
+	}
+	return m
+}()
+
+// isRedaction reports whether the value spanning s[start:end] is just a tag the
+// scrubber itself wrote at start. A rescrub must not count it again, or a
+// prepared event scrubbed twice reports extra secrets. A quoted key stops the
+// span at the tag's closing ']', which counts only when the tag ends the value.
+func isRedaction(s string, start, end int) bool {
+	rest, ok := strings.CutPrefix(s[start:], redactedPrefix)
+	if !ok {
+		return false
+	}
+	kind, _, ok := strings.Cut(rest, "]")
+	if !ok || !knownKinds[kind] {
+		return false
+	}
+	tagEnd := start + len(redactedPrefix) + len(kind) + 1
+	if end == tagEnd {
+		return true
+	}
+	return end == tagEnd-1 && (tagEnd == len(s) || valueStop(s[tagEnd], true))
 }
 
 // redactAssignments replaces the value of every secret assignment in s.
@@ -36,7 +58,7 @@ func redactAssignments(s string, findings *[]Finding) string {
 	for _, loc := range locs {
 		start := valueStart(s, loc[1])
 		end := valueEnd(s, start, loc[3] > loc[2])
-		if end <= start || isRedaction(s[start:end]) {
+		if end <= start || isRedaction(s, start, end) {
 			continue
 		}
 		switch {

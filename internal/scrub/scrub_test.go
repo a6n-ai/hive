@@ -368,4 +368,16 @@ func TestRescrubIdempotentAndTagPrefixNotTrusted(t *testing.T) {
 	if strings.Contains(out, "hunter2zz9") {
 		t.Fatalf("leaked after tag prefix: %q", out)
 	}
+	for _, in := range []string{"password=[REDACTED:hunter2]", "password=[REDACTED:assignment]hunter2zz9"} {
+		out, f := s.Scrub(in)
+		if len(f) != 1 || strings.Contains(out, "hunter2") {
+			t.Fatalf("Scrub(%q) = %q with %d findings", in, out, len(f))
+		}
+	}
+	in = `{"password": "hunter2zz9"}`
+	once, f1 = s.Scrub(in)
+	twice, f2 = s.Scrub(once)
+	if twice != once || len(f1) != 1 || len(f2) != 0 {
+		t.Fatalf("quoted-key rescrub: %q -> %q, findings %d then %d", once, twice, len(f1), len(f2))
+	}
 }
