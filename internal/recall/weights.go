@@ -7,11 +7,16 @@ import (
 	"github.com/a6n-ai/inscribe/internal/store"
 )
 
-const scoreModelKey = "score_model"
+const (
+	LabelRule = "L1"
+	StepRule  = "S1"
+)
 
-// Weights scale the column features. Text is the floor. The idle pass moves
-// the others when an injection later worked or failed. Defaults keep a
-// text-only match on the same number the text grade already produced.
+func weightsKey() string { return "score_model." + StepRule }
+
+// Weights scale the column features. Text is the floor and is pinned at 1.
+// The refit moves the others when an injection later worked or failed.
+// Defaults keep a text-only match on the same number the text grade already produced.
 type Weights struct {
 	Text       float64 `json:"text"`
 	Key        float64 `json:"key"`
@@ -24,17 +29,28 @@ type Weights struct {
 	Seen       int     `json:"seen"`
 	Hits       int     `json:"hits"`
 	Misses     int     `json:"misses"`
+	StepRule   string  `json:"step_rule"`
 }
 
 // DefaultWeights is the model before any idle pass has run.
 func DefaultWeights() Weights {
-	return Weights{Text: 1, Key: 1, Body: 0.85, Type: 0.4, Scope: 1, Agent: 0.5, Command: 1, Trajectory: 1}
+	return Weights{Text: 1, Key: 1, Body: 0.85, Type: 0.4, Scope: 1, Agent: 0.5, Command: 1, Trajectory: 1, StepRule: StepRule}
 }
 
 // LoadWeights reads the score model. A database that has never trained
 // returns DefaultWeights.
 func LoadWeights(st *store.Store) (Weights, error) {
-	raw, ok, err := st.GetMeta(scoreModelKey)
+	raw, ok, err := st.GetMeta(weightsKey())
+	return decodeWeights(raw, ok, err)
+}
+
+// LoadWeightsTx is LoadWeights inside an open transaction.
+func LoadWeightsTx(tx *store.Tx) (Weights, error) {
+	raw, ok, err := tx.GetMeta(weightsKey())
+	return decodeWeights(raw, ok, err)
+}
+
+func decodeWeights(raw string, ok bool, err error) (Weights, error) {
 	if err != nil || !ok || raw == "" {
 		return DefaultWeights(), err
 	}
@@ -42,16 +58,22 @@ func LoadWeights(st *store.Store) (Weights, error) {
 	if err := json.Unmarshal([]byte(raw), &w); err != nil {
 		return DefaultWeights(), err
 	}
+	w.Text = 1
 	return w, nil
 }
 
 // SaveWeights stores the score model.
 func SaveWeights(ctx context.Context, st *store.Store, w Weights) error {
+	return st.Write(ctx, func(tx *store.Tx) error { return SaveWeightsTx(tx, w) })
+}
+
+// SaveWeightsTx is SaveWeights inside an open transaction.
+func SaveWeightsTx(tx *store.Tx, w Weights) error {
 	raw, err := json.Marshal(w)
 	if err != nil {
 		return err
 	}
-	return st.Write(ctx, func(tx *store.Tx) error { return tx.SetMeta(scoreModelKey, string(raw)) })
+	return tx.SetMeta(weightsKey(), string(raw))
 }
 
 func (f Features) marshal() (string, error) {

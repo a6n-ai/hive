@@ -65,6 +65,25 @@ func blend(f Features, w Weights) float64 {
 	return g
 }
 
+// blendRaw is blend before the clip, with text pinned at weight 1. d holds the
+// lift of each learned field over the floor, in weightVec order, whether or
+// not its weight is above 0. r counts only the weights above 0, as blend does.
+func blendRaw(f Features, w Weights) (r, floor float64, d [7]float64) {
+	floor = math.Min(1, f.Text)
+	grades := [7]float64{f.Key, f.Body, f.Type, f.Scope, f.Agent, f.Command, f.Trajectory}
+	ws := weightVec(w)
+	r = floor
+	for i, g := range grades {
+		if g > floor {
+			d[i] = g - floor
+		}
+		if ws[i] > 0 {
+			r += ws[i] * d[i]
+		}
+	}
+	return r, floor, d
+}
+
 // applyTrajectory sets the grade of the stored trajectory JSON for this memory.
 // The JSON is the same object written at capture.
 func applyTrajectory(f Features, groups [][]string, traj string) Features {
