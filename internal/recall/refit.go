@@ -9,6 +9,8 @@ const (
 	refitPasses   = 8
 	refitStopMove = 0.001
 	weightMax     = 2.0
+	// The shipped prior counts as this many pseudo-groups, so a few sessions cannot swing the weights.
+	priorGroups = 10
 )
 
 // Row is one labeled injection. Scale weights its contribution to the refit.
@@ -49,7 +51,7 @@ func Refit(prior Weights, groups []Group) Weights {
 	}
 
 	def := weightVec(DefaultWeights())
-	n := float64(len(groups))
+	n := float64(len(groups) + priorGroups)
 	for pass := 0; pass < refitPasses; pass++ {
 		wv := weightVec(out)
 		grad := refitGradient(out, groups)

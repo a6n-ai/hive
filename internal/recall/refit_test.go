@@ -46,10 +46,8 @@ func TestRefitPinsText(t *testing.T) {
 func TestRefitSingleFailedLineKeepsWeights(t *testing.T) {
 	g := Group{{F: Features{Text: .5, Key: 1, Command: 1, Trajectory: 1}, Label: 0, Reason: "failed", Scale: 1}}
 	out := Refit(DefaultWeights(), []Group{g})
-	for name, v := range map[string]float64{"Key": out.Key, "Command": out.Command, "Trajectory": out.Trajectory} {
-		if !(v > 0 && v < 1) {
-			t.Fatalf("%s = %v, want part way down, between 0 and 1", name, v)
-		}
+	if !(out.Key > 0.5 && out.Command > 0.5 && out.Trajectory > 0.5) {
+		t.Fatalf("Key, Command, Trajectory = %v, %v, %v; want each above 0.5", out.Key, out.Command, out.Trajectory)
 	}
 }
 
