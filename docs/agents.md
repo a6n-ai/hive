@@ -44,5 +44,5 @@ The file may be committed, so review the block first.
 
 ## MCP
 
-`inscribe mcp` serves `remember`, `recall`, `forget` and `why` over stdio. `forget`
+`inscribe mcp` serves `remember`, `recall`, `forget`, `why` and `feedback` over stdio. `forget`
 marks a memory forgotten and never purges it; purge is only on the CLI.

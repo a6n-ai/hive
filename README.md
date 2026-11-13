@@ -118,12 +118,15 @@ root. A relative path starts at the project. Sibling and parent projects are
 refused. `why` prints one short line per evidence event. Recall always merges global
 memories, so `remember --scope global` shares a memory across projects.
 
-After a save, Claude Code is asked which recalled memories it used. It answers with
+After a save, Claude Code is asked which recalled memories it used, when at least
+4 recalled memories went unasked and no ask was made in the last 10 minutes. Asks
+need the inscribe MCP server registered with Claude Code. It answers with
 the `feedback` tool: the ask id, then for each memory `used` (yes, partly or no),
 `helpful` (yes, no or wrong) and, for a used memory, a short `how`. Answers become
 score-model labels. `wrong` also adds a lasting penalty that lowers that memory's
 ranking: 0.2 for a project memory, 0.05 for a global one. Session-end consolidation
-rates the memories no ask covered.
+rates the memories no answered ask covered, only when consolidation runs
+(`consolidate.auto` on, at least 20 new events).
 
 `import` backfills events and memories from `~/.claude/projects`; running it
 again adds nothing. `import claude-mem` reads decisions and bugfixes from
