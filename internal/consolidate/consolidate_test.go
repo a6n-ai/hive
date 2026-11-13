@@ -139,9 +139,11 @@ func abc(e *env) (ids []int64, a, b, c string) {
 func TestValidOpsApplyWithAudit(t *testing.T) {
 	e := newEnv(t)
 	ids, a, b, c := abc(e)
-	r := &fakeRunner{out: fixture(t, "valid.json", "MEM_A", a, "MEM_B", b, "MEM_C", c, "EV_3", strconv.FormatInt(ids[2], 10))}
+	d := e.memory("d", ids[0])
+	e.injected(d)
+	r := &fakeRunner{out: fixture(t, "valid.json", "MEM_A", a, "MEM_B", b, "MEM_C", c, "MEM_D", d, "EV_3", strconv.FormatInt(ids[2], 10))}
 	rep := e.run(r, false)
-	if rep.Status != "ok" || len(rep.Valid) != 3 {
+	if rep.Status != "ok" || len(rep.Valid) != 4 {
 		t.Fatalf("status = %s valid = %d rejected = %v", rep.Status, len(rep.Valid), rep.Rejected)
 	}
 	if got := e.get(b); got.Status != model.Superseded || got.SupersededBy != a {
@@ -158,8 +160,8 @@ func TestValidOpsApplyWithAudit(t *testing.T) {
 		t.Fatalf("added memory = %+v (%v)", added, err)
 	}
 	audit, err := e.st.AuditRows(rep.RunID)
-	if err != nil || len(audit) != 4 {
-		t.Errorf("audit rows = %d (%v), want 4", len(audit), err)
+	if err != nil || len(audit) != 5 {
+		t.Errorf("audit rows = %d (%v), want 5", len(audit), err)
 	}
 	cursor, _ := e.st.SessionCursor(session)
 	if cursor != ids[2] {
@@ -178,8 +180,8 @@ func TestHostileOpsDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 	valid, rejected := consolidate.Validate(ops, consolidate.Input{Project: "/p", Events: inputEvents(ids), Memories: memories(e, a, b, c)}, e.scrub, noFind)
-	if len(valid) != 2 || len(rejected) != 6 {
-		t.Fatalf("valid = %d rejected = %d, want 2 and 6: %+v", len(valid), len(rejected), rejected)
+	if len(valid) != 2 || len(rejected) != 7 {
+		t.Fatalf("valid = %d rejected = %d, want 2 and 7: %+v", len(valid), len(rejected), rejected)
 	}
 	for _, v := range valid {
 		if strings.Contains(v.Text, "hunter9two") {

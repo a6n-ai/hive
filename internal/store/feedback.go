@@ -3,7 +3,57 @@ package store
 import (
 	"database/sql"
 	"fmt"
+
+	"github.com/a6n-ai/inscribe/model"
 )
+
+// unansweredRow matches an outcome no answered ask covers: unasked, or asked and still unanswered.
+const unansweredRow = `NOT EXISTS (SELECT 1 FROM feedback_ask_rows r JOIN feedback_asks a ON a.id = r.ask_id
+	WHERE r.outcome_id = score_outcomes.id AND a.answered = 1)`
+
+// UnratedMemories returns the memories a session injected that still have an
+// unresolved outcome no answered ask covers.
+func (s *Store) UnratedMemories(session string) ([]model.Memory, error) {
+	rows, err := s.db.Query(memorySelect+` WHERE id IN (SELECT memory_id FROM score_outcomes
+		WHERE session = ? AND resolved IS NULL AND `+unansweredRow+`)`, session)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []model.Memory
+	for rows.Next() {
+		m, err := scanMemory(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *m)
+	}
+	return out, rows.Err()
+}
+
+// ResolveSessionMemoryRows labels the unresolved outcomes of a memory in a session
+// that no answered ask covers. It returns how many rows it resolved.
+func (t *Tx) ResolveSessionMemoryRows(session, memoryID string, label int, reason string, scale float64, ts int64) (int64, error) {
+	res, err := t.tx.Exec(`UPDATE score_outcomes SET label = ?, reason = ?, scale = ?, resolved = ?
+		WHERE session = ? AND memory_id = ? AND resolved IS NULL AND `+unansweredRow,
+		label, reason, scale, ts, session, memoryID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// UnresolveSessionMemoryRows reopens a memory's outcomes in a session that were
+// resolved with one of reasons, clearing their label, reason and scale.
+func (t *Tx) UnresolveSessionMemoryRows(session, memoryID string, reasons []string) error {
+	args := []any{session, memoryID}
+	for _, r := range reasons {
+		args = append(args, r)
+	}
+	_, err := t.tx.Exec(`UPDATE score_outcomes SET label = NULL, reason = '', scale = 1, resolved = NULL
+		WHERE session = ? AND memory_id = ? AND reason IN (`+placeholders(len(reasons))+`)`, args...) //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
+	return err
+}
 
 // Ask is one feedback question put to the agent and the outcome rows it covers.
 type Ask struct {

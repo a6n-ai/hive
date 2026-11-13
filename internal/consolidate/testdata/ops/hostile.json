@@ -6,5 +6,6 @@
  {"op":"merge","keep":"MEM_A","drop":["MEM_A"]},
  {"op":"add","type":"decision","scope_kind":"project","scope":"/p","key":"k-secret","text":"SECRET_TEXT","evidence":[EV_1]},
  {"op":"supersede","old":"MEM_B","new":"MEM_B"},
- {"op":"stale","id":"MEM_C"}
+ {"op":"stale","id":"MEM_C"},
+ {"op":"rate","id":"MEM_A","used":"maybe","helpful":"yes"}
 ]}

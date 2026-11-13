@@ -96,7 +96,7 @@ func commit(ctx context.Context, st *store.Store, in Input, rec *store.RunRecord
 			}
 		} else {
 			var err error
-			if skipped, err = applyTx(tx, rec.ID, valid, now); err != nil {
+			if skipped, err = applyTx(tx, in.Session, rec.ID, valid, now); err != nil {
 				return err
 			}
 			if len(skipped) > 0 {

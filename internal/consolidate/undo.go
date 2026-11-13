@@ -25,6 +25,10 @@ func Undo(ctx context.Context, st *store.Store, runID string) (UndoReport, error
 	if status == "" {
 		return UndoReport{}, fmt.Errorf("consolidate: no run %q", runID)
 	}
+	session, err := st.RunSession(runID)
+	if err != nil {
+		return UndoReport{}, err
+	}
 	rows, err := st.AuditRows(runID)
 	if err != nil {
 		return UndoReport{}, err
@@ -33,7 +37,7 @@ func Undo(ctx context.Context, st *store.Store, runID string) (UndoReport, error
 	err = st.Write(ctx, func(tx *store.Tx) error {
 		rep = UndoReport{}
 		for i := len(rows) - 1; i >= 0; i-- {
-			if err := undoRow(tx, rows[i], &rep); err != nil {
+			if err := undoRow(tx, session, rows[i], &rep); err != nil {
 				return err
 			}
 		}
@@ -42,7 +46,7 @@ func Undo(ctx context.Context, st *store.Store, runID string) (UndoReport, error
 	return rep, err
 }
 
-func undoRow(tx *store.Tx, r store.AuditRow, rep *UndoReport) error {
+func undoRow(tx *store.Tx, session string, r store.AuditRow, rep *UndoReport) error {
 	cur, err := tx.GetMemory(r.MemoryID)
 	if err != nil {
 		return err
@@ -51,11 +55,22 @@ func undoRow(tx *store.Tx, r store.AuditRow, rep *UndoReport) error {
 		rep.Skipped = append(rep.Skipped, r.MemoryID)
 		return nil
 	}
-	now, err := snapshotJSON(tx, cur)
+	now, err := snapshotOf(tx, cur)
 	if err != nil {
 		return err
 	}
-	if now != r.After {
+	var after snapshot
+	if err := json.Unmarshal([]byte(r.After), &after); err != nil {
+		return err
+	}
+	if after.Penalty == nil {
+		now.Penalty = nil // written before penalties were snapshotted
+	}
+	b, err := json.Marshal(now)
+	if err != nil {
+		return err
+	}
+	if string(b) != r.After {
 		rep.Skipped = append(rep.Skipped, r.MemoryID)
 		return nil
 	}
@@ -66,11 +81,17 @@ func undoRow(tx *store.Tx, r store.AuditRow, rep *UndoReport) error {
 	} else if err := restore(tx, cur, r.Before); err != nil {
 		return err
 	}
+	if r.Op == "rate" {
+		if err := tx.UnresolveSessionMemoryRows(session, r.MemoryID, []string{"review", "review_wrong"}); err != nil {
+			return err
+		}
+	}
 	rep.Restored++
 	return nil
 }
 
 // restore writes a snapshot's state back onto m; last_seen and last_used stay as they are.
+// A snapshot without a penalty leaves m's penalty as it is.
 func restore(tx *store.Tx, m *model.Memory, before string) error {
 	var s snapshot
 	if err := json.Unmarshal([]byte(before), &s); err != nil {
@@ -79,6 +100,9 @@ func restore(tx *store.Tx, m *model.Memory, before string) error {
 	m.Type, m.ScopeKind, m.Scope, m.Key = s.Type, s.ScopeKind, s.Scope, s.Key
 	m.Text, m.Body, m.Count, m.Confidence = s.Text, s.Body, s.Count, s.Confidence
 	m.Status, m.SupersededBy = s.Status, s.SupersededBy
+	if s.Penalty != nil {
+		m.Penalty = *s.Penalty
+	}
 	if err := tx.PutMemory(m); err != nil {
 		return err
 	}

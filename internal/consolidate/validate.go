@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/model"
 )
 
@@ -24,6 +25,7 @@ var (
 type validator struct {
 	project string
 	mems    map[string]model.Memory
+	unrated map[string]bool
 	events  map[int64]bool
 	touched map[string]bool
 	find    Finder
@@ -35,11 +37,17 @@ type Finder func(model.MemoryType, model.ScopeKind, string, string) (*model.Memo
 // Validate splits ops into those that may apply and those that may not. Memory
 // ids must come from the input, evidence must cite input events, no memory may
 // change twice in a run, add text is scrubbed again and kept short, and an add
-// may not take a key that a memory outside the input already holds.
+// may not take a key that a memory outside the input already holds. A rate op
+// may name only an unrated memory.
 func Validate(ops []Op, in Input, scrub func(string) string, find Finder) (valid []Op, rejected []Rejected) {
-	v := validator{project: in.Project, mems: map[string]model.Memory{}, events: map[int64]bool{}, touched: map[string]bool{}, find: find}
+	v := validator{project: in.Project, mems: map[string]model.Memory{}, unrated: map[string]bool{},
+		events: map[int64]bool{}, touched: map[string]bool{}, find: find}
 	for _, m := range in.Memories {
 		v.mems[m.ID] = m
+	}
+	for _, m := range in.Unrated {
+		v.mems[m.ID] = m
+		v.unrated[m.ID] = true
 	}
 	for _, e := range in.Events {
 		v.events[e.ID] = true
@@ -80,6 +88,8 @@ func (v *validator) check(i int, op *Op, scrub func(string) string) ([]string, s
 		return []string{op.Old, op.New}, ""
 	case "add":
 		return v.add(op, scrub)
+	case "rate":
+		return v.rate(op)
 	}
 	return nil, "unknown op " + strconv.Quote(op.Op)
 }
@@ -119,6 +129,17 @@ func (v *validator) promote(op *Op) ([]string, string) {
 // within reports whether path is project or lies under it. An empty project matches nothing.
 func within(path, project string) bool {
 	return project != "" && (path == project || strings.HasPrefix(path, project+"/"))
+}
+
+// rate needs an unrated memory and answers that feedback.Label accepts.
+func (v *validator) rate(op *Op) ([]string, string) {
+	if !v.unrated[op.ID] {
+		return nil, "rate needs a memory the session has not rated: " + strconv.Quote(op.ID)
+	}
+	if _, _, _, _, err := feedback.Label(op.review(), feedback.ReviewScale, "review"); err != nil {
+		return nil, err.Error()
+	}
+	return []string{op.ID}, ""
 }
 
 func (v *validator) merge(op *Op) ([]string, string) {
@@ -229,7 +250,7 @@ func scrubBody(body map[string]any, scrub func(string) string) map[string]any {
 }
 
 // guard limits what an op may change: a memory in the session's scope, and a
-// global memory only by promote or reject while it is a candidate.
+// global memory only by promote or reject while it is a candidate, or by rate.
 func (v *validator) guard(op Op, ids []string) string {
 	for _, id := range ids {
 		m, ok := v.mems[id]
@@ -239,7 +260,7 @@ func (v *validator) guard(op Op, ids []string) string {
 		if !inScope(m, v.project) {
 			return "memory is outside the session's project"
 		}
-		if m.ScopeKind == model.Global && (m.Status != model.Candidate || (op.Op != "promote" && op.Op != "reject")) {
+		if m.ScopeKind == model.Global && op.Op != "rate" && (m.Status != model.Candidate || (op.Op != "promote" && op.Op != "reject")) {
 			return "a global memory changes only by promote or reject while a candidate"
 		}
 	}

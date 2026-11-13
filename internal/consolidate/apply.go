@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/internal/store"
 	"github.com/a6n-ai/inscribe/model"
 )
@@ -14,7 +15,8 @@ import (
 const addConfidence = 0.7
 
 // snapshot is a memory's changeable state, as the audit log stores it. Undo
-// compares a current snapshot with the one a run left behind.
+// compares a current snapshot with the one a run left behind. Penalty is absent
+// in rows written before penalties were snapshotted.
 type snapshot struct {
 	Type         model.MemoryType `json:"type"`
 	ScopeKind    model.ScopeKind  `json:"scope_kind"`
@@ -27,33 +29,40 @@ type snapshot struct {
 	Status       model.Status     `json:"status"`
 	SupersededBy string           `json:"superseded_by"`
 	Evidence     []int64          `json:"evidence"`
+	Penalty      *float64         `json:"penalty,omitempty"`
+}
+
+func snapshotOf(tx *store.Tx, m *model.Memory) (snapshot, error) {
+	ev, err := tx.EvidenceIDs(m.ID)
+	return snapshot{Type: m.Type, ScopeKind: m.ScopeKind, Scope: m.Scope, Key: m.Key, Text: m.Text,
+		Body: m.Body, Count: m.Count, Confidence: m.Confidence, Status: m.Status, SupersededBy: m.SupersededBy,
+		Evidence: ev, Penalty: &m.Penalty}, err
 }
 
 // snapshotJSON returns the memory's snapshot as JSON; equal memories give equal strings.
 func snapshotJSON(tx *store.Tx, m *model.Memory) (string, error) {
-	ev, err := tx.EvidenceIDs(m.ID)
+	s, err := snapshotOf(tx, m)
 	if err != nil {
 		return "", err
 	}
-	b, err := json.Marshal(snapshot{Type: m.Type, ScopeKind: m.ScopeKind, Scope: m.Scope, Key: m.Key, Text: m.Text,
-		Body: m.Body, Count: m.Count, Confidence: m.Confidence, Status: m.Status, SupersededBy: m.SupersededBy, Evidence: ev})
+	b, err := json.Marshal(s)
 	return string(b), err
 }
 
 // Apply makes the valid ops' changes in one transaction, with one audit row per
 // changed memory. It returns the ops skipped because the state changed since review.
-func Apply(ctx context.Context, st *store.Store, runID string, valid []Op) ([]Rejected, error) {
+func Apply(ctx context.Context, st *store.Store, session, runID string, valid []Op) ([]Rejected, error) {
 	var skipped []Rejected
 	err := st.Write(ctx, func(tx *store.Tx) error {
 		var err error
-		skipped, err = applyTx(tx, runID, valid, time.Now().UnixMilli())
+		skipped, err = applyTx(tx, session, runID, valid, time.Now().UnixMilli())
 		return err
 	})
 	return skipped, err
 }
 
-func applyTx(tx *store.Tx, runID string, ops []Op, now int64) ([]Rejected, error) {
-	a := applier{tx: tx, runID: runID, now: now}
+func applyTx(tx *store.Tx, session, runID string, ops []Op, now int64) ([]Rejected, error) {
+	a := applier{tx: tx, session: session, runID: runID, now: now}
 	var skipped []Rejected
 	for _, op := range ops {
 		reason, err := a.apply(op)
@@ -68,9 +77,10 @@ func applyTx(tx *store.Tx, runID string, ops []Op, now int64) ([]Rejected, error
 }
 
 type applier struct {
-	tx    *store.Tx
-	runID string
-	now   int64
+	tx      *store.Tx
+	session string
+	runID   string
+	now     int64
 }
 
 // apply makes one op's change. A non-empty reason with a nil error means the op
@@ -122,6 +132,8 @@ func (a applier) dispatch(op Op) error {
 		return a.supersede(op)
 	case "add":
 		return a.add(op)
+	case "rate":
+		return a.rate(op)
 	}
 	return fmt.Errorf("unknown op %q", op.Op)
 }
@@ -226,6 +238,30 @@ func (a applier) add(op Op) error {
 		}
 	}
 	return a.write("add", m, before)
+}
+
+// rate labels the session's unrated outcomes of a memory and, when the agent
+// called it wrong, lowers its confidence through the penalty.
+func (a applier) rate(op Op) error {
+	m, err := a.get(op.ID)
+	if err != nil {
+		return err
+	}
+	before, err := snapshotJSON(a.tx, m)
+	if err != nil {
+		return err
+	}
+	label, scale, reason, wrong, err := feedback.Label(op.review(), feedback.ReviewScale, "review")
+	if err != nil {
+		return err
+	}
+	if wrong {
+		m.Penalty += feedback.Penalty(*m)
+	}
+	if _, err := a.tx.ResolveSessionMemoryRows(a.session, m.ID, label, reason, scale, a.now); err != nil {
+		return err
+	}
+	return a.write("rate", m, before)
 }
 
 func (a applier) get(id string) (*model.Memory, error) {

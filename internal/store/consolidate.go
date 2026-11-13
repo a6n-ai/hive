@@ -87,6 +87,16 @@ func (s *Store) RunStatus(runID string) (string, error) {
 	return st.String, err
 }
 
+// RunSession returns the session a consolidation run reviewed, or "" when no such run exists.
+func (s *Store) RunSession(runID string) (string, error) {
+	var sess sql.NullString
+	err := s.db.QueryRow(`SELECT session FROM consolidation_runs WHERE id = ?`, runID).Scan(&sess)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return sess.String, err
+}
+
 // AuditRows returns a run's audit rows, in the order they were written.
 func (s *Store) AuditRows(runID string) ([]AuditRow, error) {
 	rows, err := s.db.Query(`SELECT id, run_id, op, memory_id, before, after, ts FROM audit WHERE run_id = ? ORDER BY id`, runID)
@@ -153,9 +163,9 @@ func (t *Tx) PutMemory(m *model.Memory) error {
 		return err
 	}
 	_, err = t.tx.Exec(`UPDATE memories SET type=?, scope_kind=?, scope=?, key=?, body=?, text=?, terms=?, count=?,
-		confidence=?, status=?, superseded_by=?, last_seen=?, last_used=? WHERE id=?`,
+		confidence=?, status=?, superseded_by=?, last_seen=?, last_used=?, penalty=? WHERE id=?`,
 		string(m.Type), string(m.ScopeKind), m.Scope, m.Key, body, m.Text, termsOf(m.Text), m.Count,
-		m.Confidence, string(m.Status), nullable(m.SupersededBy), m.LastSeen, nullInt(m.LastUsed), m.ID)
+		m.Confidence, string(m.Status), nullable(m.SupersededBy), m.LastSeen, nullInt(m.LastUsed), m.Penalty, m.ID)
 	return err
 }
 

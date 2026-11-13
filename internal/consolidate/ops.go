@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/a6n-ai/inscribe/internal/feedback"
 )
 
 // maxOps is the most ops one run may propose; later ones are rejected.
@@ -14,7 +16,8 @@ const maxOps = 50
 
 // Op is one proposed change. Only the fields its Op names are used:
 // merge{keep, drop}, promote{id, scope_kind, scope}, reject{id}, stale{id},
-// add{type, scope_kind, scope, key, text, body, evidence}, supersede{old, new}.
+// add{type, scope_kind, scope, key, text, body, evidence}, supersede{old, new},
+// rate{id, used, helpful}.
 type Op struct {
 	Op        string         `json:"op"`
 	ID        string         `json:"id,omitempty"`
@@ -29,6 +32,14 @@ type Op struct {
 	Evidence  []int64        `json:"evidence,omitempty"`
 	Old       string         `json:"old,omitempty"`
 	New       string         `json:"new,omitempty"`
+	Used      string         `json:"used,omitempty"`
+	Helpful   string         `json:"helpful,omitempty"`
+}
+
+// review is the answer a rate op records. The review has no how field, so a
+// "yes" is not downgraded to partly.
+func (o Op) review() feedback.Answer {
+	return feedback.Answer{ID: o.ID, Used: o.Used, Helpful: o.Helpful, How: "review"}
 }
 
 // Rejected is a proposed op that failed validation, with the reason.

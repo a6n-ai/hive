@@ -32,6 +32,7 @@ type Input struct {
 	Project    string
 	Events     []InputEvent
 	Memories   []model.Memory
+	Unrated    []model.Memory // injected this session and never rated; the only memories a rate op may name
 	MaxEventID int64
 }
 
@@ -55,6 +56,9 @@ func BuildInput(st *store.Store, session string, fromEventID int64, budgetTokens
 		in.MaxEventID = max(in.MaxEventID, e.ID)
 	}
 	if in.Memories, err = relatedMemories(st, ids, words.String(), in.Project); err != nil {
+		return Input{}, err
+	}
+	if in.Unrated, err = st.UnratedMemories(session); err != nil {
 		return Input{}, err
 	}
 	trimToBudget(&in, budgetTokens)
