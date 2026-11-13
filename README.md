@@ -97,6 +97,7 @@ fails processing is quarantined in `spool/bad` while the rest commit.
     inscribe list [--type T] [--project P] [--status S]
     inscribe doctor
     inscribe import claude-code [--since YYYY-MM-DD] [--project P] [--root DIR]
+    inscribe import claude-mem [--db PATH] [--types decision,bugfix] [--project P] [--since YYYY-MM-DD] [--dry-run]
     inscribe retention apply [--yes]
     inscribe consolidate (--session S | --catch-up) [--agent A] [--dry-run]
     inscribe undo RUN_ID
@@ -106,7 +107,13 @@ fails processing is quarantined in `spool/bad` while the rest commit.
     inscribe mcp
 
 `import` backfills events and memories from `~/.claude/projects`; running it
-again adds nothing. `retention apply` shows a dry-run count and asks before
+again adds nothing. `import claude-mem` reads decisions and bugfixes from
+`~/.claude-mem/claude-mem.db`, opened read-only, as project memories: `decision`
+stays `decision` and `bugfix` becomes `fix`. Each imported memory has confidence
+0.6, below the 0.9 of `remember`. Observations are skipped when the session has
+no cwd, the type is `sensitive`, a path contains `apps/puchkaman`, the title is
+empty, or the timestamp is missing. `--dry-run` counts without writing.
+`retention apply` shows a dry-run count and asks before
 deleting; the default `rolling` mode clears prompt text after 30 days and
 deletes events after 180 days unless a memory cites them.
 

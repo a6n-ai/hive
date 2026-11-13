@@ -12,7 +12,7 @@ import (
 
 // rememberedTypes are the memory types `inscribe remember` may create.
 var rememberedTypes = map[string]model.MemoryType{
-	"note": model.Note, "preference": model.Preference, "decision": model.Decision,
+	"note": model.Note, "preference": model.Preference, "decision": model.Decision, "fix": model.Fix,
 }
 
 type noteX struct{}
@@ -34,6 +34,9 @@ func (noteX) Extract(_ context.Context, e *model.Event, tx *store.Tx, _ config.C
 	sum := sha256.Sum256([]byte(text))
 	m := projectMemory(e, t, hex.EncodeToString(sum[:]), text, nil, model.Active)
 	m.Confidence = 0.9
+	if c, ok := e.Payload["confidence"].(float64); ok && c > 0 && c <= 1 {
+		m.Confidence = c
+	}
 	if str(e.Payload, "scope") == "global" {
 		m.ScopeKind, m.Scope = model.Global, ""
 	}

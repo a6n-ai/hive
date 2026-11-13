@@ -272,6 +272,21 @@ func (h *Inscribe) ImportClaudeCode(ctx context.Context, o importer.Options) (Im
 		Redactions: int(h.pipeline.Redactions.Load() - redBefore)}, nil
 }
 
+// ImportClaudeMem imports decisions and fixes from a claude-mem database. With
+// DryRun it reads and counts only.
+func (h *Inscribe) ImportClaudeMem(ctx context.Context, o importer.ClaudeMemOptions) (importer.ClaudeMemReport, error) {
+	evs, rep, err := importer.ReadClaudeMem(ctx, o)
+	if err != nil || o.DryRun {
+		return rep, err
+	}
+	for _, e := range evs {
+		if err := h.Capture(ctx, e); err != nil {
+			return rep, err
+		}
+	}
+	return rep, nil
+}
+
 // CaptureBatch stores evs in one transaction, as Capture does for each. An
 // event without a timestamp gets now.
 func (h *Inscribe) CaptureBatch(ctx context.Context, evs []Event) error {
