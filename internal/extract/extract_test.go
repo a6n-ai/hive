@@ -105,8 +105,33 @@ func TestCommandClassifiedAndCounted(t *testing.T) {
 		t.Fatalf("command memories = %+v", ms)
 	}
 	m := ms[0]
-	if m.Key != "go test ./..." || m.Body["class"] != "test" || m.Count != 3 || m.Text != "tests: go test ./..." {
+	if m.Key != "go test" || m.Body["class"] != "test" || m.Count != 3 || m.Text != "tests: go test ./..." {
 		t.Fatalf("memory = %+v", m)
+	}
+}
+
+func TestCommandVariantsShareOneMemory(t *testing.T) {
+	h := newHarness(t, config.Defaults(), extract.NewCommand())
+	h.shell("s1", "go test -count=1 ./internal/a", 0, "")
+	h.shell("s1", "go vet ./internal/b && go test ./internal/b 2>&1 | tail", 0, "")
+	h.shell("s1", "npm run dev", 0, "")
+	h.shell("s1", "npm run worker", 0, "")
+	keys := map[string]string{}
+	for _, m := range h.list(model.Command) {
+		keys[m.Key] = m.Text
+	}
+	want := map[string]string{
+		"go test":        "tests: go vet ./internal/b && go test ./internal/b 2>&1 | tail",
+		"npm run dev":    "run: npm run dev",
+		"npm run worker": "run: npm run worker",
+	}
+	if len(keys) != len(want) {
+		t.Fatalf("keys = %v", keys)
+	}
+	for k, text := range want {
+		if keys[k] != text {
+			t.Errorf("key %q text = %q, want %q", k, keys[k], text)
+		}
 	}
 }
 

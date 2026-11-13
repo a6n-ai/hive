@@ -70,15 +70,26 @@ func commandHeads(cmd string) []string {
 // ClassifyCommand returns the command's class, or "" when it is not worth
 // remembering.
 func ClassifyCommand(cmd string) string {
+	class, _ := classify(cmd)
+	return class
+}
+
+// classify returns the command's class and its dedupe key: the program plus the
+// words that matched, so "go test ./a" and "go vet ./b && go test ./c" share "go test".
+func classify(cmd string) (class, key string) {
 	heads := commandHeads(cmd)
 	for _, r := range classRules {
 		for _, h := range heads {
-			if r.re.MatchString(h) {
-				return r.class
+			if match := r.re.FindString(h); match != "" {
+				prog, _, _ := strings.Cut(h, " ")
+				if prog == match || strings.HasPrefix(match, prog+" ") {
+					return r.class, match
+				}
+				return r.class, prog + " " + match
 			}
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // maxCommandLen drops pasted scripts: a real entrypoint command is short.
@@ -100,11 +111,11 @@ func (commandX) Extract(_ context.Context, e *model.Event, tx *store.Tx, _ confi
 	if strings.ContainsAny(raw, "\n\r") || strings.Contains(raw, "<<") || len(cmd) > maxCommandLen {
 		return nil
 	}
-	class := ClassifyCommand(cmd)
+	class, key := classify(cmd)
 	if class == "" {
 		return nil
 	}
-	m := projectMemory(e, model.Command, cmd, classLabel[class]+": "+cmd, map[string]any{"class": class}, model.Active)
+	m := projectMemory(e, model.Command, key, classLabel[class]+": "+cmd, map[string]any{"class": class}, model.Active)
 	_, err := tx.UpsertMemory(m, nil, e.ID)
 	return err
 }
