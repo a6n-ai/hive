@@ -184,3 +184,26 @@ func AddStatus(out []byte, note string) []byte {
 	}
 	return b
 }
+
+// AddContext appends text to the additionalContext of a hook reply, creating the
+// hookSpecificOutput for event when there is none. Other keys of the reply stay.
+func AddContext(out []byte, event, text string) []byte {
+	reply := map[string]any{}
+	if len(out) > 0 && json.Unmarshal(out, &reply) != nil {
+		return out
+	}
+	hso, _ := reply["hookSpecificOutput"].(map[string]any)
+	if hso == nil {
+		hso = map[string]any{"hookEventName": event}
+	}
+	if s, _ := hso["additionalContext"].(string); s != "" {
+		text = s + "\n\n" + text
+	}
+	hso["additionalContext"] = text
+	reply["hookSpecificOutput"] = hso
+	b, err := json.Marshal(reply)
+	if err != nil {
+		return out
+	}
+	return b
+}

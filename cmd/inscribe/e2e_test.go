@@ -803,3 +803,34 @@ func TestHookDebugShowsLoadedAndSaved(t *testing.T) {
 		t.Fatalf("prompt debug = %q", out)
 	}
 }
+
+func TestHookFeedbackAsk(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	texts := []string{
+		"always run make lint before pushing",
+		"prefer rg over grep in shell commands",
+		"never commit generated protobuf files",
+		"keep migrations numbered and forward only",
+	}
+	for _, text := range texts {
+		runOK(t, home, "", "remember", text, "--type", "note", "--scope", "global")
+		hookOK(t, home, map[string]any{"session_id": "f1", "cwd": proj, "hook_event_name": "UserPromptSubmit",
+			"prompt": text}, "UserPromptSubmit")
+	}
+	if out, _, _ := runCLI(t, home, "", nil, "hook", "--agent", "codex", "PostToolUse"); strings.Contains(out, "inscribe feedback") {
+		t.Fatalf("codex reply asked for feedback: %q", out)
+	}
+	out := hookOK(t, home, bashPayload("PostToolUse", "f1", proj, "go vet ./...", ""), "PostToolUse")
+	ctx := additionalContext(t, out)
+	if !strings.Contains(ctx, "inscribe feedback a_") {
+		t.Fatalf("save did not ask for feedback: %q", out)
+	}
+	for _, text := range texts {
+		if !strings.Contains(ctx, text) {
+			t.Fatalf("ask lists no %q: %q", text, ctx)
+		}
+	}
+	if out := hookOK(t, home, bashPayload("PostToolUse", "f1", proj, "go build ./...", ""), "PostToolUse"); strings.Contains(out, "inscribe feedback") {
+		t.Fatalf("second save asked again within 10 minutes: %q", out)
+	}
+}

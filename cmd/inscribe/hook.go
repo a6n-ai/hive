@@ -15,6 +15,7 @@ import (
 	"github.com/a6n-ai/inscribe/agent"
 	"github.com/a6n-ai/inscribe/internal/config"
 	"github.com/a6n-ai/inscribe/internal/extract"
+	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/model"
 )
@@ -74,15 +75,14 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := followUps(event, e, h.Consolidation().Auto); err != nil {
 		logLine(config.Home(), "follow-up: %v", err)
 	}
-	var saved []inscribe.Memory
-	if h.Debug() {
-		if saved, err = h.SavedBy(e.Session, e.TS); err != nil {
-			logLine(config.Home(), "debug saved: %v", err)
-		}
+	saved, err := h.SavedBy(e.Session, e.TS)
+	if err != nil {
+		logLine(config.Home(), "saved: %v", err)
 	}
 	q, ok := hookQuery(e, h.Scrub)
 	if !ok {
-		return writeDebug(stdout, h, ad, event, e, nil, nil, saved)
+		out, asked := askFeedback(ctx, h, ad, event, e, saved, nil)
+		return writeDebug(stdout, h, ad, event, e, out, nil, saved, asked)
 	}
 	lines, err := h.Recall(ctx, q)
 	if err != nil {
@@ -105,14 +105,35 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 		}
 	}
 	logLine(config.Home(), "%s %s %s: injected %d line(s) %v", e.Agent, event, e.Project, len(lines), ids)
-	return writeDebug(stdout, h, ad, event, e, ad.Reply(event, lines), lines, saved)
+	out, asked := askFeedback(ctx, h, ad, event, e, saved, ad.Reply(event, lines))
+	return writeDebug(stdout, h, ad, event, e, out, lines, saved, asked)
+}
+
+// askFeedback adds the feedback question to a Claude Code reply when a save makes
+// one due. It returns the note that says so, for debug output. A failed ask is logged, never returned.
+func askFeedback(ctx context.Context, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, saved []inscribe.Memory, out []byte) ([]byte, string) {
+	if ad.Name() != "claude-code" {
+		return out, ""
+	}
+	askID, text, n, err := h.MaybeAsk(ctx, e.Session, len(saved) > 0, time.Now())
+	if err != nil {
+		logLine(config.Home(), "feedback ask: %v", err)
+		return out, ""
+	}
+	if askID == "" {
+		return out, ""
+	}
+	return agent.AddContext(out, event, text), fmt.Sprintf("feedback asked %s (%d memories)", askID, n)
 }
 
 // writeDebug writes the adapter's reply. In debug mode it first logs what the
 // event loaded and saved, and adds that to the status line agents show the user.
-func writeDebug(stdout io.Writer, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, out []byte, lines []recall.Line, saved []inscribe.Memory) error {
+func writeDebug(stdout io.Writer, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, out []byte, lines []recall.Line, saved []inscribe.Memory, asked string) error {
 	if h.Debug() {
 		if note := debugNote(lines, saved, e.TS); note != "" {
+			if asked != "" {
+				note += "\n  " + asked
+			}
 			logLine(config.Home(), "debug %s %s %s: %s", e.Agent, event, e.Project, note)
 			if ad.Capabilities().ShowsStatus {
 				out = agent.AddStatus(out, note)
@@ -154,20 +175,12 @@ func debugNote(lines []recall.Line, saved []inscribe.Memory, ts int64) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "inscribe debug: loaded %d, saved %d (%d new)", len(loaded), len(saved), created)
 	for _, s := range loaded[:min(len(loaded), debugExamples)] {
-		b.WriteString("\n  loaded " + cutRunes(s, debugRunes))
+		b.WriteString("\n  loaded " + feedback.CutRunes(s, debugRunes))
 	}
 	for _, s := range out[:min(len(out), debugExamples)] {
-		b.WriteString("\n  saved " + cutRunes(s, debugRunes))
+		b.WriteString("\n  saved " + feedback.CutRunes(s, debugRunes))
 	}
 	return b.String()
-}
-
-func cutRunes(s string, n int) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > n {
-		return string(r[:n]) + "…"
-	}
-	return s
 }
 
 // followUps starts the background work an event implies. The hook never waits for it.

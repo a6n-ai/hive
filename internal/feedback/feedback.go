@@ -77,12 +77,13 @@ func Render(askID string, ms []model.Memory) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "inscribe feedback %s: you were given these memories. Call the inscribe feedback tool with ask %q and, for each id, used (yes|partly|no), helpful (yes|no|wrong), and for used ones a short \"how\".", askID, askID)
 	for _, m := range ms {
-		fmt.Fprintf(&sb, "\n- %s [%s] %s", m.ID, m.Type, cutRunes(m.Text, 90))
+		fmt.Fprintf(&sb, "\n- %s [%s] %s", m.ID, m.Type, CutRunes(m.Text, 90))
 	}
 	return sb.String()
 }
 
-func cutRunes(s string, n int) string {
+// CutRunes collapses s to one line of at most n runes, marking a cut with an ellipsis.
+func CutRunes(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if r := []rune(s); len(r) > n {
 		return string(r[:n]) + "…"
