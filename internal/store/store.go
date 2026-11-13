@@ -346,13 +346,14 @@ func nullInt(v int64) any {
 	return v
 }
 
-// TouchSession records that e happened in its session.
+// TouchSession records that e happened in its session. Any event other than
+// SessionEnd reopens a session that CloseSessions ended, since it resumed.
 func (t *Tx) TouchSession(e *model.Event) error {
 	ended := e.Kind == model.SessionEnd
 	_, err := t.tx.Exec(`INSERT INTO sessions(id, agent, project, started, last_event, event_count, ended)
 		VALUES (?, ?, ?, ?, ?, 1, CASE WHEN ? THEN ? END)
 		ON CONFLICT(id) DO UPDATE SET last_event = excluded.last_event, event_count = event_count + 1,
-		ended = CASE WHEN ? THEN excluded.last_event ELSE ended END`,
+		ended = CASE WHEN ? THEN excluded.last_event END`,
 		e.Session, e.Agent, e.Project, e.TS, e.TS, ended, e.TS, ended)
 	return err
 }

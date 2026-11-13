@@ -72,6 +72,12 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err := h.Capture(ctx, e); err != nil {
 		return err
 	}
+	if e.Kind == model.SessionStart {
+		// Before training and catch-up start, so they see sessions that ended without a SessionEnd.
+		if err := closeStoppedSessions(ctx, h, e.Session, time.Now()); err != nil {
+			logLine(config.Home(), "close sessions: %v", err)
+		}
+	}
 	if err := followUps(event, e, h.Consolidation().Auto); err != nil {
 		logLine(config.Home(), "follow-up: %v", err)
 	}
@@ -185,6 +191,57 @@ func debugNote(lines []recall.Line, saved []inscribe.Memory, ts int64) string {
 		b.WriteString("\n  saved " + feedback.CutRunes(s, debugRunes))
 	}
 	return b.String()
+}
+
+// stallAfter is how long a session may stay silent before it counts as ended,
+// even while its process runs: a tab left open or a hung process.
+const stallAfter = time.Hour
+
+// closeStoppedSessions ends sessions whose agent stopped without a SessionEnd
+// event: silent for stallAfter, or with no live process when the agent can
+// tell. A later event in a session reopens it.
+func closeStoppedSessions(ctx context.Context, h *inscribe.Inscribe, current string, now time.Time) error {
+	open, err := h.OpenSessions()
+	if err != nil {
+		return err
+	}
+	live := map[string]map[string]bool{}
+	var ids []string
+	for _, s := range open {
+		if s.ID == current {
+			continue
+		}
+		if now.Sub(time.UnixMilli(s.LastEvent)) >= stallAfter {
+			ids = append(ids, s.ID)
+			continue
+		}
+		known, seen := live[s.Agent]
+		if !seen {
+			known = liveSessionsOf(s.Agent)
+			live[s.Agent] = known
+		}
+		if known != nil && !known[s.ID] {
+			ids = append(ids, s.ID)
+		}
+	}
+	return h.CloseSessions(ctx, ids)
+}
+
+// liveSessionsOf returns the agent's sessions with a running process, or nil
+// when the agent cannot tell.
+func liveSessionsOf(name string) map[string]bool {
+	ad, err := agent.Get(name)
+	if err != nil {
+		return nil
+	}
+	ls, ok := ad.(agent.LiveSessioner)
+	if !ok {
+		return nil
+	}
+	if m, ok := ls.LiveSessions(); ok {
+		return m
+	}
+	return nil
 }
 
 // followUps starts the background work an event implies. The hook never waits for it.

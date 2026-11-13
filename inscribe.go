@@ -325,3 +325,16 @@ func (h *Inscribe) CaptureBatch(ctx context.Context, evs []Event) error {
 	h.afterWrite()
 	return err
 }
+
+// OpenSessions lists sessions with no end time, newest first.
+func (h *Inscribe) OpenSessions() ([]store.OpenSession, error) { return h.store.OpenSessions() }
+
+// CloseSessions ends sessions whose agent stopped without a SessionEnd event.
+func (h *Inscribe) CloseSessions(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	err := h.store.Write(ctx, func(tx *store.Tx) error { return tx.CloseSessions(ids) })
+	h.afterWrite()
+	return err
+}

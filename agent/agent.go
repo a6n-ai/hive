@@ -207,3 +207,9 @@ func AddContext(out []byte, event, text string) []byte {
 	}
 	return b
 }
+
+// LiveSessioner is implemented by an adapter that can tell which of its
+// sessions still have a running agent process. ok is false when it cannot tell.
+type LiveSessioner interface {
+	LiveSessions() (live map[string]bool, ok bool)
+}

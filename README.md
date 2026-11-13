@@ -70,6 +70,10 @@ untouched. `inscribe uninstall --agent NAME` removes only Inscribe's hooks. Agen
   `*credentials*` files are kept, nothing else of them.
 - Rolling retention and the replay sample are planned for a later release.
 - Set `INSCRIBE_DISABLED=1` to make hooks do nothing.
+- A session that stops without a `SessionEnd` (a closed window, a crash, a tab
+  left idle) is closed at the next session start once it has been silent for an
+  hour, or, for Claude Code, once no running process claims it. A later event
+  reopens it.
 - Set `debug = true` in `config.toml`, or `INSCRIBE_DEBUG=1`, to log what each
   hook event loaded and saved to `inscribe.log`, with up to 3 examples of each.
   Claude Code also shows it in the status line. Debug also notes each feedback ask

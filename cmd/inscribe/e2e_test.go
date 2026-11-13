@@ -931,3 +931,103 @@ func TestHookFeedbackNoAskWithoutActive(t *testing.T) {
 		t.Fatalf("save with no active memory inserted %d feedback asks", n)
 	}
 }
+
+func endedOf(t *testing.T, home, session string) bool {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var ended sql.NullInt64
+	if err := db.QueryRow(`SELECT ended FROM sessions WHERE id = ?`, session).Scan(&ended); err != nil {
+		t.Fatal(err)
+	}
+	return ended.Valid
+}
+
+func TestSessionStartClosesSessionsWithNoLiveProcess(t *testing.T) {
+	home, proj, userHome := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(userHome, ".claude", "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	hook := func(payload map[string]any, event string) {
+		t.Helper()
+		b, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, code := runCLI(t, home, string(b), []string{"HOME=" + userHome}, "hook", "--agent", "claude-code", event); code != 0 {
+			t.Fatalf("hook %s exit %d", event, code)
+		}
+	}
+	hook(map[string]any{"session_id": "closed-window", "cwd": proj, "hook_event_name": "UserPromptSubmit", "prompt": "hello"}, "UserPromptSubmit")
+	if endedOf(t, home, "closed-window") {
+		t.Fatal("session ended before any close")
+	}
+	hook(map[string]any{"session_id": "next", "cwd": proj, "hook_event_name": "SessionStart", "source": "startup"}, "SessionStart")
+	if !endedOf(t, home, "closed-window") {
+		t.Fatal("a session no live Claude Code process claims was not closed at the next session start")
+	}
+	if endedOf(t, home, "next") {
+		t.Fatal("the starting session was closed")
+	}
+	hook(map[string]any{"session_id": "closed-window", "cwd": proj, "hook_event_name": "UserPromptSubmit", "prompt": "back again"}, "UserPromptSubmit")
+	if endedOf(t, home, "closed-window") {
+		t.Fatal("a resumed session stayed ended")
+	}
+}
+
+func TestSessionStartKeepsLiveSessionsOpen(t *testing.T) {
+	home, proj, userHome := t.TempDir(), t.TempDir(), t.TempDir()
+	dir := filepath.Join(userHome, ".claude", "sessions")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f := fmt.Sprintf(`{"pid":%d,"sessionId":"open-tab"}`, os.Getpid())
+	if err := os.WriteFile(filepath.Join(dir, "1.json"), []byte(f), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []struct{ session, event string }{{"open-tab", "UserPromptSubmit"}, {"next", "SessionStart"}} {
+		b, _ := json.Marshal(map[string]any{"session_id": p.session, "cwd": proj, "hook_event_name": p.event, "prompt": "hi", "source": "startup"})
+		if _, _, code := runCLI(t, home, string(b), []string{"HOME=" + userHome}, "hook", "--agent", "claude-code", p.event); code != 0 {
+			t.Fatalf("hook exit %d", code)
+		}
+	}
+	if endedOf(t, home, "open-tab") {
+		t.Fatal("a session with a live process and recent activity was closed")
+	}
+}
+
+func TestSessionStartClosesStalledLiveSession(t *testing.T) {
+	home, proj, userHome := t.TempDir(), t.TempDir(), t.TempDir()
+	dir := filepath.Join(userHome, ".claude", "sessions")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f := fmt.Sprintf(`{"pid":%d,"sessionId":"stalled-tab"}`, os.Getpid())
+	if err := os.WriteFile(filepath.Join(dir, "1.json"), []byte(f), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(session, event string) {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"session_id": session, "cwd": proj, "hook_event_name": event, "prompt": "hi", "source": "startup"})
+		if _, _, code := runCLI(t, home, string(b), []string{"HOME=" + userHome}, "hook", "--agent", "claude-code", event); code != 0 {
+			t.Fatalf("hook exit %d", code)
+		}
+	}
+	run("stalled-tab", "UserPromptSubmit")
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	twoHoursAgo := time.Now().Add(-2 * time.Hour).UnixMilli()
+	if _, err := db.Exec(`UPDATE sessions SET last_event = ? WHERE id = 'stalled-tab'`, twoHoursAgo); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	run("next", "SessionStart")
+	if !endedOf(t, home, "stalled-tab") {
+		t.Fatal("a session silent for 2h stayed open because its process is alive")
+	}
+}

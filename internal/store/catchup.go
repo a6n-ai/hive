@@ -5,10 +5,11 @@ import (
 	"errors"
 )
 
-// IdleSessions returns the ids of an agent's sessions whose last event falls in
-// [after, before), newest first.
+// IdleSessions returns the ids of an agent's sessions whose last event is at or
+// after after and that either went quiet before before or have ended, newest first.
 func (s *Store) IdleSessions(agent string, after, before int64) ([]string, error) {
-	rows, err := s.db.Query(`SELECT id FROM sessions WHERE agent = ? AND last_event >= ? AND last_event < ? ORDER BY last_event DESC`,
+	rows, err := s.db.Query(`SELECT id FROM sessions WHERE agent = ? AND last_event >= ? AND (last_event < ? OR ended IS NOT NULL)
+		ORDER BY last_event DESC`,
 		agent, after, before)
 	if err != nil {
 		return nil, err
