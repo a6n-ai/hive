@@ -78,7 +78,7 @@ func refitGradient(w Weights, groups []Group) [7]float64 {
 	for _, g := range groups {
 		for _, row := range g {
 			switch row.Reason {
-			case "full_command", "forgotten", "corrected", "failed":
+			case "full_command", "forgotten", "corrected", "failed", "agent", "agent_wrong", "review", "review_wrong":
 				r, floor, d := blendRaw(row.F, w)
 				capped := math.Min(1, r)
 				var err float64

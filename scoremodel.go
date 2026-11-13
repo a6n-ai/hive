@@ -6,14 +6,28 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/a6n-ai/inscribe/internal/consolidate"
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/internal/store"
 )
 
 // TrainScores is the idle pass. It labels injections from sessions that have
-// ended and updates the score model. It does not call a model.
+// ended and updates the score model. It does not call a model. Sessions that
+// consolidation is about to review keep their open groups for an hour.
 func (h *Inscribe) TrainScores(ctx context.Context, now time.Time) (recall.TrainResult, error) {
-	return recall.Train(ctx, h.store, now)
+	var hold func(string) bool
+	if h.cfg.Consolidate.Auto {
+		due, err := consolidate.Due(h.store, h.cfg, "claude-code", now)
+		if err != nil {
+			return recall.TrainResult{}, err
+		}
+		held := make(map[string]bool, len(due))
+		for _, id := range due {
+			held[id] = true
+		}
+		hold = func(session string) bool { return held[session] }
+	}
+	return recall.Train(ctx, h.store, now, hold)
 }
 
 // ScoreWeights returns the score model, or the defaults when none has been learned.

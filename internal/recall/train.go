@@ -15,10 +15,24 @@ const (
 	replayGroups   = 5000
 	// unlabelableAfter is how long a group whose prompt never shows up stays open.
 	unlabelableAfter = 7 * 24 * time.Hour
+	// holdFor is how long a session due for consolidation keeps its groups open.
+	holdFor = time.Hour
 )
 
-// learningReasons are the labels that move the weights. closed_unlabeled and no_lift move nothing.
-var learningReasons = map[string]bool{"full_command": true, "forgotten": true, "corrected": true, "failed": true, "sibling": true}
+// LearningReasons are the labels that move the weights. closed_unlabeled and no_lift move nothing.
+// agent and review labels are resolved outside train, so train never writes them.
+var LearningReasons = []string{"full_command", "forgotten", "corrected", "failed", "sibling",
+	"agent", "agent_wrong", "review", "review_wrong"}
+
+var learningReasons = reasonSet(LearningReasons)
+
+func reasonSet(reasons []string) map[string]bool {
+	m := make(map[string]bool, len(reasons))
+	for _, r := range reasons {
+		m[r] = true
+	}
+	return m
+}
 
 // TrainResult is one idle pass over injections whose session has already ended.
 type TrainResult struct {
@@ -31,12 +45,13 @@ type TrainResult struct {
 // Train is the sleep-time pass. The agent is not waiting. Each group of lines
 // shown for one prompt in a finished session is labeled from what the agent
 // did next. The weights are what the next prompt reads. Nothing is sent to a model.
-func Train(ctx context.Context, st *store.Store, now time.Time) (TrainResult, error) {
-	return train(ctx, st, now, nil)
+// hold marks sessions whose open groups wait for consolidation; a nil hold holds nothing.
+func Train(ctx context.Context, st *store.Store, now time.Time, hold func(session string) bool) (TrainResult, error) {
+	return train(ctx, st, now, hold, nil)
 }
 
 // train is Train with a hook that runs between the read and the write. Tests use it to make another writer win.
-func train(ctx context.Context, st *store.Store, now time.Time, beforeWrite func()) (TrainResult, error) {
+func train(ctx context.Context, st *store.Store, now time.Time, hold func(session string) bool, beforeWrite func()) (TrainResult, error) {
 	w, err := LoadWeights(st)
 	if err != nil {
 		return TrainResult{}, err
@@ -51,6 +66,10 @@ func train(ctx context.Context, st *store.Store, now time.Time, beforeWrite func
 	events := map[string][]model.Event{}
 	for _, rows := range open {
 		session := rows[0].Session
+		if hold != nil && hold(session) && now.Sub(time.UnixMilli(rows[0].Ended)) <= holdFor {
+			res.Open++
+			continue
+		}
 		evs, cached := events[session]
 		if !cached {
 			if evs, err = st.SessionEvents(session); err != nil {
@@ -90,8 +109,14 @@ func train(ctx context.Context, st *store.Store, now time.Time, beforeWrite func
 			refit = true
 		}
 	}
+	if !refit {
+		refit, err = st.LabeledSince(w.UpdatedAt, LearningReasons)
+		if err != nil {
+			return TrainResult{}, err
+		}
+	}
 	if refit {
-		replay, err := st.LabeledScoreOutcomes(LabelRule, replayGroups)
+		replay, err := st.LabeledScoreOutcomes(LabelRule, LearningReasons, replayGroups)
 		if err != nil {
 			return TrainResult{}, err
 		}
@@ -105,12 +130,15 @@ func train(ctx context.Context, st *store.Store, now time.Time, beforeWrite func
 			w = Refit(DefaultWeights(), groups)
 		}
 	}
+	ts := now.UnixMilli()
+	if refit {
+		w.UpdatedAt = ts
+	}
 	res.Refit, res.Weights = refit, w
 	if len(labeled) == 0 && !refit {
 		return res, nil
 	}
 
-	ts := now.UnixMilli()
 	if beforeWrite != nil {
 		beforeWrite()
 	}

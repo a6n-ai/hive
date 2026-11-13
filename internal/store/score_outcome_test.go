@@ -7,6 +7,8 @@ import (
 	"github.com/a6n-ai/inscribe/model"
 )
 
+var signalReasons = []string{"full_command", "forgotten", "corrected", "failed", "sibling"}
+
 func endSession(t *testing.T, st *Store, id string) {
 	t.Helper()
 	if err := st.Write(context.Background(), func(tx *Tx) error {
@@ -103,7 +105,7 @@ func TestLabeledScoreOutcomesFiltersRule(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	groups, err := st.LabeledScoreOutcomes("L1", 10)
+	groups, err := st.LabeledScoreOutcomes("L1", signalReasons, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +171,7 @@ func TestLabeledScoreOutcomesKeepsLastGroupsAscending(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	groups, err := st.LabeledScoreOutcomes("L1", 2)
+	groups, err := st.LabeledScoreOutcomes("L1", signalReasons, 2)
 	if err != nil {
 		t.Fatal(err)
 	}

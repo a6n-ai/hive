@@ -140,3 +140,20 @@ func TestRefitCounts(t *testing.T) {
 		t.Fatalf("Seen/Hits/Misses = %d/%d/%d, want 2/1/2", out.Seen, out.Hits, out.Misses)
 	}
 }
+
+func TestRefitAgentRowsPerRowOnly(t *testing.T) {
+	hit := Row{F: Features{Text: .5, Key: .5}, Label: 1, Reason: "full_command", Scale: 1}
+	agent := Row{F: Features{Text: .5, Type: 1}, Label: 0, Reason: "agent_wrong", Scale: 0.5}
+	w := DefaultWeights()
+	with := refitGradient(w, []Group{{hit, agent}})
+	base := refitGradient(w, []Group{{hit}})
+	alone := refitGradient(w, []Group{{agent}})
+	for i := range with {
+		if math.Abs(with[i]-base[i]-alone[i]) > 1e-12 {
+			t.Fatalf("component %d: agent row added %v, per-row term alone is %v", i, with[i]-base[i], alone[i])
+		}
+	}
+	if alone == [7]float64{} {
+		t.Fatal("agent_wrong row has no per-row term")
+	}
+}

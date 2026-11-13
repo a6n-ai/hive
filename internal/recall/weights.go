@@ -30,6 +30,8 @@ type Weights struct {
 	Hits       int     `json:"hits"`
 	Misses     int     `json:"misses"`
 	StepRule   string  `json:"step_rule"`
+	// UpdatedAt is when the weights were last refit (unix ms). Labels resolved later trigger another refit.
+	UpdatedAt int64 `json:"updated_at,omitempty"`
 }
 
 // DefaultWeights is the model before any idle pass has run.

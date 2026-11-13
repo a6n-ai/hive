@@ -73,7 +73,7 @@ func TestTrainLabelsAndRefitsOnce(t *testing.T) {
 	seedShown(t, st, "s1", "p1", shownLine{key: "npm run lint", text: "check style before commit", f: Features{Key: 0.5}})
 	seedSession(t, st, "s1", promptEvent("s1", "p1"), commandEvent("s1", "c1", "npm run lint", 0))
 
-	res, err := Train(context.Background(), st, now)
+	res, err := Train(context.Background(), st, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestTrainLabelsAndRefitsOnce(t *testing.T) {
 		t.Fatal("a full_command label did not refit")
 	}
 
-	again, err := Train(context.Background(), st, now)
+	again, err := Train(context.Background(), st, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,14 +100,14 @@ func TestTrainRefitsOnStepRuleChange(t *testing.T) {
 	st := newStore(t)
 	seedShown(t, st, "s1", "p1", shownLine{key: "npm run lint", text: "check style before commit", f: Features{Key: 0.5}})
 	seedSession(t, st, "s1", promptEvent("s1", "p1"), commandEvent("s1", "c1", "npm run lint", 0))
-	if _, err := Train(context.Background(), st, now); err != nil {
+	if _, err := Train(context.Background(), st, now, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Write(context.Background(), func(tx *store.Tx) error { return tx.SetMeta(weightsKey(), "") }); err != nil {
 		t.Fatal(err)
 	}
 
-	res, err := Train(context.Background(), st, now)
+	res, err := Train(context.Background(), st, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestTrainRefitsOnStepRuleChange(t *testing.T) {
 
 func TestTrainDoesNotWriteWithNothingToReplay(t *testing.T) {
 	st := newStore(t)
-	res, err := Train(context.Background(), st, now)
+	res, err := Train(context.Background(), st, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestTrainClosesStaleUnlabelableGroups(t *testing.T) {
 	seedShown(t, st, "new", "p-missing", shownLine{key: "npm run lint", text: "check style", f: Features{Key: 0.5}})
 	seedSessionAt(t, st, "new", now.Add(-time.Hour).UnixMilli(), promptEvent("new", "p1"))
 
-	res, err := Train(context.Background(), st, now)
+	res, err := Train(context.Background(), st, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestTrainLeavesOpenWhenPromptMissing(t *testing.T) {
 	seedShown(t, st, "s1", "p-missing", shownLine{key: "npm run lint", text: "check style before commit", f: Features{Key: 0.5}})
 	seedSessionAt(t, st, "s1", now.Add(-time.Hour).UnixMilli(), promptEvent("s1", "p1"), commandEvent("s1", "c1", "npm run lint", 0))
 
-	res, err := Train(context.Background(), st, now)
+	res, err := Train(context.Background(), st, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,11 +197,121 @@ func TestTrainSecondWriterLoses(t *testing.T) {
 		}
 	}
 
-	_, err = train(context.Background(), st, now, hook)
+	_, err = train(context.Background(), st, now, nil, hook)
 	if !errors.Is(err, store.ErrLocked) {
 		t.Fatalf("Train err = %v, want ErrLocked", err)
 	}
 	if _, ok, err := st.GetMeta(weightsKey()); err != nil || ok {
 		t.Fatalf("weights saved after a lost write: ok=%v err=%v", ok, err)
+	}
+}
+
+// resolveShown labels the one open row of a session as a resolver outside train would.
+func resolveShown(t *testing.T, st *store.Store, label int, reason string, ts int64) {
+	t.Helper()
+	groups, err := st.OpenScoreGroups(10)
+	if err != nil || len(groups) != 1 {
+		t.Fatalf("open groups = %d, err=%v, want one", len(groups), err)
+	}
+	id := groups[0][0].ID
+	if err := st.Write(context.Background(), func(tx *store.Tx) error {
+		_, err := tx.ResolveScoreOutcome(id, &label, reason, 0.5, ts)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTrainRefitsOnAgentLabels(t *testing.T) {
+	cases := []struct {
+		reason string
+		label  int
+	}{{"agent", 1}, {"review", 1}, {"agent_wrong", 0}, {"review_wrong", 0}}
+	for _, c := range cases {
+		t.Run(c.reason, func(t *testing.T) {
+			st := newStore(t)
+			seedShown(t, st, "s1", "p1", shownLine{key: "npm run lint", text: "check style before commit", f: Features{Text: .3, Key: .5, Command: .5}})
+			seedSession(t, st, "s1")
+			resolveShown(t, st, c.label, c.reason, now.UnixMilli())
+
+			res, err := Train(context.Background(), st, now, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !res.Refit {
+				t.Fatalf("a %s label did not refit", c.reason)
+			}
+			if res.Weights.Hits+res.Weights.Misses != 1 {
+				t.Fatalf("hits=%d misses=%d, want the row counted once", res.Weights.Hits, res.Weights.Misses)
+			}
+			if sameWeights(weightsIgnoringCounts(res.Weights), DefaultWeights(), 0) {
+				t.Fatalf("weights did not move: %+v", res.Weights)
+			}
+			again, err := Train(context.Background(), st, now, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if again.Refit {
+				t.Fatal("second pass refit with no new label")
+			}
+		})
+	}
+}
+
+func TestTrainRefitsOnLabelResolvedAfterWeights(t *testing.T) {
+	st := newStore(t)
+	seedShown(t, st, "s1", "p1", shownLine{key: "npm run lint", text: "check style before commit", f: Features{Text: .5, Key: 1, Command: 1}})
+	seedSession(t, st, "s1")
+	resolveShown(t, st, 1, "agent", now.UnixMilli())
+	if _, err := Train(context.Background(), st, now, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	later := now.Add(time.Minute)
+	seedShown(t, st, "s2", "p2", shownLine{key: "go test", text: "run tests", f: Features{Text: .5, Key: 1, Command: 1}})
+	seedSessionAt(t, st, "s2", later.UnixMilli())
+	resolveShown(t, st, 0, "review_wrong", later.UnixMilli())
+	res, err := Train(context.Background(), st, later, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Refit || res.Weights.UpdatedAt != later.UnixMilli() {
+		t.Fatalf("refit=%v updated_at=%d, want a refit stamped %d", res.Refit, res.Weights.UpdatedAt, later.UnixMilli())
+	}
+}
+
+func TestTrainHoldsSession(t *testing.T) {
+	seed := func(t *testing.T, ended time.Time) *store.Store {
+		st := newStore(t)
+		seedShown(t, st, "s1", "p1", shownLine{key: "npm run lint", text: "check style before commit", f: Features{Key: 0.5}})
+		seedSessionAt(t, st, "s1", ended.UnixMilli(), promptEvent("s1", "p1"), commandEvent("s1", "c1", "npm run lint", 0))
+		return st
+	}
+	held := func(s string) bool { return s == "s1" }
+
+	st := seed(t, now.Add(-10*time.Minute))
+	res, err := train(context.Background(), st, now, held, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Open != 1 || len(res.Reasons) != 0 || res.Refit {
+		t.Fatalf("held result = %+v, want one open group and nothing labeled", res)
+	}
+
+	res, err = train(context.Background(), st, now, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Reasons["full_command"] != 1 {
+		t.Fatalf("unheld reasons = %v, want full_command=1", res.Reasons)
+	}
+
+	old := seed(t, now.Add(-2*time.Hour))
+	res, err = train(context.Background(), old, now, held, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Reasons["full_command"] != 1 {
+		t.Fatalf("session ended 2h ago reasons = %v, want labeled despite the hold", res.Reasons)
 	}
 }

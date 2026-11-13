@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/a6n-ai/inscribe/model"
 )
@@ -103,18 +104,40 @@ func (s *Store) OpenScoreGroups(maxGroups int) ([][]ScoreOutcome, error) {
 }
 
 // LabeledScoreOutcomes returns the last maxGroups groups of rows labeled by
-// labelRule with a reason that carries a signal, oldest first.
-func (s *Store) LabeledScoreOutcomes(labelRule string, maxGroups int) ([][]ScoreOutcome, error) {
+// labelRule with one of reasons, oldest first.
+func (s *Store) LabeledScoreOutcomes(labelRule string, reasons []string, maxGroups int) ([][]ScoreOutcome, error) {
 	if maxGroups <= 0 {
 		maxGroups = 500
 	}
-	const labeled = `o.resolved IS NOT NULL AND o.label_rule = ?
-		AND o.reason IN ('full_command', 'forgotten', 'corrected', 'failed', 'sibling')`
+	in, reasonArgs := reasonIn(reasons)
+	labeled := `o.resolved IS NOT NULL AND o.label_rule = ? AND o.reason IN (` + in + `)`
 	q := `WITH g AS (SELECT o.session, o.prompt_digest FROM score_outcomes o WHERE ` + labeled + `
 		GROUP BY o.session, o.prompt_digest ORDER BY MIN(o.id) DESC LIMIT ?)
 		` + outcomeSelect + ` JOIN g ON g.session = o.session AND g.prompt_digest = o.prompt_digest
-		WHERE ` + labeled + ` ORDER BY o.id`
-	return s.queryGroups(q, labelRule, maxGroups, labelRule)
+		WHERE ` + labeled + ` ORDER BY o.id` //nolint:gosec // G202: only "?" placeholders are concatenated
+	args := append(append([]any{labelRule}, reasonArgs...), maxGroups, labelRule)
+	args = append(args, reasonArgs...)
+	return s.queryGroups(q, args...)
+}
+
+// LabeledSince reports whether a row labeled with one of reasons was resolved after ts.
+func (s *Store) LabeledSince(ts int64, reasons []string) (bool, error) {
+	in, reasonArgs := reasonIn(reasons)
+	var ok bool
+	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM score_outcomes WHERE resolved > ? AND label IS NOT NULL
+		AND reason IN (`+in+`))`, append([]any{ts}, reasonArgs...)...).Scan(&ok) //nolint:gosec // G202: only "?" placeholders are concatenated
+	return ok, err
+}
+
+// reasonIn returns the "?" placeholders for reasons and the values to bind to them.
+func reasonIn(reasons []string) (string, []any) {
+	marks := make([]string, len(reasons))
+	args := make([]any, len(reasons))
+	for i, r := range reasons {
+		marks[i] = "?"
+		args[i] = r
+	}
+	return strings.Join(marks, ","), args
 }
 
 // RecentScoreGroups returns the maxGroups groups whose newest row is latest,

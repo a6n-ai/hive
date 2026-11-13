@@ -110,7 +110,7 @@ func TestTrainLearnsFromWhatTheAgentDid(t *testing.T) {
 		shownLine{key: "deploy", text: "deploy with make", f: Features{Command: 1}})
 	seedSession(t, st, "s1", promptEvent("s1", "p1"), commandEvent("s1", "c1", "npm test ./internal/recall", 0))
 
-	res, err := Train(context.Background(), st, now)
+	res, err := Train(context.Background(), st, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
