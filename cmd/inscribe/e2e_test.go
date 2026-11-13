@@ -398,6 +398,9 @@ func TestSessionEndSpawnsWhenAuto(t *testing.T) {
 
 func TestSessionEndNoSpawnWhenAutoOff(t *testing.T) {
 	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("[consolidate]\nauto = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	seedSession(t, home, "end2", 25)
 	sessionEnd(t, home, "end2", fakeAgent(t))
 	time.Sleep(1500 * time.Millisecond)

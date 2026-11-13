@@ -39,7 +39,7 @@ func (f *fakeRunner) run(_ context.Context, name string, args ...string) (string
 func TestMCPAddUsesUserScope(t *testing.T) {
 	env, _ := testEnv(t, nil, nil)
 	d := Detected{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), InscribeBin: "/opt/inscribe/bin/inscribe", Current: config.Defaults()}
-	plan := Plan(d, Choices{Retention: "rolling", MCP: true})
+	plan := Plan(d, Choices{Retention: "rolling", Consolidate: true, MCP: true})
 	if len(plan) != 1 || !strings.Contains(plan[0].Desc, "all projects") {
 		t.Fatalf("plan = %+v, want one mcp-add described as for all projects", plan)
 	}

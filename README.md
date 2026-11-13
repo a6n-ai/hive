@@ -117,8 +117,8 @@ empty, or the timestamp is missing. `--dry-run` counts without writing.
 deleting; the default `rolling` mode clears prompt text after 30 days and
 deletes events after 180 days unless a memory cites them.
 
-Consolidation is opt-in: set `consolidate.auto = true` in `config.toml`. At
-session end, your own agent (Claude Code, run as `claude -p` with `haiku`) reviews
+Consolidation is on by default; set `consolidate.auto = false` in `config.toml`
+to turn it off. At session end, your own agent (Claude Code, run as `claude -p` with `haiku`) reviews
 the session's new events and proposes merges, promotions, rejections, and
 decisions. Each run costs one model call. Every change is audited, and
 `inscribe undo RUN_ID` reverses a run, leaving alone any memory changed since.

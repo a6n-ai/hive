@@ -25,7 +25,7 @@ func TestDefaultsWithNoFiles(t *testing.T) {
 	}
 	want := Config{
 		Recall:      RecallCfg{Inject: true, SessionBudget: 400, PromptMaxLines: 3, PromptThreshold: 0.35, HalfLifeDays: 30},
-		Consolidate: ConsolidateCfg{Auto: false, MinEvents: 20, InputBudget: 8000, Model: map[string]string{"claude-code": "haiku"}},
+		Consolidate: ConsolidateCfg{Auto: true, MinEvents: 20, InputBudget: 8000, Model: map[string]string{"claude-code": "haiku"}},
 		Retention:   RetentionCfg{Mode: "rolling", PromptTextDays: 30, PromptClock: "original", EventDays: 180, ReplaySampleMax: 20000, ReplayDays: 0},
 		Skills:      SkillsCfg{Enabled: "auto", Enrich: []string{}},
 		Scrub:       ScrubCfg{Patterns: []string{}},
@@ -100,7 +100,7 @@ patterns = ["Y2"]
 [retention]
 mode = "keep_all"
 [consolidate]
-auto = true
+auto = false
 [consolidate.model]
 claude-code = "opus"
 [recall]
@@ -116,7 +116,7 @@ session_budget = 100
 	if !reflect.DeepEqual(c.Scrub.Patterns, []string{"X1", "Y2"}) {
 		t.Errorf("scrub.patterns = %v, want [X1 Y2]", c.Scrub.Patterns)
 	}
-	if c.Retention.Mode != "rolling" || c.Consolidate.Auto || c.Consolidate.Model["claude-code"] != "haiku" {
+	if c.Retention.Mode != "rolling" || !c.Consolidate.Auto || c.Consolidate.Model["claude-code"] != "haiku" {
 		t.Errorf("project changed protected settings: retention=%s auto=%v model=%v", c.Retention.Mode, c.Consolidate.Auto, c.Consolidate.Model)
 	}
 	if c.Recall.SessionBudget != 100 {

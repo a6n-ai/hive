@@ -93,7 +93,7 @@ func TestDefaultsFollowDetection(t *testing.T) {
 		Current:   config.Defaults(),
 	}
 	c := Defaults(d)
-	want := Choices{Agents: []string{"claude-code", "gemini"}, DisableClaudeMem: true, ImportSince: "", Retention: "rolling"}
+	want := Choices{Agents: []string{"claude-code", "gemini"}, DisableClaudeMem: true, ImportSince: "", Retention: "rolling", Consolidate: true}
 	if !reflect.DeepEqual(c, want) {
 		t.Errorf("defaults without history = %+v, want %+v", c, want)
 	}
