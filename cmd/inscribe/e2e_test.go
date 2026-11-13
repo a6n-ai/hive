@@ -824,6 +824,12 @@ func seedRecalled(t *testing.T, home, proj, session string, texts []string) []st
 	return ids
 }
 
+// markMCPServed runs the MCP server on empty stdin, which records it as served.
+func markMCPServed(t *testing.T, home string) {
+	t.Helper()
+	runOK(t, home, "", "mcp")
+}
+
 func dbCount(t *testing.T, home, query string) int {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
@@ -841,6 +847,7 @@ func dbCount(t *testing.T, home, query string) int {
 func TestHookFeedbackAsk(t *testing.T) {
 	home, proj := t.TempDir(), t.TempDir()
 	seedRecalled(t, home, proj, "f1", askTexts)
+	markMCPServed(t, home)
 	codex, err := json.Marshal(map[string]any{"session_id": "f1", "cwd": proj, "hook_event_name": "PostToolUse",
 		"tool_name": "shell", "tool_input": map[string]any{"command": "go vet ./..."},
 		"tool_response": map[string]any{"output": "ok", "exit_code": 0}})
@@ -868,6 +875,14 @@ func TestHookFeedbackAsk(t *testing.T) {
 	}
 }
 
+func TestHookFeedbackNoAskWithoutMCP(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	seedRecalled(t, home, proj, "f1", askTexts)
+	if out := hookOK(t, home, bashPayload("PostToolUse", "f1", proj, "go vet ./...", ""), "PostToolUse"); strings.Contains(out, "inscribe feedback") {
+		t.Fatalf("save asked without the inscribe MCP server ever running: %q", out)
+	}
+}
+
 func TestHookFeedbackNoAskOnStop(t *testing.T) {
 	home, proj := t.TempDir(), t.TempDir()
 	for _, f := range []string{"a.go", "b.go"} {
@@ -890,6 +905,7 @@ func TestHookFeedbackNoAskOnStop(t *testing.T) {
 func TestHookFeedbackSkipsForgotten(t *testing.T) {
 	home, proj := t.TempDir(), t.TempDir()
 	ids := seedRecalled(t, home, proj, "f2", askTexts)
+	markMCPServed(t, home)
 	runOK(t, home, "", "forget", ids[3])
 	ctx := additionalContext(t, hookOK(t, home, bashPayload("PostToolUse", "f2", proj, "go vet ./...", ""), "PostToolUse"))
 	if !strings.Contains(ctx, "inscribe feedback a_") {

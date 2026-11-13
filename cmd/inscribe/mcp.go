@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"time"
 
 	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/internal/mcpserver"
@@ -22,5 +23,8 @@ func mcpCmd(args []string) error {
 		return err
 	}
 	defer func() { _ = h.Close() }()
+	if err := h.MarkMCPServed(context.Background(), time.Now()); err != nil {
+		return err
+	}
 	return mcpserver.New(h, *project).Run(context.Background(), &mcp.StdioTransport{})
 }

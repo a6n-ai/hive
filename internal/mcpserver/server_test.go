@@ -319,6 +319,9 @@ func askRound(t *testing.T, h *inscribe.Inscribe, proj, session, digest string, 
 	if _, err := h.Recall(ctx, inscribe.Query{Project: proj, Text: "deploy make target", Agent: "codex", Session: session, PromptDigest: digest, Budget: maxBudget, Mode: recall.Prompt}); err != nil {
 		t.Fatal(err)
 	}
+	if err := h.MarkMCPServed(ctx, now); err != nil {
+		t.Fatal(err)
+	}
 	askID, _, _, err := h.MaybeAsk(ctx, session, true, now)
 	if err != nil || askID == "" {
 		t.Fatalf("MaybeAsk = %q, %v; want an ask", askID, err)
@@ -383,6 +386,31 @@ func feedbackHome(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return home
+}
+
+// An ask reaches only an agent whose inscribe MCP server has run, so a save
+// before that asks nothing.
+func TestMCPFeedbackNoAskBeforeServerRuns(t *testing.T) {
+	proj := t.TempDir()
+	h := openAt(t, feedbackHome(t), proj)
+	rememberAll(t, h, proj, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
+	ctx := context.Background()
+	now := time.Now()
+	if err := h.Capture(ctx, inscribe.Event{Agent: "codex", Session: "s1", Project: proj, Kind: model.SessionStart, TS: now.UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Recall(ctx, inscribe.Query{Project: proj, Text: "deploy make target", Agent: "codex", Session: "s1", PromptDigest: "d1", Budget: maxBudget, Mode: recall.Prompt}); err != nil {
+		t.Fatal(err)
+	}
+	if askID, _, _, err := h.MaybeAsk(ctx, "s1", true, now); err != nil || askID != "" {
+		t.Fatalf("MaybeAsk before the MCP server ran = %q, %v; want no ask", askID, err)
+	}
+	if err := h.MarkMCPServed(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	if askID, _, _, err := h.MaybeAsk(ctx, "s1", true, now); err != nil || askID == "" {
+		t.Fatalf("MaybeAsk after the MCP server ran = %q, %v; want an ask", askID, err)
+	}
 }
 
 func feedbackItems(items ...map[string]any) map[string]any {

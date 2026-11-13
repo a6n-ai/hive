@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,12 +21,26 @@ const (
 	maxHow     = 200              // runes of an agent's how, after scrubbing
 )
 
+// mcpSeenKey is the meta key the inscribe MCP server sets when it starts. Asks
+// need it: an agent without the server cannot answer the feedback tool.
+const mcpSeenKey = "mcp_seen"
+
+// MarkMCPServed records that the inscribe MCP server has started.
+func (h *Inscribe) MarkMCPServed(ctx context.Context, now time.Time) error {
+	return h.store.Write(ctx, func(tx *store.Tx) error {
+		return tx.SetMeta(mcpSeenKey, strconv.FormatInt(now.UnixMilli(), 10))
+	})
+}
+
 // MaybeAsk returns the feedback question to add after a save, or an empty askID
 // when none is due. The ask covers every unasked outcome row of the window, so
 // rows of one memory are asked about once.
 func (h *Inscribe) MaybeAsk(ctx context.Context, session string, savedAny bool, now time.Time) (askID, text string, n int, err error) {
 	if !savedAny {
 		return "", "", 0, nil
+	}
+	if _, ok, err := h.store.GetMeta(mcpSeenKey); err != nil || !ok {
+		return "", "", 0, err
 	}
 	last, err := h.store.LastAskTS(session)
 	if err != nil {
