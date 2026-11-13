@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/a6n-ai/inscribe"
@@ -18,7 +19,7 @@ import (
 	"github.com/a6n-ai/inscribe/internal/store"
 )
 
-const scoreUsage = "usage: inscribe score (train|show|combine --dir DIR)"
+const scoreUsage = "usage: inscribe score (train|show [--outcomes]|combine --dir DIR)"
 
 func scoreCmd(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
@@ -62,11 +63,22 @@ func scoreCmd(args []string, stdout io.Writer) error {
 		shareSnapshot(h, home, res.Weights)
 		return nil
 	case "show":
+		fs := flag.NewFlagSet("show", flag.ContinueOnError)
+		outcomes := fs.Bool("outcomes", false, "list the latest outcome groups")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
 		w, err := h.ScoreWeights()
 		if err != nil {
 			return err
 		}
-		return writeWeights(stdout, w)
+		if err := writeWeights(stdout, w); err != nil {
+			return err
+		}
+		if !*outcomes {
+			return nil
+		}
+		return writeOutcomes(stdout, h)
 	default:
 		return errors.New(scoreUsage)
 	}
@@ -77,6 +89,33 @@ func writeWeights(w io.Writer, weights recall.Weights) error {
 		weights.Text, weights.Key, weights.Body, weights.Type, weights.Scope, weights.Agent, weights.Command, weights.Trajectory,
 		weights.Seen, weights.Hits, weights.Misses)
 	return err
+}
+
+// writeOutcomes lists the latest 20 groups: each digest prefix, then one line per row.
+func writeOutcomes(w io.Writer, h *inscribe.Inscribe) error {
+	groups, err := h.RecentScoreOutcomes(20)
+	if err != nil {
+		return err
+	}
+	for _, g := range groups {
+		digest := g[0].PromptDigest
+		if len(digest) > 8 {
+			digest = digest[:8]
+		}
+		if _, err := fmt.Fprintln(w, digest); err != nil {
+			return err
+		}
+		for _, o := range g {
+			label := "-"
+			if o.Label != nil {
+				label = strconv.Itoa(*o.Label)
+			}
+			if _, err := fmt.Fprintf(w, "%s %s %.3f %s\n", o.Reason, label, o.Scale, o.ShownKey); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func combineCmd(args []string, stdout io.Writer) error {

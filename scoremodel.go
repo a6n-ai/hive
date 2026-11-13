@@ -39,3 +39,8 @@ func (h *Inscribe) InstallID(ctx context.Context) (string, error) {
 	})
 	return id, err
 }
+
+// RecentScoreOutcomes returns the latest maxGroups groups of score outcomes, oldest first.
+func (h *Inscribe) RecentScoreOutcomes(maxGroups int) ([][]store.ScoreOutcome, error) {
+	return h.store.RecentScoreGroups(maxGroups)
+}

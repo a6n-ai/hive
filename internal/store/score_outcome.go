@@ -117,6 +117,15 @@ func (s *Store) LabeledScoreOutcomes(labelRule string, maxGroups int) ([][]Score
 	return s.queryGroups(q, labelRule, maxGroups, labelRule)
 }
 
+// RecentScoreGroups returns the maxGroups groups whose newest row is latest,
+// oldest first, each with all of its rows.
+func (s *Store) RecentScoreGroups(maxGroups int) ([][]ScoreOutcome, error) {
+	q := `WITH g AS (SELECT o.session, o.prompt_digest FROM score_outcomes o
+		GROUP BY o.session, o.prompt_digest ORDER BY MAX(o.id) DESC LIMIT ?)
+		` + outcomeSelect + ` JOIN g ON g.session = o.session AND g.prompt_digest = o.prompt_digest ORDER BY o.id`
+	return s.queryGroups(q, maxGroups)
+}
+
 // queryGroups runs a query of outcomeSelect rows ordered by id and groups them.
 func (s *Store) queryGroups(q string, args ...any) ([][]ScoreOutcome, error) {
 	rows, err := s.db.Query(q, args...)

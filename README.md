@@ -101,6 +101,8 @@ fails processing is quarantined in `spool/bad` while the rest commit.
     inscribe consolidate (--session S | --catch-up) [--agent A] [--dry-run]
     inscribe undo RUN_ID
     inscribe sync --agent claude-code|codex|gemini [--project P] [--include-global]
+    inscribe score (train|show [--outcomes]|combine --dir DIR)
+    inscribe serve [--addr 127.0.0.1:7331]
     inscribe mcp
 
 `import` backfills events and memories from `~/.claude/projects`; running it
@@ -113,6 +115,27 @@ session end, your own agent (Claude Code, run as `claude -p` with `haiku`) revie
 the session's new events and proposes merges, promotions, rejections, and
 decisions. Each run costs one model call. Every change is audited, and
 `inscribe undo RUN_ID` reverses a run, leaving alone any memory changed since.
+
+`score train` runs the idle pass that labels finished sessions' injections and
+updates the local score weights. It prints the count for each reason and the
+weights. `score show --outcomes` also lists the latest 20 groups: each prompt
+digest prefix, then one line per row with its reason, label (`-` when unlabeled),
+scale, and shown key.
+
+Sharing is off by default. Set `analytics = true` and `url` under `[share]` in
+`config.toml`, and after a train commits Inscribe posts one JSON snapshot to that
+URL: the install id, version, rule names, the seven weights, and the seen, hits,
+and misses counts. It never sends prompts, memory text, paths, commands, or memory
+ids. Turning `analytics` off stops uploads and keeps the id. A project
+`.inscribe.toml` cannot set `[share]`. `score combine --dir DIR` is a maintainer
+command: it reads a directory of snapshots and prints release weight candidates
+without editing any source.
+
+`serve` runs a local page on loopback (default `127.0.0.1:7331`). It shows the
+score weights, the counts, and the share switch with the share URL's host only.
+A non-loopback `--addr` is refused, and requests whose `Host` header is not the
+bound address are refused. Saving the share switch rewrites `config.toml` and
+drops comments.
 
 `doctor` reports each agent's installed hooks and its warnings, the database and
 schema version, a scrubber self-test, and pending spool files. It warns when

@@ -111,3 +111,23 @@ func TestLabeledScoreOutcomesFiltersRule(t *testing.T) {
 		t.Fatalf("groups = %+v, want one group of rows a and d", groups)
 	}
 }
+
+func TestRecentScoreGroupsByLatestRow(t *testing.T) {
+	st, _ := openTemp(t)
+	endSession(t, st, "s1")
+	for _, d := range []string{"d1", "d2", "d3", "d1"} {
+		insertOutcome(t, st, OutcomeInput{MemoryID: "m", Session: "s1", Agent: "codex", TS: 100, Features: "{}", Score: 0.5,
+			PromptDigest: d, ShownKey: "k", ShownText: "t"})
+	}
+	groups, err := st.RecentScoreGroups(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, g := range groups {
+		got[g[0].PromptDigest] = len(g)
+	}
+	if len(groups) != 2 || got["d1"] != 2 || got["d3"] != 1 {
+		t.Fatalf("groups = %v, want d1 with 2 rows and d3 with 1", got)
+	}
+}

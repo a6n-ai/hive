@@ -15,7 +15,7 @@ import (
 )
 
 const usage = `usage: inscribe <command> [args]
-commands: setup, hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, score, undo, sync, mcp, update, version`
+commands: setup, hook, install, uninstall, recall, remember, forget, why, list, doctor, import, retention, consolidate, score, serve, undo, sync, mcp, update, version`
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
@@ -58,6 +58,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = consolidateCmd(args[1:], stdout)
 	case "score":
 		err = scoreCmd(args[1:], stdout)
+	case "serve":
+		err = serveCmd(args[1:], stdout)
 	case "undo":
 		err = undoCmd(args[1:], stdout)
 	case "sync":
