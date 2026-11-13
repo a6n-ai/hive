@@ -166,3 +166,81 @@ func TestServeHidesSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestServeForbidsFraming(t *testing.T) {
+	h := newServeHandler(t.TempDir(), 7331)
+	for _, rec := range []*httptest.ResponseRecorder{
+		serveReq(h, "GET", "/", "", testHost, nil),
+		serveReq(h, "GET", "/", "", "evil.test:7331", nil),
+		serveReq(h, "GET", "/nope", "", testHost, nil),
+		serveReq(h, "GET", "/share", "", testHost, nil),
+	} {
+		if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+			t.Fatalf("status %d X-Frame-Options = %q, want DENY", rec.Code, got)
+		}
+		csp := rec.Header().Get("Content-Security-Policy")
+		for _, want := range []string{"default-src 'none'", "form-action 'self'", "frame-ancestors 'none'"} {
+			if !strings.Contains(csp, want) {
+				t.Fatalf("status %d CSP = %q, missing %q", rec.Code, csp, want)
+			}
+		}
+	}
+}
+
+func TestServeShareSameOriginAccepted(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "config.toml")
+	h := newServeHandler(home, 7331)
+	rec := serveReq(h, "POST", "/share", "analytics=1", testHost, map[string]string{"Origin": "http://" + testHost, "Sec-Fetch-Site": "same-origin"})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rec.Code)
+	}
+	var doc map[string]any
+	if _, err := toml.DecodeFile(path, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if share, _ := doc["share"].(map[string]any); share["analytics"] != true {
+		t.Fatalf("share.analytics = %v, want true", share["analytics"])
+	}
+}
+
+func TestServeShareRejectsCrossSiteFetch(t *testing.T) {
+	home := t.TempDir()
+	h := newServeHandler(home, 7331)
+	rec := serveReq(h, "POST", "/share", "analytics=1", testHost, map[string]string{"Sec-Fetch-Site": "cross-site"})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if _, err := os.Stat(filepath.Join(home, "config.toml")); !os.IsNotExist(err) {
+		t.Fatalf("config.toml written: %v", err)
+	}
+}
+
+func TestServeShareBadTomlHidesContent(t *testing.T) {
+	home := t.TempDir()
+	writeConfig(t, home, "[share]\nurl = \"https://tok@h.example/\"\nanalytics = \n")
+	rec := serveReq(newServeHandler(home, 7331), "POST", "/share", "analytics=1", testHost, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "tok") || !strings.Contains(rec.Body.String(), "config.toml does not parse; fix it by hand") {
+		t.Fatalf("body = %q", rec.Body.String())
+	}
+}
+
+func TestServeShareNotATable(t *testing.T) {
+	home := t.TempDir()
+	body := "share = 1\n"
+	path := writeConfig(t, home, body)
+	rec := serveReq(newServeHandler(home, 7331), "POST", "/share", "analytics=1", testHost, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Fatalf("config.toml changed to %q", got)
+	}
+}

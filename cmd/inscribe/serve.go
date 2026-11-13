@@ -70,6 +70,8 @@ func newServeHandler(home string, port int) http.Handler {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { serveIndex(w, home) })
 	mux.HandleFunc("POST /share", func(w http.ResponseWriter, r *http.Request) { serveShare(w, r, home) })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'")
 		if !hosts[r.Host] {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
@@ -143,6 +145,10 @@ func serveShare(w http.ResponseWriter, r *http.Request, home string) {
 		http.Error(w, "cross-origin change refused", http.StatusForbidden)
 		return
 	}
+	if sf := r.Header.Get("Sec-Fetch-Site"); sf != "" && sf != "same-origin" && sf != "none" {
+		http.Error(w, "cross-site change refused", http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -155,7 +161,11 @@ func serveShare(w http.ResponseWriter, r *http.Request, home string) {
 	if err := setShareAnalytics(home, v == "1"); err != nil {
 		var perr toml.ParseError
 		if errors.As(err, &perr) {
-			http.Error(w, "config.toml does not parse: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "config.toml does not parse; fix it by hand", http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, errShareNotTable) {
+			http.Error(w, "config.toml has a share key that is not a table; fix it by hand", http.StatusBadRequest)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -163,6 +173,8 @@ func serveShare(w http.ResponseWriter, r *http.Request, home string) {
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+var errShareNotTable = errors.New("share is not a table")
 
 // setShareAnalytics sets share.analytics in the global config and leaves every other
 // key as it was. Comments in an existing file are not kept.
@@ -178,9 +190,11 @@ func setShareAnalytics(home string, on bool) error {
 	if _, err := toml.Decode(string(raw), &doc); err != nil {
 		return err
 	}
-	share, _ := doc["share"].(map[string]any)
-	if share == nil {
-		share = map[string]any{}
+	share := map[string]any{}
+	if cur, ok := doc["share"]; ok {
+		if share, ok = cur.(map[string]any); !ok {
+			return errShareNotTable
+		}
 	}
 	share["analytics"] = on
 	doc["share"] = share
