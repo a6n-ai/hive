@@ -3,6 +3,7 @@ package inscribe
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -96,6 +97,9 @@ type answerPlan struct {
 // inside it. Every item is checked before any row changes, so one bad item
 // leaves the store as it was. A row already resolved keeps its label.
 func (h *Inscribe) Feedback(ctx context.Context, project, askID string, items []feedback.Answer) (labeled, wrong int, err error) {
+	if project == "" {
+		return 0, 0, fmt.Errorf("feedback: ask %s needs a project", askID)
+	}
 	if len(items) == 0 {
 		return 0, 0, fmt.Errorf("feedback: ask %s has no items", askID)
 	}
@@ -111,7 +115,7 @@ func (h *Inscribe) Feedback(ctx context.Context, project, askID string, items []
 	if err != nil {
 		return 0, 0, err
 	}
-	if sp != project && !strings.HasPrefix(sp, project+"/") {
+	if sp != project && !strings.HasPrefix(sp, project+string(filepath.Separator)) {
 		return 0, 0, fmt.Errorf("feedback: ask %s is not in project %q", askID, project)
 	}
 
@@ -149,6 +153,9 @@ func (h *Inscribe) Feedback(ctx context.Context, project, askID string, items []
 	h.afterWrite()
 	if err != nil {
 		return 0, 0, err
+	}
+	if h.Debug() {
+		appendLog(h.home, fmt.Sprintf("feedback %s: labeled %d rows, %d wrong", askID, labeled, wrong))
 	}
 	return labeled, wrong, nil
 }

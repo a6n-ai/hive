@@ -101,10 +101,20 @@ func Open(o Options) (*Inscribe, error) {
 	return h, nil
 }
 
-// logWarnings appends config warnings to inscribe.log under home, where a user
-// looks for them; a broken config never stops capture.
+// logWarnings appends config warnings to inscribe.log under home; a broken
+// config never stops capture.
 func logWarnings(home string, warns []string) {
-	if len(warns) == 0 || os.MkdirAll(home, 0o700) != nil {
+	lines := make([]string, len(warns))
+	for i, w := range warns {
+		lines[i] = "config: " + w
+	}
+	appendLog(home, lines...)
+}
+
+// appendLog timestamps each line into inscribe.log under home, where a user
+// looks for them; a failed write never stops the caller.
+func appendLog(home string, lines ...string) {
+	if len(lines) == 0 || os.MkdirAll(home, 0o700) != nil {
 		return
 	}
 	f, err := os.OpenFile(filepath.Join(home, "inscribe.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: the log path is under the user's INSCRIBE_HOME
@@ -112,8 +122,9 @@ func logWarnings(home string, warns []string) {
 		return
 	}
 	defer func() { _ = f.Close() }()
-	for _, w := range warns {
-		fmt.Fprintf(f, "%s config: %s\n", time.Now().Format(time.RFC3339), w)
+	ts := time.Now().Format(time.RFC3339)
+	for _, l := range lines {
+		fmt.Fprintf(f, "%s %s\n", ts, l)
 	}
 }
 

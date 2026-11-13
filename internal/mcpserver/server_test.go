@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/a6n-ai/inscribe"
+	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/model"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -482,16 +483,22 @@ func TestMCPFeedbackSkipsResolvedRows(t *testing.T) {
 func TestMCPFeedbackOtherProjectRefused(t *testing.T) {
 	projA, projB := t.TempDir(), t.TempDir()
 	inner := filepath.Join(projA, "inner")
-	h := openAt(t, feedbackHome(t), projA)
+	home := feedbackHome(t)
+	h := openAt(t, home, projA)
 	cs := connect(t, h, projA)
 	now := time.Now()
 
-	rememberAll(t, h, projB, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
+	memB := rememberAll(t, h, projB, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
 	askB := askRound(t, h, projB, "sB", "d1", now)
-	args := feedbackItems()
+	args := feedbackItems(map[string]any{"id": memB[0], "used": "no", "helpful": "wrong"})
 	args["ask"] = askB
 	if _, isErr := call(t, cs, "feedback", args); !isErr {
 		t.Fatal("ask of another project accepted")
+	}
+	for _, o := range outcomes(t, home) {
+		if o.Resolved.Valid || o.Label.Valid {
+			t.Fatalf("row of another project changed: %+v", o)
+		}
 	}
 
 	ids := rememberAll(t, h, inner, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
@@ -527,6 +534,79 @@ func TestMCPFeedbackBadItemWritesNothing(t *testing.T) {
 	args["ask"] = askID
 	if _, isErr := call(t, cs, "feedback", args); isErr {
 		t.Fatal("ask was answered by the refused call")
+	}
+}
+
+func TestMCPFeedbackForgottenMemoryWritesNothing(t *testing.T) {
+	proj := t.TempDir()
+	home := feedbackHome(t)
+	h := openAt(t, home, proj)
+	cs := connect(t, h, proj)
+	ids := rememberAll(t, h, proj, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
+	askID := askRound(t, h, proj, "s1", "d1", time.Now())
+	if out, isErr := call(t, cs, "forget", map[string]any{"id": ids[0]}); isErr {
+		t.Fatalf("forget = %q", out)
+	}
+	args := feedbackItems(
+		map[string]any{"id": ids[1], "used": "no", "helpful": "wrong"},
+		map[string]any{"id": ids[0], "used": "no", "helpful": "wrong"},
+	)
+	args["ask"] = askID
+	if _, isErr := call(t, cs, "feedback", args); !isErr {
+		t.Fatal("answer about a forgotten memory accepted")
+	}
+	for _, o := range outcomes(t, home) {
+		if o.Resolved.Valid || o.Label.Valid {
+			t.Fatalf("row written by a refused call: %+v", o)
+		}
+	}
+	mems, err := h.List(context.Background(), inscribe.ListFilter{Project: proj})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range mems {
+		if m.ID == ids[1] && m.Penalty != 0 {
+			t.Fatalf("penalty %v added by a refused call", m.Penalty)
+		}
+	}
+}
+
+func TestFeedbackEmptyProjectRefused(t *testing.T) {
+	proj := t.TempDir()
+	home := feedbackHome(t)
+	h := openAt(t, home, proj)
+	ids := rememberAll(t, h, proj, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
+	askID := askRound(t, h, proj, "s1", "d1", time.Now())
+	_, _, err := h.Feedback(context.Background(), "", askID, []feedback.Answer{{ID: ids[0], Used: "no", Helpful: "wrong"}})
+	if err == nil {
+		t.Fatal("ask accepted for an empty project")
+	}
+	for _, o := range outcomes(t, home) {
+		if o.Resolved.Valid || o.Label.Valid {
+			t.Fatalf("row written by a refused call: %+v", o)
+		}
+	}
+}
+
+func TestMCPFeedbackDebugLogsLine(t *testing.T) {
+	t.Setenv("INSCRIBE_DEBUG", "1")
+	proj := t.TempDir()
+	home := feedbackHome(t)
+	h := openAt(t, home, proj)
+	cs := connect(t, h, proj)
+	ids := rememberAll(t, h, proj, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
+	askID := askRound(t, h, proj, "s1", "d1", time.Now())
+	args := feedbackItems(map[string]any{"id": ids[0], "used": "no", "helpful": "wrong"})
+	args["ask"] = askID
+	if out, isErr := call(t, cs, "feedback", args); isErr {
+		t.Fatalf("feedback = %q", out)
+	}
+	logged, err := os.ReadFile(filepath.Join(home, "inscribe.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "feedback " + askID + ": labeled 1 rows, 1 wrong"; !strings.Contains(string(logged), want) {
+		t.Fatalf("inscribe.log = %q, want a line %q", logged, want)
 	}
 }
 
