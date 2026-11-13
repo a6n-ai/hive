@@ -396,3 +396,46 @@ func TestTagSkipUsesFullYAMLSpan(t *testing.T) {
 		t.Fatalf("rescrub not idempotent: %q, %d findings", out, len(f))
 	}
 }
+
+func TestValueBoundaries(t *testing.T) {
+	s := newScrubber(t)
+	cases := []struct {
+		name, in string
+		gone     []string
+		keep     []string
+		findings int
+	}{
+		{"unquoted to eol", "password: correct horse battery\n", []string{"horse", "battery"}, nil, 1},
+		{"unquoted eq to eol", "password=correct horse\n", []string{"horse"}, nil, 1},
+		{"yaml plain continuation", "password: abc\n  def\nnext: x", []string{"def"}, []string{"next: x"}, 1},
+		{"yaml continuation stops at key line", "password: abc\n  user: bob\n", []string{"abc"}, []string{"user: bob"}, 1},
+		{"tag then secret in json", `{"password": [REDACTED:assignment]hunter2zz9}`, []string{"hunter2zz9"}, nil, 1},
+		{"json unquoted ends at comma", `{"password": hunter2zz9, "user": "bob"}`, []string{"hunter2zz9"}, []string{`"user": "bob"`}, 1},
+		{"json unquoted spans spaces", `{"password": hunter 2zz9}`, []string{"2zz9"}, nil, 1},
+		{"shell and", "TOKEN=abc123 && make build", []string{"abc123"}, []string{"&& make build"}, 1},
+		{"shell semicolon", "TOKEN=abc123; make build", []string{"abc123"}, []string{"; make build"}, 1},
+		{"shell pipe", "TOKEN=abc123 | cat", []string{"abc123"}, []string{"| cat"}, 1},
+		{"shell next assignment", "TOKEN=abc123 USER=bob make", []string{"abc123"}, []string{"USER=bob make"}, 1},
+		{"prose not a key", "description: use the password manager", nil, []string{"use the password manager"}, 0},
+	}
+	for _, c := range cases {
+		out, f := s.Scrub(c.in)
+		for _, g := range c.gone {
+			if strings.Contains(out, g) {
+				t.Errorf("%s: leaked %q in %q", c.name, g, out)
+			}
+		}
+		for _, k := range c.keep {
+			if !strings.Contains(out, k) {
+				t.Errorf("%s: lost %q in %q", c.name, k, out)
+			}
+		}
+		if len(f) != c.findings {
+			t.Errorf("%s: %d findings, want %d (%q)", c.name, len(f), c.findings, out)
+		}
+		again, f2 := s.Scrub(out)
+		if again != out || len(f2) != 0 {
+			t.Errorf("%s: rescrub %q -> %q, %d findings", c.name, out, again, len(f2))
+		}
+	}
+}

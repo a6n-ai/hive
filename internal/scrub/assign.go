@@ -17,8 +17,8 @@ var knownKinds = func() map[string]bool {
 
 // isRedaction reports whether the value spanning s[start:end] is just a tag the
 // scrubber itself wrote at start. A rescrub must not count it again, or a
-// prepared event scrubbed twice reports extra secrets. A quoted key stops the
-// span at the tag's closing ']', which counts only when the tag ends the value.
+// prepared event scrubbed twice reports extra secrets. It counts only when the
+// tag is the whole value.
 func isRedaction(s string, start, end int) bool {
 	rest, ok := strings.CutPrefix(s[start:], redactedPrefix)
 	if !ok {
@@ -28,11 +28,7 @@ func isRedaction(s string, start, end int) bool {
 	if !ok || !knownKinds[kind] {
 		return false
 	}
-	tagEnd := start + len(redactedPrefix) + len(kind) + 1
-	if end == tagEnd {
-		return true
-	}
-	return end == tagEnd-1 && (tagEnd == len(s) || valueStop(s[tagEnd], true))
+	return end == start+len(redactedPrefix)+len(kind)+1
 }
 
 // redactAssignments replaces the value of every secret assignment in s.
@@ -57,7 +53,7 @@ func redactAssignments(s string, findings *[]Finding) string {
 	}
 	for _, loc := range locs {
 		start := valueStart(s, loc[1])
-		end := valueEnd(s, start, loc[3] > loc[2])
+		end := valueEnd(s, start, loc[3] > loc[2], sepByte(s, loc[1]) == '=')
 		if end <= start || isRedaction(s, start, end) && yamlContinuation(s, loc[0], loc[1], start, end) == end {
 			continue
 		}
@@ -76,6 +72,15 @@ func redactAssignments(s string, findings *[]Finding) string {
 	flush()
 	b.WriteString(s[last:])
 	return b.String()
+}
+
+// sepByte returns the ':' or '=' that ends the key match at sepEnd.
+func sepByte(s string, sepEnd int) byte {
+	i := sepEnd - 1
+	for i > 0 && (s[i] == ' ' || s[i] == '\t') {
+		i--
+	}
+	return s[i]
 }
 
 // valueStart returns where a value begins after the separator at i. A YAML
@@ -105,12 +110,16 @@ func valueStart(s string, i int) int {
 func yamlContinuation(s string, keyStart, sepEnd, start, end int) int {
 	nextLineValue := start > sepEnd && strings.ContainsRune(s[sepEnd:start], '\n')
 	from := end
+	plain := false
 	if !nextLineValue {
 		header, lineEnd := headerAt(s, start)
-		if !blockIndicator.MatchString(header) {
+		if blockIndicator.MatchString(header) {
+			from = lineEnd
+		} else if q := s[start]; q != '"' && q != '\'' && sepByte(s, sepEnd) == ':' && !isQuotedKey(s, keyStart, sepEnd) {
+			plain = true // same-line plain scalar: deeper lines that are not keys continue it
+		} else {
 			return end
 		}
-		from = lineEnd
 	}
 	keyIndent := lineIndent(s, lineStart(s, keyStart))
 	for j := from; j < len(s) && j-end <= maxValueSpan; {
@@ -124,7 +133,7 @@ func yamlContinuation(s string, keyStart, sepEnd, start, end int) int {
 		ls := k + 1
 		le := ls + len(nextLine(s, ls))
 		line := strings.TrimRight(s[ls:le], "\r")
-		if strings.TrimSpace(line) != "" && lineIndent(s, ls) <= keyIndent {
+		if strings.TrimSpace(line) != "" && (lineIndent(s, ls) <= keyIndent || plain && assignmentStart.MatchString(line)) {
 			return end
 		}
 		if strings.TrimSpace(line) != "" {
@@ -161,6 +170,12 @@ func headerAt(s string, start int) (string, int) {
 	return strings.Join(fields, " "), end
 }
 
+// isQuotedKey reports whether the key ending at sepEnd closes with a quote.
+func isQuotedKey(s string, keyStart, sepEnd int) bool {
+	m := assignKey.FindStringSubmatchIndex(s[keyStart:sepEnd])
+	return m != nil && m[3] > m[2]
+}
+
 func lineStart(s string, i int) int { return strings.LastIndexByte(s[:i], '\n') + 1 }
 
 func lineIndent(s string, ls int) int {
@@ -171,9 +186,11 @@ func lineIndent(s string, ls int) int {
 	return n
 }
 
-// valueEnd returns the end of the value starting at i. After a quoted key
-// (JSON, YAML) an unquoted value also stops at , } ].
-func valueEnd(s string, i int, quotedKey bool) int {
+// valueEnd returns the end of the value starting at i. A quoted value ends at
+// its closing quote. After a quoted key (JSON) an unquoted value ends at , }
+// or a line break. Otherwise it runs to the end of the line, except that a
+// key=value shell assignment also stops before &&, ;, | or a following KEY=.
+func valueEnd(s string, i int, quotedKey, shell bool) int {
 	if i >= len(s) {
 		return i
 	}
@@ -181,18 +198,29 @@ func valueEnd(s string, i int, quotedKey bool) int {
 		return quotedEnd(s, i, q)
 	}
 	j := i
-	for j < len(s) && !valueStop(s[j], quotedKey) {
+	for j < len(s) && !valueStop(s, j, quotedKey, shell) {
 		j++
+	}
+	for j > i && (s[j-1] == ' ' || s[j-1] == '\t') {
+		j--
 	}
 	return j
 }
 
-func valueStop(c byte, quotedKey bool) bool {
-	switch c {
-	case ' ', '\t', '\n', '\r', '"', '\'':
+func valueStop(s string, j int, quotedKey, shell bool) bool {
+	switch c := s[j]; {
+	case c == '\n' || c == '\r':
 		return true
-	case ',', '}', ']':
-		return quotedKey
+	case quotedKey:
+		return c == ',' || c == '}'
+	case !shell:
+		return false
+	case c == ';' || c == '|':
+		return true
+	case c == '&':
+		return j+1 < len(s) && s[j+1] == '&'
+	case c == ' ' || c == '\t':
+		return shellAssign.MatchString(s[j:min(len(s), j+maxHeaderSpan)])
 	}
 	return false
 }

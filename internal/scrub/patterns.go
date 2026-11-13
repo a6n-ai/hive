@@ -48,6 +48,9 @@ var blockIndicator = regexp.MustCompile(`^[|>][0-9+\-]*$`)
 // assignmentStart matches a line that begins any key: or key= assignment.
 var assignmentStart = regexp.MustCompile(`^[ \t]*["']?[A-Za-z_][\w.\-]*["']?[ \t]*[:=]`)
 
+// shellAssign matches whitespace followed by another KEY= assignment.
+var shellAssign = regexp.MustCompile(`^[ \t]+[A-Za-z_][A-Za-z0-9_]*=`)
+
 // entropyCandidate finds runs that may be random secrets.
 var entropyCandidate = regexp.MustCompile(`[A-Za-z0-9_=+\-]{32,}`)
 
