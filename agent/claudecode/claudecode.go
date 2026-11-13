@@ -122,8 +122,9 @@ func (a *Adapter) Reply(event string, lines []recall.Line) []byte {
 	return nil
 }
 
-// status is the line Claude Code shows the user: always at session start, so a
-// working install is visible, and otherwise only when something was injected.
+// status is the line Claude Code shows the user: always at session start and on
+// every prompt, so a working install is visible, and on tool events only when a
+// fix was injected, since those fire on every tool call.
 func status(event string, lines []recall.Line) string {
 	recent := 0
 	for _, l := range lines {
@@ -135,10 +136,10 @@ func status(event string, lines []recall.Line) string {
 	switch {
 	case event == "SessionStart":
 		return fmt.Sprintf("inscribe: loaded %d memories, %d recent sessions", mems, recent)
-	case mems == 0:
-		return ""
 	case event == "UserPromptSubmit":
 		return fmt.Sprintf("inscribe: recalled %d memories for this prompt", mems)
+	case mems == 0:
+		return ""
 	}
 	return fmt.Sprintf("inscribe: recalled %d known fix(es) for this error", mems)
 }

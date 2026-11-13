@@ -75,8 +75,11 @@ func TestReplyGolden(t *testing.T) {
 	if got, want := string(a.Reply("UserPromptSubmit", lines)), string(fixture(t, "reply_prompt.golden")); got != want {
 		t.Fatalf("reply:\n got  %s\n want %s", got, want)
 	}
-	if got := a.Reply("UserPromptSubmit", nil); len(got) != 0 {
-		t.Fatalf("empty reply = %q", got)
+	if got, want := string(a.Reply("UserPromptSubmit", nil)), `{"systemMessage":"inscribe: recalled 0 memories for this prompt"}`; got != want {
+		t.Fatalf("empty prompt reply = %s, want %s", got, want)
+	}
+	if got := a.Reply("PostToolUseFailure", nil); len(got) != 0 {
+		t.Fatalf("empty error reply = %q, want nothing", got)
 	}
 	if got := a.Reply("Stop", lines); len(got) != 0 {
 		t.Fatalf("Stop reply = %q, want nothing", got)
