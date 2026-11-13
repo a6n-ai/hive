@@ -43,15 +43,23 @@ func (t *Tx) ResolveSessionMemoryRows(session, memoryID string, label int, reaso
 	return res.RowsAffected()
 }
 
+// UnresolvedSessionRows counts a memory's unresolved outcomes in a session that no answered ask covers.
+func (t *Tx) UnresolvedSessionRows(session, memoryID string) (int64, error) {
+	var n int64
+	err := t.tx.QueryRow(`SELECT COUNT(*) FROM score_outcomes WHERE session = ? AND memory_id = ? AND resolved IS NULL AND `+unansweredRow,
+		session, memoryID).Scan(&n)
+	return n, err
+}
+
 // UnresolveSessionMemoryRows reopens a memory's outcomes in a session that were
-// resolved with one of reasons, clearing their label, reason and scale.
-func (t *Tx) UnresolveSessionMemoryRows(session, memoryID string, reasons []string) error {
-	args := []any{session, memoryID}
+// resolved at resolvedAt with one of reasons, clearing their label, reason and scale.
+func (t *Tx) UnresolveSessionMemoryRows(session, memoryID string, resolvedAt int64, reasons []string) error {
+	args := []any{session, memoryID, resolvedAt}
 	for _, r := range reasons {
 		args = append(args, r)
 	}
 	_, err := t.tx.Exec(`UPDATE score_outcomes SET label = NULL, reason = '', scale = 1, resolved = NULL
-		WHERE session = ? AND memory_id = ? AND reason IN (`+placeholders(len(reasons))+`)`, args...) //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
+		WHERE session = ? AND memory_id = ? AND resolved = ? AND reason IN (`+placeholders(len(reasons))+`)`, args...) //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	return err
 }
 

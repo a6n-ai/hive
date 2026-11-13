@@ -82,7 +82,7 @@ func undoRow(tx *store.Tx, session string, r store.AuditRow, rep *UndoReport) er
 		return err
 	}
 	if r.Op == "rate" {
-		if err := tx.UnresolveSessionMemoryRows(session, r.MemoryID, []string{"review", "review_wrong"}); err != nil {
+		if err := tx.UnresolveSessionMemoryRows(session, r.MemoryID, r.TS, []string{"review", "review_wrong"}); err != nil {
 			return err
 		}
 	}

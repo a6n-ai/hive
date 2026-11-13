@@ -114,6 +114,14 @@ func (a applier) recheck(op Op) (string, error) {
 		if existing != nil && existing.ID != op.ID {
 			return "key was created after the review", nil
 		}
+	case "rate":
+		n, err := a.tx.UnresolvedSessionRows(a.session, op.ID)
+		if err != nil {
+			return "", err
+		}
+		if n == 0 {
+			return "memory was rated after the review", nil
+		}
 	}
 	return "", nil
 }

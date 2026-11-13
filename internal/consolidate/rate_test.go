@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/a6n-ai/inscribe/internal/consolidate"
 	"github.com/a6n-ai/inscribe/internal/store"
@@ -144,5 +145,80 @@ func TestUndoRateRestores(t *testing.T) {
 	open, err := e.st.UnaskedOutcomes(session, 10)
 	if err != nil || len(open) != 1 || open[0].MemoryID != m {
 		t.Errorf("unasked outcomes after undo = %+v (%v), want the reopened row", open, err)
+	}
+}
+
+// runnerFunc adapts a function to Runner, so a test can act while the review runs.
+type runnerFunc func(ctx context.Context, prompt string) (string, error)
+
+func (f runnerFunc) Run(ctx context.Context, prompt string) (string, error) { return f(ctx, prompt) }
+
+// resolveRows resolves the session's unresolved rows of memoryID, as train does after a session's hold.
+func (e *env) resolveRows(memoryID string) {
+	e.t.Helper()
+	err := e.st.Write(context.Background(), func(tx *store.Tx) error {
+		_, err := tx.ResolveSessionMemoryRows(session, memoryID, 1, "train", 1, 2)
+		return err
+	})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+func TestRateSkipsStaleRate(t *testing.T) {
+	e := newEnv(t)
+	ids := e.events(2)
+	m := e.memory("m", ids[0])
+	e.injected(m)
+	out := fmt.Sprintf(`{"ops":[{"op":"rate","id":%q,"used":"no","helpful":"wrong"}]}`, m)
+	r := runnerFunc(func(context.Context, string) (string, error) {
+		e.resolveRows(m)
+		return out, nil
+	})
+	rep := e.run(r, false)
+	if len(rep.Rejected) != 1 || rep.Rejected[0].Reason != "memory was rated after the review" {
+		t.Fatalf("rejected = %+v, want the rate skipped as rated after the review", rep.Rejected)
+	}
+	if got := e.get(m).Penalty; got != 0 {
+		t.Errorf("penalty = %v, want 0", got)
+	}
+	for _, o := range e.outcomes(m) {
+		if o.Reason == "review" || o.Reason == "review_wrong" {
+			t.Errorf("outcome = %+v, want no review rows", o)
+		}
+	}
+}
+
+func TestUndoRateScopedToItsRun(t *testing.T) {
+	e := newEnv(t)
+	ids := e.events(2)
+	m := e.memory("m", ids[0])
+	e.injected(m)
+	out := fmt.Sprintf(`{"ops":[{"op":"rate","id":%q,"used":"yes","helpful":"yes"}]}`, m)
+	first := e.run(&fakeRunner{out: out}, false)
+	if len(first.Valid) != 1 {
+		t.Fatalf("first run valid = %d rejected = %v, want 1 valid", len(first.Valid), first.Rejected)
+	}
+	time.Sleep(2 * time.Millisecond) // each run stamps its resolved rows with its own clock; keep the two runs apart
+	e.events(1)
+	e.injected(m)
+	if second := e.run(&fakeRunner{out: out}, false); len(second.Valid) != 1 {
+		t.Fatalf("second run valid = %d rejected = %v, want 1 valid", len(second.Valid), second.Rejected)
+	}
+	undo, err := consolidate.Undo(context.Background(), e.st, first.RunID)
+	if err != nil || undo.Restored != 1 || len(undo.Skipped) != 0 {
+		t.Fatalf("undo = %+v (%v), want 1 restored and none skipped", undo, err)
+	}
+	var open, labeled int
+	for _, o := range e.outcomes(m) {
+		switch {
+		case o.Label == nil:
+			open++
+		case o.Reason == "review":
+			labeled++
+		}
+	}
+	if open != 1 || labeled != 1 {
+		t.Errorf("outcomes = %+v, want run 1's row reopened and run 2's row still labeled", e.outcomes(m))
 	}
 }
