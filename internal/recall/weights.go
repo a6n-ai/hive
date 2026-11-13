@@ -38,7 +38,7 @@ func DefaultWeights() Weights {
 }
 
 // LoadWeights reads the score model. A database that has never trained
-// returns DefaultWeights.
+// returns DefaultWeights with an empty StepRule, so Train replays it.
 func LoadWeights(st *store.Store) (Weights, error) {
 	raw, ok, err := st.GetMeta(weightsKey())
 	return decodeWeights(raw, ok, err)
@@ -52,9 +52,12 @@ func LoadWeightsTx(tx *store.Tx) (Weights, error) {
 
 func decodeWeights(raw string, ok bool, err error) (Weights, error) {
 	if err != nil || !ok || raw == "" {
-		return DefaultWeights(), err
+		w := DefaultWeights()
+		w.StepRule = ""
+		return w, err
 	}
 	w := DefaultWeights()
+	w.StepRule = ""
 	if err := json.Unmarshal([]byte(raw), &w); err != nil {
 		return DefaultWeights(), err
 	}

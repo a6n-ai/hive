@@ -13,6 +13,8 @@ import (
 const (
 	openGroupBatch = 500
 	replayGroups   = 5000
+	// unlabelableAfter is how long a group whose prompt never shows up stays open.
+	unlabelableAfter = 7 * 24 * time.Hour
 )
 
 // trainHook runs between the read and the write. Tests use it to make another writer win.
@@ -59,7 +61,14 @@ func Train(ctx context.Context, st *store.Store, now time.Time) (TrainResult, er
 			return TrainResult{}, err
 		}
 		if !ok {
-			res.Open++
+			if now.Sub(time.UnixMilli(rows[0].Ended)) <= unlabelableAfter {
+				res.Open++
+				continue
+			}
+			for _, r := range rows {
+				res.Reasons["closed_unlabeled"]++
+				labeled = append(labeled, Labeled{ID: r.ID, Reason: "closed_unlabeled"})
+			}
 			continue
 		}
 		g := make([]store.ScoreOutcome, len(rows))
@@ -88,7 +97,11 @@ func Train(ctx context.Context, st *store.Store, now time.Time) (TrainResult, er
 		if err != nil {
 			return TrainResult{}, err
 		}
-		w = Refit(DefaultWeights(), groups)
+		if len(groups) == 0 {
+			refit, w = false, DefaultWeights()
+		} else {
+			w = Refit(DefaultWeights(), groups)
+		}
 	}
 	res.Refit, res.Weights = refit, w
 	if len(labeled) == 0 && !refit {
