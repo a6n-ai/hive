@@ -26,7 +26,7 @@ func Due(st *store.Store, cfg config.Config, agent string, now time.Time) ([]str
 		if len(due) == maxCatchUpRun {
 			break
 		}
-		ok, err := eligible(st, cfg, id, now)
+		ok, err := Pending(st, cfg, id, now)
 		if err != nil {
 			return nil, err
 		}
@@ -37,7 +37,8 @@ func Due(st *store.Store, cfg config.Config, agent string, now time.Time) ([]str
 	return due, nil
 }
 
-func eligible(st *store.Store, cfg config.Config, id string, now time.Time) (bool, error) {
+// Pending reports whether a session has enough unconsolidated events and no attempt in the last day.
+func Pending(st *store.Store, cfg config.Config, id string, now time.Time) (bool, error) {
 	attempted, err := st.SessionAttempted(id)
 	if err != nil {
 		return false, err

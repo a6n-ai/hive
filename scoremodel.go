@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/a6n-ai/inscribe/internal/consolidate"
@@ -17,15 +18,14 @@ import (
 func (h *Inscribe) TrainScores(ctx context.Context, now time.Time) (recall.TrainResult, error) {
 	var hold func(string) bool
 	if h.cfg.Consolidate.Auto {
-		due, err := consolidate.Due(h.store, h.cfg, "claude-code", now)
-		if err != nil {
-			return recall.TrainResult{}, err
+		hold = func(session string) bool {
+			ok, err := consolidate.Pending(h.store, h.cfg, session, now)
+			if err != nil {
+				appendLog(h.home, fmt.Sprintf("train: consolidation hold check for session %s: %v", session, err))
+				return false
+			}
+			return ok
 		}
-		held := make(map[string]bool, len(due))
-		for _, id := range due {
-			held[id] = true
-		}
-		hold = func(session string) bool { return held[session] }
 	}
 	return recall.Train(ctx, h.store, now, hold)
 }
