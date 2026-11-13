@@ -37,6 +37,7 @@ type Store struct {
 	readOnly bool
 	newer    bool
 	hitLock  atomic.Bool
+	dropped  atomic.Int64
 	// betweenReads is a test seam: it runs between the memory and deletion reads.
 	betweenReads func()
 }
@@ -139,6 +140,12 @@ func (s *Store) Write(ctx context.Context, fn func(*Tx) error) error {
 // HitLock reports whether a write by this store has returned ErrLocked. A
 // process that has waited on the lock once should not wait on it again.
 func (s *Store) HitLock() bool { return s.hitLock.Load() }
+
+// NoteDroppedOutcomes counts n score outcome rows that were not written because the store was locked.
+func (s *Store) NoteDroppedOutcomes(n int) { s.dropped.Add(int64(n)) }
+
+// DroppedOutcomes is the number of score outcome rows noted as dropped by this store.
+func (s *Store) DroppedOutcomes() int64 { return s.dropped.Load() }
 
 func (s *Store) write(ctx context.Context, fn func(*Tx) error) error {
 	if s.newer {

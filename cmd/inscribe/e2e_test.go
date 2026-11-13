@@ -733,3 +733,41 @@ func TestSetupInvalidConfigExits1NamesFile(t *testing.T) {
 		t.Errorf("stderr %q does not name %s and the setup failure", errOut, cfg)
 	}
 }
+
+func TestHookPromptDigestMatchesStoredEvent(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	runOK(t, home, "", "remember", "always run make lint before pushing", "--type", "note", "--scope", "global")
+	ctx := additionalContext(t, hookOK(t, home, map[string]any{"session_id": "p1", "cwd": proj, "hook_event_name": "UserPromptSubmit",
+		"prompt": "always run make lint before pushing"}, "UserPromptSubmit"))
+	if !strings.Contains(ctx, "make lint") {
+		t.Fatalf("additionalContext = %q", ctx)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var eventDigest string
+	if err := db.QueryRow(`SELECT digest FROM events WHERE kind = ?`, model.Prompt).Scan(&eventDigest); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.Query(`SELECT prompt_digest FROM score_outcomes`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	n := 0
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err != nil {
+			t.Fatal(err)
+		}
+		if d == "" || d != eventDigest {
+			t.Fatalf("outcome prompt_digest = %q, event digest = %q", d, eventDigest)
+		}
+		n++
+	}
+	if n == 0 {
+		t.Fatal("no score_outcomes rows for the injected prompt")
+	}
+}

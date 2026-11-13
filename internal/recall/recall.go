@@ -36,6 +36,7 @@ type Query struct {
 	Mode           Mode
 	Agent          string // runtime that submitted the prompt; scored, not used as a filter
 	Session        string // set by the hook so an injection can be labeled after the session ends
+	PromptDigest   string // digest of the prompt event; the group key its shown lines are labeled by
 }
 
 // hit is a scored line plus the column features that produced it.
@@ -46,6 +47,7 @@ type hit struct {
 
 type Line struct {
 	MemoryID string
+	Key      string
 	Type     model.MemoryType
 	Text     string
 	Score    float64
@@ -131,7 +133,7 @@ func scoreAll(src Source, f store.ListFilter, cfg config.RecallCfg, q Query, now
 				continue
 			}
 		}
-		hits = append(hits, hit{Line: Line{MemoryID: m.ID, Type: m.Type, Text: m.Text, Score: score}, feat: feat})
+		hits = append(hits, hit{Line: Line{MemoryID: m.ID, Key: m.Key, Type: m.Type, Text: m.Text, Score: score}, feat: feat})
 	}
 	sortHits(hits)
 	return hits, nil
@@ -248,7 +250,14 @@ func firstNonZero(a, b int) int {
 // stores the column features so the idle pass can learn from them. A locked
 // database only skips the bookkeeping; recall itself still succeeds.
 func markUsed(ctx context.Context, st *store.Store, hits []hit, q Query, now time.Time) error {
-	if len(hits) == 0 || st.HitLock() {
+	if len(hits) == 0 {
+		return nil
+	}
+	outcomes := q.Mode == Prompt && q.Session != ""
+	if st.HitLock() {
+		if outcomes {
+			st.NoteDroppedOutcomes(len(hits))
+		}
 		return nil
 	}
 	ids := make([]string, len(hits))
@@ -260,7 +269,7 @@ func markUsed(ctx context.Context, st *store.Store, hits []hit, q Query, now tim
 		if err := tx.TouchUsed(ids, ts); err != nil {
 			return err
 		}
-		if q.Mode != Prompt || q.Session == "" {
+		if !outcomes {
 			return nil
 		}
 		for _, h := range hits {
@@ -269,12 +278,15 @@ func markUsed(ctx context.Context, st *store.Store, hits []hit, q Query, now tim
 				return err
 			}
 			if err := tx.InsertScoreOutcome(store.OutcomeInput{MemoryID: h.MemoryID, Session: q.Session, Agent: q.Agent,
-				TS: ts, Features: raw, Score: h.Score}); err != nil {
+				TS: ts, Features: raw, Score: h.Score, PromptDigest: q.PromptDigest, ShownKey: h.Key, ShownText: h.Text, LabelRule: LabelRule}); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+	if errors.Is(err, store.ErrLocked) && outcomes {
+		st.NoteDroppedOutcomes(len(hits))
+	}
 	if errors.Is(err, store.ErrLocked) || errors.Is(err, store.ErrSchemaNewer) || errors.Is(err, store.ErrReadOnly) {
 		return nil
 	}

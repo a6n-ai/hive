@@ -6,6 +6,13 @@ import "strings"
 // keeping inputs with many unclosed values linear.
 const maxValueSpan = 64 * 1024
 
+// isRedaction reports whether v is exactly one redaction tag. A rescrub must not
+// count it again, or a prepared event scrubbed twice reports extra secrets.
+func isRedaction(v string) bool {
+	inner, ok := strings.CutPrefix(v, redactedPrefix)
+	return ok && strings.HasSuffix(inner, "]") && !strings.ContainsAny(inner[:len(inner)-1], "[]")
+}
+
 // redactAssignments replaces the value of every secret assignment in s.
 // Overlapping values merge into one redaction, so an assignment that starts
 // inside an earlier value is still covered to its own end.
@@ -29,7 +36,7 @@ func redactAssignments(s string, findings *[]Finding) string {
 	for _, loc := range locs {
 		start := valueStart(s, loc[1])
 		end := valueEnd(s, start, loc[3] > loc[2])
-		if end <= start {
+		if end <= start || isRedaction(s[start:end]) {
 			continue
 		}
 		switch {

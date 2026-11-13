@@ -2,6 +2,7 @@ package recall
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -297,7 +298,7 @@ func TestRecallSkipsMarkUsedAfterLock(t *testing.T) {
 		t.Fatalf("Write err = %v, want ErrLocked", err)
 	}
 	start := time.Now()
-	lines, err := Recall(ctx, st, nil, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt}, now)
+	lines, err := Recall(ctx, st, nil, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt, Session: "s1"}, now)
 	elapsed := time.Since(start)
 	close(release)
 	if werr := <-done; werr != nil {
@@ -308,6 +309,9 @@ func TestRecallSkipsMarkUsedAfterLock(t *testing.T) {
 	}
 	if elapsed >= 40*time.Millisecond {
 		t.Fatalf("Recall took %v after the lock was hit, want < 40ms", elapsed)
+	}
+	if st.DroppedOutcomes() != 1 {
+		t.Fatalf("DroppedOutcomes = %d, want 1", st.DroppedOutcomes())
 	}
 }
 
@@ -322,5 +326,31 @@ func TestCJKUnspacedRecall(t *testing.T) {
 	put(t, st2, model.Memory{Type: model.Note, Key: "b", Text: "命令行工具"})
 	if lines, _ := Recall(ctx, st2, nil, cfg(), Query{Project: "/p", Text: "命令", Mode: Prompt}, now); len(lines) != 1 {
 		t.Fatalf("命令 inside 命令行工具: lines = %+v, want 1", lines)
+	}
+}
+
+func TestMarkUsedWritesShownLine(t *testing.T) {
+	st := newStore(t)
+	m := put(t, st, model.Memory{Type: model.Note, Key: "k1", Text: "deploy with make deploy"})
+	lines, err := Recall(context.Background(), st, nil, cfg(), Query{Project: "/p", Text: "deploy", Mode: Prompt,
+		Session: "s1", Agent: "claude-code", PromptDigest: "d1"}, now)
+	if err != nil || len(lines) != 1 {
+		t.Fatalf("lines = %+v, err = %v", lines, err)
+	}
+	if lines[0].Key != m.Key {
+		t.Fatalf("Line.Key = %q, want %q", lines[0].Key, m.Key)
+	}
+	db, err := sql.Open("sqlite", st.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var digest, key, shown, rule string
+	if err := db.QueryRow(`SELECT prompt_digest, shown_key, shown_text, label_rule FROM score_outcomes WHERE memory_id = ?`, m.ID).
+		Scan(&digest, &key, &shown, &rule); err != nil {
+		t.Fatal(err)
+	}
+	if digest != "d1" || key != m.Key || shown != lines[0].Text || rule != "L1" {
+		t.Fatalf("outcome = (%q, %q, %q, %q)", digest, key, shown, rule)
 	}
 }

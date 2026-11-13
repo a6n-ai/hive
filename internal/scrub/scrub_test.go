@@ -353,3 +353,19 @@ func TestCLIPasswordArgs(t *testing.T) {
 		}
 	}
 }
+
+// A redaction tag is skipped only when it is the whole value, so a secret
+// appended after one is still redacted. A rescrub reports nothing new.
+func TestRescrubIdempotentAndTagPrefixNotTrusted(t *testing.T) {
+	s := newScrubber(t)
+	in := "export ANTHROPIC_API_KEY=sk-ant-api03-" + strings.Repeat("Q", 30)
+	once, f1 := s.Scrub(in)
+	twice, f2 := s.Scrub(once)
+	if twice != once || len(f1) == 0 || len(f2) != 0 {
+		t.Fatalf("rescrub: out %q -> %q, findings %d then %d", once, twice, len(f1), len(f2))
+	}
+	out, _ := s.Scrub("password=[REDACTED:assignment]hunter2zz9")
+	if strings.Contains(out, "hunter2zz9") {
+		t.Fatalf("leaked after tag prefix: %q", out)
+	}
+}

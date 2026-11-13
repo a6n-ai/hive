@@ -132,7 +132,7 @@ func scoreWindows(ctx context.Context, src Source, f store.ListFilter, cfg confi
 		if score == 0 {
 			continue
 		}
-		hits = append(hits, hit{Line: Line{MemoryID: m.ID, Type: m.Type, Text: m.Text, Score: score}, feat: feat})
+		hits = append(hits, hit{Line: Line{MemoryID: m.ID, Key: m.Key, Type: m.Type, Text: m.Text, Score: score}, feat: feat})
 	}
 	sortHits(hits)
 	return hits, nil

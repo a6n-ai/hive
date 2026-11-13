@@ -136,6 +136,18 @@ func (h *Inscribe) Capture(ctx context.Context, e Event) error {
 	return err
 }
 
+// Prepare scrubs e and sets its digest and timestamp in place, as Capture will store them.
+// Calling it before Capture lets the caller key recall by the stored digest.
+func (h *Inscribe) Prepare(e *Event) {
+	if e.TS == 0 {
+		e.TS = time.Now().UnixMilli()
+	}
+	h.pipeline.Prepare(e)
+}
+
+// DroppedOutcomes counts score outcome rows not written because the store was locked.
+func (h *Inscribe) DroppedOutcomes() int64 { return h.store.DroppedOutcomes() }
+
 func (h *Inscribe) Recall(ctx context.Context, q Query) ([]Line, error) {
 	if h.index != nil {
 		if err := h.syncIndex(); err != nil {

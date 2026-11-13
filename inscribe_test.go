@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -84,5 +85,30 @@ func TestBadProjectConfigIgnored(t *testing.T) {
 	logged, err := os.ReadFile(filepath.Join(home, "inscribe.log"))
 	if err != nil || !strings.Contains(string(logged), file) {
 		t.Fatalf("inscribe.log does not warn about %s: %q (%v)", file, logged, err)
+	}
+}
+
+func TestPrepareTwiceIsStable(t *testing.T) {
+	h, err := Open(Options{Home: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = h.Close() }()
+	e := Event{Agent: "a", Session: "s", Project: "/p", Kind: model.Prompt,
+		PromptText: "export ANTHROPIC_API_KEY=sk-ant-api03-" + strings.Repeat("Q", 30)}
+	h.Prepare(&e)
+	first, redactions := e, h.pipeline.Redactions.Load()
+	h.Prepare(&e)
+	if e.Digest == "" || e.TS == 0 {
+		t.Fatalf("Prepare left Digest=%q TS=%d", e.Digest, e.TS)
+	}
+	if e.Digest != first.Digest || e.TS != first.TS || e.PromptText != first.PromptText || !reflect.DeepEqual(e.Payload, first.Payload) {
+		t.Fatalf("second Prepare changed the event: %+v, want %+v", e, first)
+	}
+	if got := h.pipeline.Redactions.Load(); got != redactions {
+		t.Fatalf("second Prepare counted %d more redactions", got-redactions)
+	}
+	if strings.Contains(e.PromptText, "sk-ant-") {
+		t.Fatalf("PromptText not scrubbed: %q", e.PromptText)
 	}
 }

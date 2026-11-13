@@ -67,6 +67,7 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 	defer func() { _ = h.Close() }()
 	ctx := context.Background()
+	h.Prepare(&e)
 	if err := h.Capture(ctx, e); err != nil {
 		return err
 	}
@@ -80,6 +81,9 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	lines, err := h.Recall(ctx, q)
 	if err != nil {
 		return err
+	}
+	if n := h.DroppedOutcomes(); n > 0 {
+		logLine(config.Home(), "recall: dropped %d outcome rows (store locked)", n)
 	}
 	if out := ad.Reply(event, lines); out != nil {
 		_, err = stdout.Write(out)
@@ -125,7 +129,7 @@ func hookQuery(e inscribe.Event, scrub func(string) string) (inscribe.Query, boo
 	case model.SessionStart:
 		return inscribe.Query{Project: e.Project, Mode: recall.SessionStart}, true
 	case model.Prompt:
-		return inscribe.Query{Project: e.Project, Text: e.PromptText, Agent: e.Agent, Session: e.Session, Mode: recall.Prompt}, true
+		return inscribe.Query{Project: e.Project, Text: e.PromptText, Agent: e.Agent, Session: e.Session, PromptDigest: e.Digest, Mode: recall.Prompt}, true
 	case model.PostTool:
 		errText, _ := e.Payload["error"].(string)
 		if errText == "" {
