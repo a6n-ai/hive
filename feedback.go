@@ -6,6 +6,7 @@ import (
 
 	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/internal/store"
+	"github.com/a6n-ai/inscribe/model"
 )
 
 const (
@@ -45,18 +46,33 @@ func (h *Inscribe) MaybeAsk(ctx context.Context, session string, savedAny bool, 
 			ids = append(ids, r.MemoryID)
 		}
 	}
-	ms, err := h.store.MemoriesByID(ids)
+	all, err := h.store.MemoriesByID(ids)
 	if err != nil {
 		return "", "", 0, err
+	}
+	var ms []model.Memory
+	for _, m := range all {
+		if m.Status == model.Active {
+			ms = append(ms, m)
+		}
 	}
 	if len(ms) == 0 {
 		return "", "", 0, nil
 	}
 	askID = feedback.NewAskID()
+	skipped := false
 	err = h.store.Write(ctx, func(tx *store.Tx) error {
+		last, err := tx.LastAskTS(session)
+		if err != nil {
+			return err
+		}
+		if now.UnixMilli()-last < askEvery.Milliseconds() {
+			skipped = true
+			return nil
+		}
 		return tx.InsertAsk(askID, session, now.UnixMilli(), outcomeIDs)
 	})
-	if err != nil {
+	if err != nil || skipped {
 		return "", "", 0, err
 	}
 	return askID, feedback.Render(askID, ms), len(ms), nil

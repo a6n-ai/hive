@@ -101,6 +101,25 @@ func TestAskRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTxLastAskTS(t *testing.T) {
+	ctx := context.Background()
+	st, _ := openTemp(t)
+	var got int64
+	if err := st.Write(ctx, func(tx *Tx) error {
+		if err := tx.InsertAsk("a1", "s1", 500, nil); err != nil {
+			return err
+		}
+		var err error
+		got, err = tx.LastAskTS("s1")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got != 500 {
+		t.Fatalf("Tx.LastAskTS = %d, want 500 (the ask inserted in the same transaction)", got)
+	}
+}
+
 func TestLastAskTS(t *testing.T) {
 	ctx := context.Background()
 	st, _ := openTemp(t)

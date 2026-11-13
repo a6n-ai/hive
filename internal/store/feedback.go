@@ -31,8 +31,19 @@ func (s *Store) UnaskedOutcomes(session string, maxGroups int) ([]ScoreOutcome, 
 
 // LastAskTS is the time of the session's newest ask, 0 when it has none.
 func (s *Store) LastAskTS(session string) (int64, error) {
+	return lastAskTS(s.db, session)
+}
+
+// Checked inside the write lock, so two hooks cannot both insert an ask.
+func (t *Tx) LastAskTS(session string) (int64, error) {
+	return lastAskTS(t.tx, session)
+}
+
+func lastAskTS(q interface {
+	QueryRow(query string, args ...any) *sql.Row
+}, session string) (int64, error) {
 	var ts int64
-	err := s.db.QueryRow(`SELECT COALESCE(MAX(ts), 0) FROM feedback_asks WHERE session = ?`, session).Scan(&ts)
+	err := q.QueryRow(`SELECT COALESCE(MAX(ts), 0) FROM feedback_asks WHERE session = ?`, session).Scan(&ts)
 	return ts, err
 }
 

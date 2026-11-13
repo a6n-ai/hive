@@ -804,33 +804,114 @@ func TestHookDebugShowsLoadedAndSaved(t *testing.T) {
 	}
 }
 
-func TestHookFeedbackAsk(t *testing.T) {
-	home, proj := t.TempDir(), t.TempDir()
-	texts := []string{
-		"always run make lint before pushing",
-		"prefer rg over grep in shell commands",
-		"never commit generated protobuf files",
-		"keep migrations numbered and forward only",
-	}
+var askTexts = []string{
+	"always run make lint before pushing",
+	"prefer rg over grep in shell commands",
+	"never commit generated protobuf files",
+	"keep migrations numbered and forward only",
+}
+
+// seedRecalled remembers each text globally and recalls it with its own prompt,
+// so every memory gets one outcome row. It returns the memory ids.
+func seedRecalled(t *testing.T, home, proj, session string, texts []string) []string {
+	t.Helper()
+	ids := make([]string, 0, len(texts))
 	for _, text := range texts {
-		runOK(t, home, "", "remember", text, "--type", "note", "--scope", "global")
-		hookOK(t, home, map[string]any{"session_id": "f1", "cwd": proj, "hook_event_name": "UserPromptSubmit",
+		ids = append(ids, strings.TrimSpace(runOK(t, home, "", "remember", text, "--type", "note", "--scope", "global")))
+		hookOK(t, home, map[string]any{"session_id": session, "cwd": proj, "hook_event_name": "UserPromptSubmit",
 			"prompt": text}, "UserPromptSubmit")
 	}
-	if out, _, _ := runCLI(t, home, "", nil, "hook", "--agent", "codex", "PostToolUse"); strings.Contains(out, "inscribe feedback") {
-		t.Fatalf("codex reply asked for feedback: %q", out)
+	return ids
+}
+
+func dbCount(t *testing.T, home, query string) int {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var n int
+	if err := db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestHookFeedbackAsk(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	seedRecalled(t, home, proj, "f1", askTexts)
+	codex, err := json.Marshal(map[string]any{"session_id": "f1", "cwd": proj, "hook_event_name": "PostToolUse",
+		"tool_name": "shell", "tool_input": map[string]any{"command": "go vet ./..."},
+		"tool_response": map[string]any{"output": "ok", "exit_code": 0}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, errOut, code := runCLI(t, home, string(codex), nil, "hook", "--agent", "codex", "PostToolUse"); code != 0 || strings.Contains(out, "inscribe feedback") {
+		t.Fatalf("codex save: exit %d, reply %q, stderr %q", code, out, errOut)
+	}
+	if n := dbCount(t, home, `SELECT COUNT(*) FROM feedback_asks`); n != 0 {
+		t.Fatalf("codex save inserted %d feedback asks", n)
 	}
 	out := hookOK(t, home, bashPayload("PostToolUse", "f1", proj, "go vet ./...", ""), "PostToolUse")
 	ctx := additionalContext(t, out)
 	if !strings.Contains(ctx, "inscribe feedback a_") {
 		t.Fatalf("save did not ask for feedback: %q", out)
 	}
-	for _, text := range texts {
+	for _, text := range askTexts {
 		if !strings.Contains(ctx, text) {
 			t.Fatalf("ask lists no %q: %q", text, ctx)
 		}
 	}
 	if out := hookOK(t, home, bashPayload("PostToolUse", "f1", proj, "go build ./...", ""), "PostToolUse"); strings.Contains(out, "inscribe feedback") {
 		t.Fatalf("second save asked again within 10 minutes: %q", out)
+	}
+}
+
+func TestHookFeedbackNoAskOnStop(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	for _, f := range []string{"a.go", "b.go"} {
+		hookOK(t, home, map[string]any{"session_id": "f1", "cwd": proj, "hook_event_name": "PostToolUse",
+			"tool_name": "Edit", "tool_input": map[string]any{"file_path": filepath.Join(proj, f)}}, "PostToolUse")
+	}
+	seedRecalled(t, home, proj, "f1", askTexts)
+	out := hookOK(t, home, map[string]any{"session_id": "f1", "cwd": proj, "hook_event_name": "Stop"}, "Stop")
+	if n := dbCount(t, home, `SELECT COUNT(*) FROM memories WHERE type = 'cochange'`); n == 0 {
+		t.Fatal("Stop saved no cochange memory, so the test proves nothing")
+	}
+	if strings.Contains(out, "inscribe feedback") {
+		t.Fatalf("Stop reply asked for feedback: %q", out)
+	}
+	if n := dbCount(t, home, `SELECT COUNT(*) FROM feedback_asks`); n != 0 {
+		t.Fatalf("Stop inserted %d feedback asks", n)
+	}
+}
+
+func TestHookFeedbackSkipsForgotten(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	ids := seedRecalled(t, home, proj, "f2", askTexts)
+	runOK(t, home, "", "forget", ids[3])
+	ctx := additionalContext(t, hookOK(t, home, bashPayload("PostToolUse", "f2", proj, "go vet ./...", ""), "PostToolUse"))
+	if !strings.Contains(ctx, "inscribe feedback a_") {
+		t.Fatalf("save did not ask for feedback: %q", ctx)
+	}
+	for _, text := range askTexts[:3] {
+		if !strings.Contains(ctx, text) {
+			t.Fatalf("ask lists no %q: %q", text, ctx)
+		}
+	}
+	if strings.Contains(ctx, askTexts[3]) {
+		t.Fatalf("ask lists forgotten memory %q: %q", askTexts[3], ctx)
+	}
+}
+
+func TestHookFeedbackNoAskWithoutActive(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	for _, id := range seedRecalled(t, home, proj, "f3", askTexts) {
+		runOK(t, home, "", "forget", id)
+	}
+	hookOK(t, home, bashPayload("PostToolUse", "f3", proj, "go vet ./...", ""), "PostToolUse")
+	if n := dbCount(t, home, `SELECT COUNT(*) FROM feedback_asks`); n != 0 {
+		t.Fatalf("save with no active memory inserted %d feedback asks", n)
 	}
 }

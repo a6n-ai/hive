@@ -109,10 +109,14 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	return writeDebug(stdout, h, ad, event, e, out, lines, saved, asked)
 }
 
+// askEvents are the Claude Code events whose reply can carry additionalContext.
+// Stop cannot, so an ask made there would be recorded but never shown.
+var askEvents = map[string]bool{"UserPromptSubmit": true, "PostToolUse": true, "PostToolUseFailure": true}
+
 // askFeedback adds the feedback question to a Claude Code reply when a save makes
 // one due. It returns the note that says so, for debug output. A failed ask is logged, never returned.
 func askFeedback(ctx context.Context, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, saved []inscribe.Memory, out []byte) ([]byte, string) {
-	if ad.Name() != "claude-code" {
+	if ad.Name() != "claude-code" || !askEvents[event] {
 		return out, ""
 	}
 	askID, text, n, err := h.MaybeAsk(ctx, e.Session, len(saved) > 0, time.Now())
