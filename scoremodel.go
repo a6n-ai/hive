@@ -13,12 +13,22 @@ import (
 )
 
 // TrainScores is the idle pass. It labels injections from sessions that have
-// ended and updates the score model. It does not call a model. Sessions that
-// consolidation is about to review keep their open groups for an hour.
+// ended and updates the score model. It does not call a model. Claude Code
+// sessions that consolidation is about to review keep their open groups for an
+// hour.
 func (h *Inscribe) TrainScores(ctx context.Context, now time.Time) (recall.TrainResult, error) {
 	var hold func(string) bool
 	if h.cfg.Consolidate.Auto {
+		// Consolidation commits its cursor only after the review, so a train that runs after the commit finds the reviewed rows already resolved; the SessionEnd race is harmless.
 		hold = func(session string) bool {
+			agent, err := h.store.SessionAgent(session)
+			if err != nil {
+				appendLog(h.home, fmt.Sprintf("train: consolidation hold check for session %s: %v", session, err))
+				return false
+			}
+			if agent != "claude-code" {
+				return false
+			}
 			ok, err := consolidate.Pending(h.store, h.cfg, session, now)
 			if err != nil {
 				appendLog(h.home, fmt.Sprintf("train: consolidation hold check for session %s: %v", session, err))

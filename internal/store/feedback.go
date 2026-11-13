@@ -105,6 +105,13 @@ func lastAskTS(q interface {
 	return ts, err
 }
 
+// SessionAgent is the agent column of a session.
+func (s *Store) SessionAgent(session string) (string, error) {
+	var a string
+	err := s.db.QueryRow(`SELECT agent FROM sessions WHERE id = ?`, session).Scan(&a)
+	return a, err
+}
+
 // SessionProject is the project column of a session.
 func (s *Store) SessionProject(session string) (string, error) {
 	var p string
