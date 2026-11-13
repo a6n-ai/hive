@@ -58,7 +58,7 @@ func redactAssignments(s string, findings *[]Finding) string {
 	for _, loc := range locs {
 		start := valueStart(s, loc[1])
 		end := valueEnd(s, start, loc[3] > loc[2])
-		if end <= start || isRedaction(s, start, end) {
+		if end <= start || isRedaction(s, start, end) && yamlContinuation(s, loc[0], loc[1], start, end) == end {
 			continue
 		}
 		switch {

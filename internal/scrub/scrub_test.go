@@ -381,3 +381,18 @@ func TestRescrubIdempotentAndTagPrefixNotTrusted(t *testing.T) {
 		t.Fatalf("quoted-key rescrub: %q -> %q, findings %d then %d", once, twice, len(f1), len(f2))
 	}
 }
+
+// The tag skip is decided on the full value span, so YAML continuation lines
+// after a next-line tag are still redacted.
+func TestTagSkipUsesFullYAMLSpan(t *testing.T) {
+	s := newScrubber(t)
+	out, f := s.Scrub("password:\n  [REDACTED:assignment]\n  hunter2zz9\n")
+	if strings.Contains(out, "hunter2zz9") || len(f) != 1 {
+		t.Fatalf("leaked continuation: %q, %d findings", out, len(f))
+	}
+	in := "password:\n  [REDACTED:assignment]\n"
+	out, f = s.Scrub(in)
+	if out != in || len(f) != 0 {
+		t.Fatalf("rescrub not idempotent: %q, %d findings", out, len(f))
+	}
+}
