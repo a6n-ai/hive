@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/a6n-ai/inscribe/internal/capture"
@@ -106,6 +107,22 @@ func TestCommandClassifiedAndCounted(t *testing.T) {
 	m := ms[0]
 	if m.Key != "go test ./..." || m.Body["class"] != "test" || m.Count != 3 || m.Text != "tests: go test ./..." {
 		t.Fatalf("memory = %+v", m)
+	}
+}
+
+func TestCommandSkipsHeredocAndLongCommands(t *testing.T) {
+	h := newHarness(t, config.Defaults(), extract.NewCommand())
+	h.shell("s1", "cat > /p/report.md <<'EOF'\nran the tests\nEOF", 0, "")
+	h.shell("s1", "cat <<EOF > r.md ran tests EOF", 0, "")
+	h.shell("s1", "go test\n./...", 0, "")
+	h.shell("s1", "go test "+strings.Repeat("a", 193), 0, "")
+	if ms := h.list(model.Command); len(ms) != 0 {
+		t.Fatalf("command memories = %+v, want none", ms)
+	}
+	h.shell("s1", "go test ./internal/recall", 0, "")
+	ms := h.list(model.Command)
+	if len(ms) != 1 || ms[0].Text != "tests: go test ./internal/recall" {
+		t.Fatalf("command memories = %+v", ms)
 	}
 }
 

@@ -140,8 +140,9 @@ without editing any source.
 
 `serve` runs a local page on loopback (default `127.0.0.1:7331`). It shows the
 score weights, the counts, and the share switch with the share URL's host only.
-A non-loopback `--addr` is refused, and requests whose `Host` header is not the
-bound address are refused. Saving the share switch rewrites `config.toml` and
+`--addr` must be `127.0.0.1` or `::1` with a port; anything else is refused. Requests
+are accepted only with a `Host` of `127.0.0.1:PORT` or `localhost:PORT`, plus
+`[::1]:PORT` when bound on `::1`; any other `Host` is refused. Saving the share switch rewrites `config.toml` and
 drops comments.
 
 `doctor` reports each agent's installed hooks and its warnings, the database and

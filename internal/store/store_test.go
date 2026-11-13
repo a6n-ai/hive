@@ -231,7 +231,7 @@ func TestMigration0007ClosesOpenRows(t *testing.T) {
 	}
 	defer func() { _ = st.Close() }()
 	var n int
-	if err := st.db.QueryRow(`SELECT COUNT(*) FROM score_outcomes WHERE resolved > 0 AND label IS NULL
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM score_outcomes WHERE resolved > 1000000000000 AND label IS NULL
 		AND reason = 'closed_by_migration' AND label_rule = ''`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}

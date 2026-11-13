@@ -127,3 +127,16 @@ func TestBlendRawMatchesBlend(t *testing.T) {
 		}
 	}
 }
+
+func TestRefitCounts(t *testing.T) {
+	groups := []Group{
+		{{F: Features{Text: .5, Key: 1}, Label: 1, Reason: "full_command", Scale: 1},
+			{F: Features{Text: .5}, Label: 0, Reason: "sibling", Scale: 1}},
+		{{F: Features{Text: .5, Key: 1}, Label: 0, Reason: "failed", Scale: 1},
+			{F: Features{Text: .5, Key: 1}, Label: 0, Reason: "corrected", Scale: 1}},
+	}
+	out := Refit(DefaultWeights(), groups)
+	if out.Seen != 2 || out.Hits != 1 || out.Misses != 2 {
+		t.Fatalf("Seen/Hits/Misses = %d/%d/%d, want 2/1/2", out.Seen, out.Hits, out.Misses)
+	}
+}

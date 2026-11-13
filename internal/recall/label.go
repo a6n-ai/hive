@@ -47,6 +47,17 @@ func LabelGroup(rows []store.ScoreOutcome, events []model.Event, ended int64, fo
 	}
 	sort.SliceStable(evs, func(i, j int) bool { return evs[i].TS < evs[j].TS })
 
+	var promptTS int64
+	found := false
+	for _, e := range evs {
+		if e.Kind == model.Prompt && e.Digest == rows[0].PromptDigest {
+			promptTS, found = e.TS, true
+			break
+		}
+	}
+	if !found {
+		return nil, false, nil
+	}
 	noLift := make([]bool, len(rows))
 	for i, r := range rows {
 		f, err := parseFeatures(r.Features)
@@ -62,17 +73,6 @@ func LabelGroup(rows []store.ScoreOutcome, events []model.Event, ended int64, fo
 		}
 	}
 
-	var promptTS int64
-	found := false
-	for _, e := range evs {
-		if e.Kind == model.Prompt && e.Digest == rows[0].PromptDigest {
-			promptTS, found = e.TS, true
-			break
-		}
-	}
-	if !found {
-		return nil, false, nil
-	}
 	var nextTS int64
 	hasNext := false
 	for _, e := range evs {

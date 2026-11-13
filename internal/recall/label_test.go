@@ -232,3 +232,105 @@ func TestLabelOneWordCommandNeverHits(t *testing.T) {
 	checkLabel(t, got[0], -1, "closed_unlabeled", 0)
 	checkLabel(t, got[1], -1, "closed_unlabeled", 0)
 }
+
+func labelOK(t *testing.T, rows []store.ScoreOutcome, events []model.Event, forget ForgetFunc) []Labeled {
+	t.Helper()
+	got, ok, err := LabelGroup(rows, events, labelEnded, forget, DefaultWeights())
+	if err != nil || !ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+	return got
+}
+
+func TestLabelCorrectionScaleSharedAcrossLines(t *testing.T) {
+	rows := []store.ScoreOutcome{
+		liftRow(t, 1, "m1", "build", "npm run build web"),
+		liftRow(t, 2, "m2", "deploy", "ship staging"),
+		liftRow(t, 3, "m3", "tests", "lint notes"),
+	}
+	events := []model.Event{labelPrompt(100, "p1"), labelCorrection(300, "npm run build web ship staging")}
+	got := labelOK(t, rows, events, noForget)
+	checkLabel(t, got[0], 0, "corrected", 0.5)
+	checkLabel(t, got[1], 0, "corrected", 0.5)
+	checkLabel(t, got[2], -1, "closed_unlabeled", 0)
+}
+
+func TestLabelLargerCorrectionScaleWins(t *testing.T) {
+	rows := []store.ScoreOutcome{
+		liftRow(t, 1, "m1", "build", "npm run build web"),
+		liftRow(t, 2, "m2", "deploy", "ship staging"),
+	}
+	events := []model.Event{
+		labelPrompt(100, "p1"),
+		labelCorrection(300, "npm run build web ship staging"),
+		labelCorrection(400, "npm run build web"),
+	}
+	got := labelOK(t, rows, events, noForget)
+	checkLabel(t, got[0], 0, "corrected", 1)
+	checkLabel(t, got[1], 0, "corrected", 0.5)
+}
+
+func TestLabelHitScaleSharedAcrossLines(t *testing.T) {
+	rows := []store.ScoreOutcome{
+		liftRow(t, 1, "m1", "build", "npm run build web"),
+		liftRow(t, 2, "m2", "web", "npm run build web"),
+		liftRow(t, 3, "m3", "tests", "lint notes"),
+	}
+	events := []model.Event{labelPrompt(100, "p1"), labelCmd(200, "npm run build web", 0)}
+	got := labelOK(t, rows, events, noForget)
+	checkLabel(t, got[0], 1, "full_command", 0.5)
+	checkLabel(t, got[1], 1, "full_command", 0.5)
+	checkLabel(t, got[2], 0, "sibling", 1)
+}
+
+func TestLabelSiblingScaleSharedAcrossLines(t *testing.T) {
+	rows := []store.ScoreOutcome{
+		liftRow(t, 1, "m1", "build", "npm run build web"),
+		liftRow(t, 2, "m2", "tests", "lint notes"),
+		liftRow(t, 3, "m3", "deploy", "ship staging"),
+		liftRow(t, 4, "m4", "docs", "write readme"),
+	}
+	events := []model.Event{labelPrompt(100, "p1"), labelCmd(200, "npm run build web", 0)}
+	got := labelOK(t, rows, events, noForget)
+	checkLabel(t, got[0], 1, "full_command", 1)
+	for _, i := range []int{1, 2, 3} {
+		checkLabel(t, got[i], 0, "sibling", 1.0/3)
+	}
+}
+
+func TestLabelForgottenBeatsCorrectedAndHit(t *testing.T) {
+	rows := []store.ScoreOutcome{
+		liftRow(t, 1, "m1", "build", "npm run build web"),
+		liftRow(t, 2, "m2", "tests", "lint notes"),
+	}
+	gone := func(id string) (int64, bool, error) { return 500, id == "m1", nil }
+	events := []model.Event{
+		labelPrompt(100, "p1"),
+		labelCmd(200, "npm run build web", 0),
+		labelCorrection(300, "npm run build web"),
+	}
+	got := labelOK(t, rows, events, gone)
+	checkLabel(t, got[0], 0, "forgotten", 1)
+}
+
+func TestLabelCorrectedBeatsFailed(t *testing.T) {
+	rows := []store.ScoreOutcome{
+		liftRow(t, 1, "m1", "build", "npm run build web"),
+		liftRow(t, 2, "m2", "tests", "lint notes"),
+	}
+	events := []model.Event{
+		labelPrompt(100, "p1"),
+		labelCmd(200, "npm run build web", 1),
+		labelCorrection(300, "npm run build web"),
+	}
+	got := labelOK(t, rows, events, noForget)
+	checkLabel(t, got[0], 0, "corrected", 1)
+}
+
+func TestLabelCorruptFeaturesWithMissingPromptStaysOpen(t *testing.T) {
+	rows := []store.ScoreOutcome{{ID: 1, MemoryID: "m1", Session: "s1", PromptDigest: "p1", Features: "not json"}}
+	got, ok, err := LabelGroup(rows, []model.Event{labelPrompt(100, "other")}, labelEnded, noForget, DefaultWeights())
+	if err != nil || ok || got != nil {
+		t.Fatalf("got=%v ok=%v err=%v, want the group left open without an error", got, ok, err)
+	}
+}

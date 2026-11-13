@@ -30,7 +30,7 @@ func serveCmd(args []string, stdout io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	port, err := loopbackPort(*addr)
+	host, port, err := loopbackPort(*addr)
 	if err != nil {
 		return err
 	}
@@ -39,33 +39,37 @@ func serveCmd(args []string, stdout io.Writer) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(stdout, "serving on http://%s\n", *addr)
-	srv := &http.Server{Handler: newServeHandler(config.Home(), port), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: newServeHandler(config.Home(), host, port), ReadHeaderTimeout: 10 * time.Second}
 	return srv.Serve(ln)
 }
 
-// loopbackPort checks that addr is an IP literal on a loopback address. Hostnames are
-// refused so the listener never binds a name that resolves outside this machine.
-func loopbackPort(addr string) (int, error) {
+// loopbackPort checks that addr is exactly 127.0.0.1 or ::1 with a port, and returns
+// the host and port. Hostnames and other spellings are refused so the Host allowlist
+// matches what the listener binds.
+func loopbackPort(addr string) (string, int, error) {
 	host, portText, err := net.SplitHostPort(addr)
 	if err != nil {
-		return 0, fmt.Errorf("--addr %q: %w", addr, err)
+		return "", 0, fmt.Errorf("--addr %q: %w", addr, err)
 	}
 	if host == "localhost" {
-		return 0, errors.New("--addr: use 127.0.0.1 instead of localhost")
+		return "", 0, errors.New("--addr: use 127.0.0.1 instead of localhost")
 	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return 0, fmt.Errorf("--addr %q: host must be a loopback IP such as 127.0.0.1", addr)
+	if host != "127.0.0.1" && host != "::1" {
+		return "", 0, fmt.Errorf("--addr %q: host must be 127.0.0.1 or ::1", addr)
 	}
 	port, err := strconv.Atoi(portText)
 	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("--addr %q: invalid port", addr)
+		return "", 0, fmt.Errorf("--addr %q: invalid port", addr)
 	}
-	return port, nil
+	return host, port, nil
 }
 
-func newServeHandler(home string, port int) http.Handler {
+func newServeHandler(home, host string, port int) http.Handler {
 	p := strconv.Itoa(port)
-	hosts := map[string]bool{"127.0.0.1:" + p: true, "localhost:" + p: true, "[::1]:" + p: true}
+	hosts := map[string]bool{"127.0.0.1:" + p: true, "localhost:" + p: true}
+	if host == "::1" {
+		hosts["[::1]:"+p] = true
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { serveIndex(w, home) })
 	mux.HandleFunc("POST /share", func(w http.ResponseWriter, r *http.Request) { serveShare(w, r, home) })
@@ -136,7 +140,7 @@ func serveIndex(w http.ResponseWriter, home string) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := indexTmpl.Execute(w, page); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "the page could not be rendered", http.StatusInternalServerError)
 	}
 }
 
@@ -150,7 +154,7 @@ func serveShare(w http.ResponseWriter, r *http.Request, home string) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "the form could not be read", http.StatusBadRequest)
 		return
 	}
 	v := r.PostFormValue("analytics")
@@ -168,7 +172,7 @@ func serveShare(w http.ResponseWriter, r *http.Request, home string) {
 			http.Error(w, "config.toml has a share key that is not a table; fix it by hand", http.StatusBadRequest)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "the config change failed; run inscribe doctor", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -211,7 +215,12 @@ func writeConfigFile(home string, data []byte) error {
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(home, ".config.toml.*")
+	path := filepath.Join(home, "config.toml")
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".config.toml.*")
 	if err != nil {
 		return err
 	}
@@ -231,7 +240,15 @@ func writeConfigFile(home string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), filepath.Join(home, "config.toml"))
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return err
+	}
+	// Some platforms cannot fsync a directory; the rename already happened.
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
 }
 
 var indexTmpl = template.Must(template.New("index").Parse(`<!doctype html>

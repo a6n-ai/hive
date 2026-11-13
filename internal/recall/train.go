@@ -17,9 +17,6 @@ const (
 	unlabelableAfter = 7 * 24 * time.Hour
 )
 
-// trainHook runs between the read and the write. Tests use it to make another writer win.
-var trainHook func()
-
 // learningReasons are the labels that move the weights. closed_unlabeled and no_lift move nothing.
 var learningReasons = map[string]bool{"full_command": true, "forgotten": true, "corrected": true, "failed": true, "sibling": true}
 
@@ -35,6 +32,11 @@ type TrainResult struct {
 // shown for one prompt in a finished session is labeled from what the agent
 // did next. The weights are what the next prompt reads. Nothing is sent to a model.
 func Train(ctx context.Context, st *store.Store, now time.Time) (TrainResult, error) {
+	return train(ctx, st, now, nil)
+}
+
+// train is Train with a hook that runs between the read and the write. Tests use it to make another writer win.
+func train(ctx context.Context, st *store.Store, now time.Time, beforeWrite func()) (TrainResult, error) {
 	w, err := LoadWeights(st)
 	if err != nil {
 		return TrainResult{}, err
@@ -109,8 +111,8 @@ func Train(ctx context.Context, st *store.Store, now time.Time) (TrainResult, er
 	}
 
 	ts := now.UnixMilli()
-	if trainHook != nil {
-		trainHook()
+	if beforeWrite != nil {
+		beforeWrite()
 	}
 	if err := st.Write(ctx, func(tx *store.Tx) error {
 		for _, l := range labeled {

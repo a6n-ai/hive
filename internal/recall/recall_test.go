@@ -354,3 +354,39 @@ func TestMarkUsedWritesShownLine(t *testing.T) {
 		t.Fatalf("outcome = (%q, %q, %q, %q)", digest, key, shown, rule)
 	}
 }
+
+func TestMarkUsedSwallowsLockHitMidWrite(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "inscribe.db")
+	st, err := store.Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	holder, err := store.Open(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Close() }()
+	held, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- holder.Write(ctx, func(*store.Tx) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	hits := []hit{{Line: Line{MemoryID: "m1", Key: "k", Text: "t"}}}
+	err = markUsed(ctx, st, hits, Query{Mode: Prompt, Session: "s1"}, now)
+	close(release)
+	if werr := <-done; werr != nil {
+		t.Fatal(werr)
+	}
+	if err != nil {
+		t.Fatalf("markUsed err = %v, want nil", err)
+	}
+	if !st.HitLock() || st.DroppedOutcomes() != 1 {
+		t.Fatalf("HitLock=%v DroppedOutcomes=%d, want true and 1", st.HitLock(), st.DroppedOutcomes())
+	}
+}

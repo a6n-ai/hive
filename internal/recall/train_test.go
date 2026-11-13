@@ -188,7 +188,7 @@ func TestTrainSecondWriterLoses(t *testing.T) {
 	}
 	id := groups[0][0].ID
 
-	trainHook = func() {
+	hook := func() {
 		if err := st.Write(context.Background(), func(tx *store.Tx) error {
 			_, err := tx.ResolveScoreOutcome(id, nil, "no_lift", 0, now.UnixMilli())
 			return err
@@ -196,9 +196,8 @@ func TestTrainSecondWriterLoses(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Cleanup(func() { trainHook = nil })
 
-	_, err = Train(context.Background(), st, now)
+	_, err = train(context.Background(), st, now, hook)
 	if !errors.Is(err, store.ErrLocked) {
 		t.Fatalf("Train err = %v, want ErrLocked", err)
 	}

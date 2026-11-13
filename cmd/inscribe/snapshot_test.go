@@ -225,3 +225,26 @@ func TestCombinePinsText(t *testing.T) {
 		t.Fatalf("Text = %v, want 1", got.Text)
 	}
 }
+
+func TestCombineEvenCountUsesMiddleAverage(t *testing.T) {
+	prior := recall.DefaultWeights()
+	t0 := time.Unix(100, 0)
+	var snaps []Snapshot
+	var mt []time.Time
+	for i, c := range []float64{0.1, 0.2, 0.9, 1.0} {
+		snaps = append(snaps, snap(string(rune('a'+i)), 100, recall.StepRule, c))
+		mt = append(mt, t0)
+	}
+	got := Combine(prior, snaps, mt)
+	if math.Abs(got.Command-0.55) > 1e-9 {
+		t.Fatalf("Command = %v, want mean 0.55 (median 0.55 is within 0.25)", got.Command)
+	}
+}
+
+func TestCombineSkipsEmptyInstallID(t *testing.T) {
+	prior := recall.DefaultWeights()
+	got := Combine(prior, []Snapshot{snap("", 100, recall.StepRule, 0.1)}, []time.Time{time.Unix(100, 0)})
+	if got.Command != prior.Command {
+		t.Fatalf("Command = %v, want prior: empty install id must be ignored", got.Command)
+	}
+}

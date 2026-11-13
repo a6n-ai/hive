@@ -38,6 +38,9 @@ func ClassifyCommand(cmd string) string {
 	return ""
 }
 
+// maxCommandLen drops pasted scripts: a real entrypoint command is short.
+const maxCommandLen = 200
+
 type commandX struct{}
 
 // NewCommand remembers the commands that work in a project.
@@ -49,7 +52,11 @@ func (commandX) Extract(_ context.Context, e *model.Event, tx *store.Tx, _ confi
 	if code, ok := intVal(e.Payload, "exit_code"); !ok || code != 0 {
 		return nil
 	}
-	cmd := NormalizeCommand(str(e.Payload, "command"))
+	raw := str(e.Payload, "command")
+	cmd := NormalizeCommand(raw)
+	if strings.ContainsAny(raw, "\n\r") || strings.Contains(raw, "<<") || len(cmd) > maxCommandLen {
+		return nil
+	}
 	class := ClassifyCommand(cmd)
 	if class == "" {
 		return nil

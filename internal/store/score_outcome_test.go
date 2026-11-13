@@ -131,3 +131,49 @@ func TestRecentScoreGroupsByLatestRow(t *testing.T) {
 		t.Fatalf("groups = %v, want d1 with 2 rows and d3 with 1", got)
 	}
 }
+
+func TestOpenScoreGroupsSkipsUnendedSessions(t *testing.T) {
+	st, _ := openTemp(t)
+	endSession(t, st, "ended")
+	if err := st.Write(context.Background(), func(tx *Tx) error {
+		return tx.TouchSession(&model.Event{TS: 800, Agent: "codex", Session: "live", Project: "/p", Kind: model.Prompt})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"live", "ended"} {
+		insertOutcome(t, st, OutcomeInput{MemoryID: "m", Session: s, Agent: "codex", TS: 100, Features: "{}", PromptDigest: "d"})
+	}
+	groups, err := st.OpenScoreGroups(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0][0].Session != "ended" {
+		t.Fatalf("groups = %+v, want only the ended session", groups)
+	}
+}
+
+func TestLabeledScoreOutcomesKeepsLastGroupsAscending(t *testing.T) {
+	st, _ := openTemp(t)
+	var ids []int64
+	for _, d := range []string{"d1", "d2", "d3"} {
+		ids = append(ids, insertOutcome(t, st, OutcomeInput{MemoryID: "m", Session: "s1", TS: 1, PromptDigest: d, LabelRule: "L1"}))
+	}
+	label := 1
+	if err := st.Write(context.Background(), func(tx *Tx) error {
+		for _, id := range ids {
+			if _, err := tx.ResolveScoreOutcome(id, &label, "full_command", 1, 500); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := st.LabeledScoreOutcomes("L1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 2 || groups[0][0].PromptDigest != "d2" || groups[1][0].PromptDigest != "d3" {
+		t.Fatalf("groups = %+v, want d2 then d3", groups)
+	}
+}
