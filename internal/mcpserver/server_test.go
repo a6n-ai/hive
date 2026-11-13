@@ -215,6 +215,9 @@ func TestMCPReachesRepoInsideWorkspace(t *testing.T) {
 	if isErr || !strings.Contains(out, "make ship") || !strings.Contains(out, "prefer rg") {
 		t.Fatalf("recall = %q, error %v", out, isErr)
 	}
+	if out, isErr := call(t, cs, "recall", map[string]any{"project": "repo/sub"}); isErr || !strings.Contains(out, "make ship") {
+		t.Fatalf("recall with a path relative to the workspace = %q, error %v", out, isErr)
+	}
 	ms, err := h.List(context.Background(), inscribe.ListFilter{Project: repo})
 	if err != nil {
 		t.Fatal(err)
@@ -232,6 +235,9 @@ func TestMCPReachesRepoInsideWorkspace(t *testing.T) {
 	}
 	if _, isErr := call(t, cs, "recall", map[string]any{"project": filepath.Dir(workspace)}); !isErr {
 		t.Fatal("recall accepted a parent of the server project")
+	}
+	if _, isErr := call(t, cs, "recall", map[string]any{"project": "repo/../.."}); !isErr {
+		t.Fatal("recall accepted a relative path that climbs out of the server project")
 	}
 }
 
@@ -251,5 +257,27 @@ func TestMCPToolsAnnotatedForAutoMode(t *testing.T) {
 		if !a.ReadOnlyHint && (a.DestructiveHint == nil || *a.DestructiveHint) {
 			t.Fatalf("%s is marked destructive", tool.Name)
 		}
+	}
+}
+
+func TestEvidenceLine(t *testing.T) {
+	cases := []struct {
+		e    model.Event
+		want string
+	}{
+		{model.Event{Kind: "prompt", PromptText: "use rg"}, "[prompt] use rg"},
+		{model.Event{Kind: "post_tool", Tool: "shell", Payload: map[string]any{"command": "make build", "exit_code": float64(2), "error": "no rule"}}, "[post_tool] shell make build (exit 2) error: no rule"},
+		{model.Event{Kind: "post_tool", Tool: "edit", Payload: map[string]any{"path": "a.go"}}, "[post_tool] edit a.go"},
+		{model.Event{Kind: "post_tool", Tool: "web", Payload: map[string]any{"url": "x.dev"}}, `[post_tool] web {"url":"x.dev"}`},
+		{model.Event{Kind: "session_start"}, "[session_start]"},
+	}
+	for _, c := range cases {
+		if got := evidenceLine(c.e); got != c.want {
+			t.Errorf("evidenceLine = %q, want %q", got, c.want)
+		}
+	}
+	long := evidenceLine(model.Event{Kind: "prompt", PromptText: strings.Repeat("é", 500)})
+	if n := len([]rune(long)); n != maxEvidence+1 || !strings.HasSuffix(long, "…") {
+		t.Errorf("long line has %d runes, want %d ending in …", n, maxEvidence+1)
 	}
 }

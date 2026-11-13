@@ -110,7 +110,8 @@ fails processing is quarantined in `spool/bad` while the rest commit.
 starts in (the git root of its working directory). Every argument except the
 text or query is optional. A tool call may name a directory inside that project,
 such as a repository under a workspace folder; it resolves to that directory's git
-root. Sibling and parent projects are refused. Recall always merges global
+root. A relative path starts at the project. Sibling and parent projects are
+refused. `why` prints one short line per evidence event. Recall always merges global
 memories, so `remember --scope global` shares a memory across projects.
 
 `import` backfills events and memories from `~/.claude/projects`; running it

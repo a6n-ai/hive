@@ -4,6 +4,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -22,6 +23,8 @@ const (
 	maxBudget  = 2000
 	maxProject = 4096
 	maxQuery   = 2000
+	// maxEvidence caps one why line so a long commit heredoc stays a glance.
+	maxEvidence = 240
 )
 
 type rememberIn struct {
@@ -66,6 +69,10 @@ func scopedProject(arg, project string) (string, error) {
 	}
 	if arg == "" || arg == project {
 		return project, nil
+	}
+	// The server's cwd is not the session's, so relative paths start at the project.
+	if !filepath.IsAbs(arg) {
+		arg = filepath.Join(project, arg)
 	}
 	root, got := capture.ResolveProject(project), capture.ResolveProject(arg)
 	if got == root {
@@ -184,10 +191,47 @@ func whyTool(h *inscribe.Inscribe, project string) mcp.ToolHandlerFor[idIn, any]
 		}
 		var b strings.Builder
 		for _, e := range evs {
-			fmt.Fprintf(&b, "%s %s\n", e.Kind, e.Tool)
+			b.WriteString(evidenceLine(e))
+			b.WriteByte('\n')
 		}
 		return textResult(b.String()), nil, nil
 	}
+}
+
+// evidenceLine renders one event for an agent reading why over MCP: enough
+// to judge whether the memory is still true, without flooding its context.
+// Events carry PromptText (prompts) or Payload (tool calls: command,
+// exit_code, file paths, ...). Payloads are already secret-scrubbed.
+func evidenceLine(e model.Event) string {
+	parts := []string{"[" + string(e.Kind) + "]"}
+	if e.Tool != "" {
+		parts = append(parts, e.Tool)
+	}
+	head := len(parts)
+	if e.PromptText != "" {
+		parts = append(parts, e.PromptText)
+	}
+	for _, k := range []string{"text", "command", "path", "skill"} {
+		if s, ok := e.Payload[k].(string); ok && s != "" {
+			parts = append(parts, s)
+		}
+	}
+	if c, ok := e.Payload["exit_code"]; ok && c != nil {
+		parts = append(parts, fmt.Sprintf("(exit %v)", c))
+	}
+	if s, ok := e.Payload["error"].(string); ok && s != "" {
+		parts = append(parts, "error: "+s)
+	}
+	// Unknown event shapes still show their payload rather than nothing.
+	if len(parts) == head && len(e.Payload) > 0 {
+		b, _ := json.Marshal(e.Payload)
+		parts = append(parts, string(b))
+	}
+	line := strings.Join(parts, " ")
+	if r := []rune(line); len(r) > maxEvidence {
+		line = string(r[:maxEvidence]) + "…"
+	}
+	return line
 }
 
 // requireMemory fails unless a memory with id exists in any status and is
