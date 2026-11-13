@@ -85,6 +85,20 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	if n := h.DroppedOutcomes(); n > 0 {
 		logLine(config.Home(), "recall: dropped %d outcome rows (store locked)", n)
 	}
+	if e.Kind == model.SessionStart {
+		rs, err := h.RecentSessions(e.Session, recentScan)
+		if err != nil {
+			logLine(config.Home(), "recent sessions: %v", err)
+		}
+		lines = append(lines, recentLines(rs, e.Project, time.Now())...)
+	}
+	ids := make([]string, 0, len(lines))
+	for _, l := range lines {
+		if l.MemoryID != "" {
+			ids = append(ids, l.MemoryID)
+		}
+	}
+	logLine(config.Home(), "%s %s %s: injected %d line(s) %v", e.Agent, event, e.Project, len(lines), ids)
 	if out := ad.Reply(event, lines); out != nil {
 		_, err = stdout.Write(out)
 	}
@@ -138,6 +152,45 @@ func hookQuery(e inscribe.Event, scrub func(string) string) (inscribe.Query, boo
 		return inscribe.Query{Project: e.Project, ErrorSignature: extract.Signature(scrub(errText)), Mode: recall.PostToolError}, true
 	}
 	return inscribe.Query{}, false
+}
+
+const (
+	recentScan       = 30  // sessions read to fill both lists below
+	recentPerList    = 3   // sessions shown for this project, and for other projects
+	recentPromptRune = 100 // a prompt is cut to this many runes
+)
+
+// recentLines lists what the user last asked in recent sessions, this
+// project's first, so a new session knows where work left off.
+func recentLines(rs []inscribe.RecentSession, project string, now time.Time) []recall.Line {
+	var here, other []recall.Line
+	for _, r := range rs {
+		where := "this project"
+		if r.Project != project {
+			where = filepath.Base(r.Project)
+		}
+		p := []rune(strings.Join(strings.Fields(r.LastPrompt), " "))
+		if len(p) > recentPromptRune {
+			p = append(p[:recentPromptRune], '…')
+		}
+		l := recall.Line{Type: "recent", Text: fmt.Sprintf("%s, %s ago: %s", where, ago(now.Sub(time.UnixMilli(r.LastEvent))), string(p))}
+		if r.Project == project && len(here) < recentPerList {
+			here = append(here, l)
+		} else if r.Project != project && len(other) < recentPerList {
+			other = append(other, l)
+		}
+	}
+	return append(here, other...)
+}
+
+func ago(d time.Duration) string {
+	switch {
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", max(int(d.Minutes()), 1))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
 // logLine appends one timestamped line to inscribe.log in home. Errors writing

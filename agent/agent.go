@@ -97,13 +97,26 @@ func UserPath(elem ...string) string {
 // ContextJSON is the hook reply that injects recalled lines into an agent's
 // context, or nil when there is nothing to inject.
 func ContextJSON(event string, lines []recall.Line) []byte {
-	if len(lines) == 0 {
+	return ContextStatusJSON(event, lines, "")
+}
+
+// ContextStatusJSON is ContextJSON plus a status line the agent shows the user,
+// for agents that support systemMessage. Empty status shows nothing.
+func ContextStatusJSON(event string, lines []recall.Line, status string) []byte {
+	reply := map[string]any{}
+	if len(lines) > 0 {
+		reply["hookSpecificOutput"] = map[string]any{
+			"hookEventName":     event,
+			"additionalContext": recall.Render(lines),
+		}
+	}
+	if status != "" {
+		reply["systemMessage"] = status
+	}
+	if len(reply) == 0 {
 		return nil
 	}
-	out, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
-		"hookEventName":     event,
-		"additionalContext": recall.Render(lines),
-	}})
+	out, err := json.Marshal(reply)
 	if err != nil {
 		return nil
 	}

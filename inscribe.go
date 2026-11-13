@@ -28,13 +28,14 @@ import (
 )
 
 type (
-	Event      = model.Event
-	Memory     = model.Memory
-	MemoryType = model.MemoryType
-	ScopeKind  = model.ScopeKind
-	Line       = recall.Line
-	Query      = recall.Query
-	ListFilter = store.ListFilter
+	Event         = model.Event
+	Memory        = model.Memory
+	MemoryType    = model.MemoryType
+	ScopeKind     = model.ScopeKind
+	Line          = recall.Line
+	Query         = recall.Query
+	ListFilter    = store.ListFilter
+	RecentSession = store.RecentSession
 )
 
 // Options selects the database and config. Empty Home means config.Home().
@@ -147,6 +148,11 @@ func (h *Inscribe) Prepare(e *Event) {
 
 // DroppedOutcomes counts score outcome rows not written because the store was locked.
 func (h *Inscribe) DroppedOutcomes() int64 { return h.store.DroppedOutcomes() }
+
+// RecentSessions returns the latest sessions other than exclude, in any project.
+func (h *Inscribe) RecentSessions(exclude string, limit int) ([]RecentSession, error) {
+	return h.store.RecentSessions(exclude, limit)
+}
 
 func (h *Inscribe) Recall(ctx context.Context, q Query) ([]Line, error) {
 	if h.index != nil {

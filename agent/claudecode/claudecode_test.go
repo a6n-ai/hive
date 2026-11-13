@@ -81,6 +81,10 @@ func TestReplyGolden(t *testing.T) {
 	if got := a.Reply("Stop", lines); len(got) != 0 {
 		t.Fatalf("Stop reply = %q, want nothing", got)
 	}
+	want := `{"systemMessage":"inscribe: loaded 0 memories, 0 recent sessions"}`
+	if got := string(a.Reply("SessionStart", nil)); got != want {
+		t.Fatalf("empty SessionStart reply = %s, want %s", got, want)
+	}
 }
 
 const bin = "/usr/local/bin/inscribe"

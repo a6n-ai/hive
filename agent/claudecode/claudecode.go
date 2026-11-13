@@ -117,9 +117,30 @@ func shellPayload(input map[string]any, failed bool, errText string) map[string]
 func (a *Adapter) Reply(event string, lines []recall.Line) []byte {
 	switch event {
 	case "SessionStart", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure":
-		return agent.ContextJSON(event, lines)
+		return agent.ContextStatusJSON(event, lines, status(event, lines))
 	}
 	return nil
+}
+
+// status is the line Claude Code shows the user: always at session start, so a
+// working install is visible, and otherwise only when something was injected.
+func status(event string, lines []recall.Line) string {
+	recent := 0
+	for _, l := range lines {
+		if l.Type == "recent" {
+			recent++
+		}
+	}
+	mems := len(lines) - recent
+	switch {
+	case event == "SessionStart":
+		return fmt.Sprintf("inscribe: loaded %d memories, %d recent sessions", mems, recent)
+	case mems == 0:
+		return ""
+	case event == "UserPromptSubmit":
+		return fmt.Sprintf("inscribe: recalled %d memories for this prompt", mems)
+	}
+	return fmt.Sprintf("inscribe: recalled %d known fix(es) for this error", mems)
 }
 
 func (a *Adapter) Capabilities() agent.Caps {
