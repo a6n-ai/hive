@@ -66,7 +66,7 @@ func train(ctx context.Context, st *store.Store, now time.Time, hold func(sessio
 	events := map[string][]model.Event{}
 	for _, rows := range open {
 		session := rows[0].Session
-		if hold != nil && hold(session) && now.Sub(time.UnixMilli(rows[0].Ended)) <= holdFor {
+		if hold != nil && now.Sub(time.UnixMilli(rows[0].Ended)) <= holdFor && hold(session) {
 			res.Open++
 			continue
 		}
