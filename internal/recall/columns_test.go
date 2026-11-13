@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/a6n-ai/inscribe/internal/store"
 	"github.com/a6n-ai/inscribe/internal/text"
 	"github.com/a6n-ai/inscribe/model"
 )
@@ -106,64 +105,20 @@ func TestRecallRecordsTheInjection(t *testing.T) {
 
 func TestTrainLearnsFromWhatTheAgentDid(t *testing.T) {
 	st := newStore(t)
-	start := DefaultWeights()
-	start.Key = 0.4
-	if err := SaveWeights(context.Background(), st, start); err != nil {
-		t.Fatal(err)
-	}
-	worked := put(t, st, model.Memory{Type: model.Command, Key: "npm run lint", Text: "check style before commit"})
-	failed := put(t, st, model.Memory{Type: model.Command, Key: "go test ./...", Text: "check style before commit"})
-	if err := st.Write(context.Background(), func(tx *store.Tx) error {
-		good, err := (Features{Key: 0.5}).marshal()
-		if err != nil {
-			return err
-		}
-		bad, err := (Features{Command: 1}).marshal()
-		if err != nil {
-			return err
-		}
-		if err := tx.InsertScoreOutcome(store.OutcomeInput{MemoryID: worked.ID, Session: "good", Agent: "codex", TS: 100, Features: good, Score: 0.2}); err != nil {
-			return err
-		}
-		if err := tx.InsertScoreOutcome(store.OutcomeInput{MemoryID: failed.ID, Session: "bad", Agent: "codex", TS: 100, Features: bad, Score: 0.9}); err != nil {
-			return err
-		}
-		if _, err := tx.InsertEvent(&model.Event{TS: 200, Agent: "codex", Session: "good", Project: "/p", Kind: model.PostTool, Digest: "good-tool",
-			Payload: map[string]any{"command": "npm run lint", "exit_code": 0}}); err != nil {
-			return err
-		}
-		if _, err := tx.InsertEvent(&model.Event{TS: 200, Agent: "codex", Session: "bad", Project: "/p", Kind: model.PostTool, Digest: "bad-tool",
-			Payload: map[string]any{"command": "go test ./...", "exit_code": 1}}); err != nil {
-			return err
-		}
-		if err := tx.TouchSession(&model.Event{TS: 300, Agent: "codex", Session: "good", Project: "/p", Kind: model.SessionEnd}); err != nil {
-			return err
-		}
-		return tx.TouchSession(&model.Event{TS: 300, Agent: "codex", Session: "bad", Project: "/p", Kind: model.SessionEnd})
-	}); err != nil {
-		t.Fatal(err)
-	}
+	seedShown(t, st, "s1", "p1",
+		shownLine{key: "npm test", text: "run the recall tests", f: Features{Key: 0.5}},
+		shownLine{key: "deploy", text: "deploy with make", f: Features{Command: 1}})
+	seedSession(t, st, "s1", promptEvent("s1", "p1"), commandEvent("s1", "c1", "npm test ./internal/recall", 0))
 
 	res, err := Train(context.Background(), st, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("labeled=%d hits=%d misses=%d quiet=%d", res.Labeled, res.Hits, res.Misses, res.Quiet)
-	t.Logf("key %.3f -> %.3f, command %.3f -> %.3f", start.Key, res.Weights.Key, start.Command, res.Weights.Command)
-	if res.Hits != 1 || res.Misses != 1 {
-		t.Fatalf("result = %+v, want one hit and one miss", res)
+	t.Logf("reasons=%v open=%d refit=%v weights=%+v", res.Reasons, res.Open, res.Refit, res.Weights)
+	if len(res.Reasons) != 2 || res.Reasons["full_command"] != 1 || res.Reasons["sibling"] != 1 {
+		t.Fatalf("reasons = %v, want full_command=1 and sibling=1", res.Reasons)
 	}
-	if res.Weights.Key <= start.Key {
-		t.Fatalf("key weight did not rise: %v", res.Weights.Key)
-	}
-	if res.Weights.Command >= start.Command {
-		t.Fatalf("command weight did not fall: %v", res.Weights.Command)
-	}
-	again, err := Train(context.Background(), st, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Labeled != 0 {
-		t.Fatalf("second pass labeled %d, want 0", again.Labeled)
+	if !res.Refit || res.Weights.Text != 1 || res.Weights.Hits != 1 || res.Weights.Misses != 0 {
+		t.Fatalf("weights = %+v, want a refit with one hit and no miss", res.Weights)
 	}
 }

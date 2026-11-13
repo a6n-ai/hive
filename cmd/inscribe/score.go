@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/store"
 )
 
 const scoreUsage = "usage: inscribe score (train|show)"
@@ -25,10 +27,24 @@ func scoreCmd(args []string, stdout io.Writer) error {
 	switch args[0] {
 	case "train":
 		res, err := h.TrainScores(context.Background(), time.Now())
+		if errors.Is(err, store.ErrLocked) {
+			_, err := fmt.Fprintln(stdout, "skipped: another writer holds the store")
+			return err
+		}
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(stdout, "labeled=%d hits=%d misses=%d quiet=%d\n", res.Labeled, res.Hits, res.Misses, res.Quiet); err != nil {
+		reasons := make([]string, 0, len(res.Reasons))
+		for r := range res.Reasons {
+			reasons = append(reasons, r)
+		}
+		sort.Strings(reasons)
+		for _, r := range reasons {
+			if _, err := fmt.Fprintf(stdout, "%s=%d\n", r, res.Reasons[r]); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintf(stdout, "open=%d\n", res.Open); err != nil {
 			return err
 		}
 		return writeWeights(stdout, res.Weights)

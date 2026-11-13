@@ -2,8 +2,6 @@ package recall
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"strings"
 	"time"
 
@@ -12,86 +10,151 @@ import (
 	"github.com/a6n-ai/inscribe/model"
 )
 
+const (
+	openGroupBatch = 500
+	replayGroups   = 5000
+)
+
+// trainHook runs between the read and the write. Tests use it to make another writer win.
+var trainHook func()
+
+// learningReasons are the labels that move the weights. closed_unlabeled and no_lift move nothing.
+var learningReasons = map[string]bool{"full_command": true, "forgotten": true, "corrected": true, "failed": true, "sibling": true}
+
 // TrainResult is one idle pass over injections whose session has already ended.
 type TrainResult struct {
-	Labeled int
-	Hits    int
-	Misses  int
-	Quiet   int
+	Reasons map[string]int // labels this pass resolved, by reason
+	Open    int            // groups left unresolved: the prompt is not in the events yet
+	Refit   bool
 	Weights Weights
 }
 
-// Train is the sleep-time pass. The agent is not waiting. Each injection from
-// a finished session is labeled from what the agent did next: a later command
-// that shared the memory and succeeded, a correction or a failure, or a
-// memory the user forgot. The weights are what the next prompt reads.
-// Nothing is sent to a model.
+// Train is the sleep-time pass. The agent is not waiting. Each group of lines
+// shown for one prompt in a finished session is labeled from what the agent
+// did next. The weights are what the next prompt reads. Nothing is sent to a model.
 func Train(ctx context.Context, st *store.Store, now time.Time) (TrainResult, error) {
 	w, err := LoadWeights(st)
 	if err != nil {
 		return TrainResult{}, err
 	}
-	open, err := st.OpenScoreOutcomes(500)
+	open, err := st.OpenScoreGroups(openGroupBatch)
 	if err != nil {
 		return TrainResult{}, err
 	}
-	var res TrainResult
-	for _, o := range open {
-		f, err := parseFeatures(o.Features)
-		if err != nil {
-			return TrainResult{}, err
-		}
-		y, ok, err := labelOutcome(st, o)
-		if err != nil {
-			return TrainResult{}, err
-		}
-		var label *int
-		if ok {
-			bit := 0
-			if y >= 0.5 {
-				bit = 1
-				res.Hits++
-				w.Hits++
-			} else {
-				res.Misses++
-				w.Misses++
+	res := TrainResult{Reasons: map[string]int{}}
+	var labeled []Labeled
+	var fresh [][]store.ScoreOutcome
+	events := map[string][]model.Event{}
+	for _, rows := range open {
+		session := rows[0].Session
+		evs, cached := events[session]
+		if !cached {
+			if evs, err = st.SessionEvents(session); err != nil {
+				return TrainResult{}, err
 			}
-			label = &bit
-			w = learn(w, f, y)
-			w.Seen++
-			res.Labeled++
-		} else {
-			res.Quiet++
+			events[session] = evs
 		}
-		id, lab, ts := o.ID, label, now.UnixMilli()
-		if err := st.Write(ctx, func(tx *store.Tx) error {
-			_, err := tx.ResolveScoreOutcome(id, lab, "", 1, ts)
-			return err
-		}); err != nil {
+		labels, ok, err := LabelGroup(rows, evs, rows[0].Ended, st.ForgetTime, w)
+		if err != nil {
 			return TrainResult{}, err
 		}
+		if !ok {
+			res.Open++
+			continue
+		}
+		g := make([]store.ScoreOutcome, len(rows))
+		for i, r := range rows {
+			l := labels[i]
+			res.Reasons[l.Reason]++
+			labeled = append(labeled, l)
+			r.Label, r.Reason, r.Scale = l.Label, l.Reason, l.Scale
+			g[i] = r
+		}
+		fresh = append(fresh, g)
 	}
-	if res.Labeled > 0 {
-		if err := SaveWeights(ctx, st, w); err != nil {
-			return TrainResult{}, err
+
+	refit := w.StepRule != StepRule
+	for _, l := range labeled {
+		if learningReasons[l.Reason] {
+			refit = true
 		}
 	}
-	res.Weights = w
+	if refit {
+		replay, err := st.LabeledScoreOutcomes(LabelRule, replayGroups)
+		if err != nil {
+			return TrainResult{}, err
+		}
+		groups, err := refitGroups(replay, fresh)
+		if err != nil {
+			return TrainResult{}, err
+		}
+		w = Refit(DefaultWeights(), groups)
+	}
+	res.Refit, res.Weights = refit, w
+	if len(labeled) == 0 && !refit {
+		return res, nil
+	}
+
+	ts := now.UnixMilli()
+	if trainHook != nil {
+		trainHook()
+	}
+	if err := st.Write(ctx, func(tx *store.Tx) error {
+		for _, l := range labeled {
+			n, err := tx.ResolveScoreOutcome(l.ID, l.Label, l.Reason, l.Scale, ts)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return store.ErrLocked
+			}
+		}
+		if refit {
+			return SaveWeightsTx(tx, w)
+		}
+		return nil
+	}); err != nil {
+		return TrainResult{}, err
+	}
 	return res, nil
 }
 
-func learn(w Weights, f Features, y float64) Weights {
-	pred := blend(f, w)
-	step := 0.25 * (y - pred)
-	w.Text = clamp(w.Text+step*f.Text, 0.5, 2)
-	w.Key = clamp(w.Key+step*f.Key, 0, 2)
-	w.Body = clamp(w.Body+step*f.Body, 0, 2)
-	w.Type = clamp(w.Type+step*f.Type, 0, 2)
-	w.Scope = clamp(w.Scope+step*f.Scope, 0, 2)
-	w.Agent = clamp(w.Agent+step*f.Agent, 0, 2)
-	w.Command = clamp(w.Command+step*f.Command, 0, 2)
-	w.Trajectory = clamp(w.Trajectory+step*f.Trajectory, 0, 2)
-	return w
+// refitGroups merges this pass's labels into the replay set by (session, prompt
+// digest) and keeps the last replayGroups groups that carry a learning label.
+func refitGroups(replay, fresh [][]store.ScoreOutcome) ([]Group, error) {
+	type key struct{ session, digest string }
+	index := map[key]int{}
+	var merged [][]store.ScoreOutcome
+	for _, g := range append(replay, fresh...) {
+		k := key{g[0].Session, g[0].PromptDigest}
+		if i, ok := index[k]; ok {
+			merged[i] = append(merged[i], g...)
+			continue
+		}
+		index[k] = len(merged)
+		merged = append(merged, g)
+	}
+	var groups []Group
+	for _, g := range merged {
+		var grp Group
+		for _, r := range g {
+			if r.Label == nil || !learningReasons[r.Reason] {
+				continue
+			}
+			f, err := parseFeatures(r.Features)
+			if err != nil {
+				return nil, err
+			}
+			grp = append(grp, Row{F: f, Label: *r.Label, Reason: r.Reason, Scale: r.Scale})
+		}
+		if len(grp) > 0 {
+			groups = append(groups, grp)
+		}
+	}
+	if len(groups) > replayGroups {
+		groups = groups[len(groups)-replayGroups:]
+	}
+	return groups, nil
 }
 
 func clamp(v, lo, hi float64) float64 {
@@ -102,48 +165,6 @@ func clamp(v, lo, hi float64) float64 {
 		return hi
 	}
 	return v
-}
-
-// labelOutcome reports whether the injection worked. ok is false when the
-// session ended without a related command, correction, or forget.
-func labelOutcome(st *store.Store, o store.ScoreOutcome) (float64, bool, error) {
-	m, err := st.GetMemory(o.MemoryID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, true, nil
-		}
-		return 0, false, err
-	}
-	if m.Status == model.Forgotten {
-		return 0, true, nil
-	}
-	events, err := st.SessionEvents(o.Session)
-	if err != nil {
-		return 0, false, err
-	}
-	var last *bool
-	for _, e := range events {
-		if e.TS < o.TS || !related(*m, e) {
-			continue
-		}
-		if e.Kind == model.Correction {
-			return 0, true, nil
-		}
-		if e.Kind == model.PostTool || e.Kind == model.CommandResult {
-			ok := succeeded(e)
-			if !ok && !failed(e) {
-				continue
-			}
-			last = &ok
-		}
-	}
-	if last == nil {
-		return 0, false, nil
-	}
-	if *last {
-		return 1, true, nil
-	}
-	return 0, true, nil
 }
 
 func related(m model.Memory, e model.Event) bool {
