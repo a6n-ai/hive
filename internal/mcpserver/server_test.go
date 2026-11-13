@@ -565,6 +565,41 @@ func TestMCPFeedbackBadItemWritesNothing(t *testing.T) {
 	}
 }
 
+// Each refused call pairs a valid first item with one bad item, so a partial
+// write would show. The ask must stay open for the valid call that follows.
+func TestMCPFeedbackRefusedItemsWriteNothing(t *testing.T) {
+	proj := t.TempDir()
+	home := feedbackHome(t)
+	h := openAt(t, home, proj)
+	cs := connect(t, h, proj)
+	ids := rememberAll(t, h, proj, "deploy make target alpha", "deploy make target bravo", "deploy make target charlie", "deploy make target delta")
+	askID := askRound(t, h, proj, "s1", "d1", time.Now())
+	valid := map[string]any{"id": ids[0], "used": "no", "helpful": "wrong"}
+	bad := map[string]map[string]any{
+		"duplicate id":       {"id": ids[0], "used": "no", "helpful": "no"},
+		"bad used":           {"id": ids[1], "used": "maybe", "helpful": "yes"},
+		"bad helpful":        {"id": ids[1], "used": "no", "helpful": "maybe"},
+		"how over 200 runes": {"id": ids[1], "used": "yes", "helpful": "yes", "how": strings.Repeat("h", 201)},
+	}
+	for name, item := range bad {
+		args := feedbackItems(valid, item)
+		args["ask"] = askID
+		if _, isErr := call(t, cs, "feedback", args); !isErr {
+			t.Fatalf("%s: refused item accepted", name)
+		}
+		for _, o := range outcomes(t, home) {
+			if o.Resolved.Valid || o.Label.Valid {
+				t.Fatalf("%s: row written by a refused call: %+v", name, o)
+			}
+		}
+	}
+	args := feedbackItems(valid)
+	args["ask"] = askID
+	if _, isErr := call(t, cs, "feedback", args); isErr {
+		t.Fatal("ask was answered by a refused call")
+	}
+}
+
 func TestMCPFeedbackForgottenMemoryWritesNothing(t *testing.T) {
 	proj := t.TempDir()
 	home := feedbackHome(t)
