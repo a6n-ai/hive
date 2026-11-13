@@ -189,16 +189,21 @@ func lineIndent(s string, ls int) int {
 // valueEnd returns the end of the value starting at i. A quoted value ends at
 // its closing quote. After a quoted key (JSON) an unquoted value ends at , }
 // or a line break. Otherwise it runs to the end of the line, except that a
-// key=value shell assignment also stops before &&, ;, | or a following KEY=.
+// key=value shell assignment also stops before &&, ;, | or a following KEY=, but only when whitespace precedes the separator (or follows ;).
 func valueEnd(s string, i int, quotedKey, shell bool) int {
 	if i >= len(s) {
 		return i
 	}
 	if q := s[i]; q == '"' || q == '\'' {
-		return quotedEnd(s, i, q)
+		e := quotedEnd(s, i, q)
+		if quotedKey || shell || s[e-1] != q {
+			return e
+		}
+		// Text after a closed quote on a plain key is redacted too, so a rescrub is stable.
+		return valueEnd(s, e, false, false)
 	}
 	j := i
-	for j < len(s) && !valueStop(s, j, quotedKey, shell) {
+	for j < len(s) && !valueStop(s, i, j, quotedKey, shell) {
 		j++
 	}
 	for j > i && (s[j-1] == ' ' || s[j-1] == '\t') {
@@ -207,7 +212,9 @@ func valueEnd(s string, i int, quotedKey, shell bool) int {
 	return j
 }
 
-func valueStop(s string, j int, quotedKey, shell bool) bool {
+func isSpace(c byte) bool { return c == ' ' || c == '\t' }
+
+func valueStop(s string, i, j int, quotedKey, shell bool) bool {
 	switch c := s[j]; {
 	case c == '\n' || c == '\r':
 		return true
@@ -215,10 +222,10 @@ func valueStop(s string, j int, quotedKey, shell bool) bool {
 		return c == ',' || c == '}'
 	case !shell:
 		return false
-	case c == ';' || c == '|':
-		return true
-	case c == '&':
-		return j+1 < len(s) && s[j+1] == '&'
+	case c == ';' && j > i:
+		return isSpace(s[j-1]) || j+1 >= len(s) || isSpace(s[j+1]) || s[j+1] == '\n' || s[j+1] == '\r'
+	case c == '|' && j > i, c == '&' && j > i && j+1 < len(s) && s[j+1] == '&':
+		return isSpace(s[j-1])
 	case c == ' ' || c == '\t':
 		return shellAssign.MatchString(s[j:min(len(s), j+maxHeaderSpan)])
 	}

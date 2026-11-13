@@ -439,3 +439,61 @@ func TestValueBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestGluedSeparatorCorpus(t *testing.T) {
+	s, err := New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := []string{"password", "secret", "token", "api_key", "DB_PASSWORD", "auth"}
+	seps := []string{"=", ": ", `": `, " = ", ":"}
+	vals := []string{"hun2zz;qq9x", "hun2zz|qq9x", "hun2zz&&qq9x", "hun2zz&qq9x", "hun2zz#qq9x",
+		"hun2zz'qq9x", "hun2zz\"qq9x", "hun2zz]qq9x", "hun2zz,qq9x", "hun2zz}qq9x", "[REDACTED:assignment]qq9x",
+		"hun2zz)qq9x", "hun2zz`qq9x", "hun2zz<qq9x", "|\n  hun2zz\n  qq9x"}
+	for _, k := range keys {
+		for _, sp := range seps {
+			for _, v := range vals {
+				pre := k
+				if strings.HasPrefix(sp, `"`) {
+					pre = `{"` + k
+				}
+				in := pre + sp + v + "\nnext: ok"
+				out, _ := s.Scrub(in)
+				if strings.Contains(out, "hun2zz") || strings.Contains(out, "qq9x") && !strings.Contains(v, "[REDACTED") && !strings.HasPrefix(sp, `"`) {
+					t.Errorf("leak: %q -> %q", in, out)
+				}
+				out2, f2 := s.Scrub(out)
+				if out2 != out || len(f2) != 0 {
+					t.Errorf("unstable: %q -> %q -> %q (%d)", in, out, out2, len(f2))
+				}
+			}
+		}
+	}
+}
+
+func TestSeparatorFindings(t *testing.T) {
+	s, err := New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ in, want string }{
+		{"password=a;b", "password=[REDACTED:assignment]"},
+		{"K_SECRET=hun2zz|qq9x", "K_SECRET=[REDACTED:assignment]"},
+		{"K_TOKEN=abc&&def", "K_TOKEN=[REDACTED:assignment]"},
+		{"password=|\n  hun2zz\n  qq9x\nnext: ok", "password=[REDACTED:assignment]\nnext: ok"},
+		{"TOKEN=abc123 && make build", "TOKEN=[REDACTED:assignment] && make build"},
+		{"TOKEN=abc123 ; make", "TOKEN=[REDACTED:assignment] ; make"},
+		{"TOKEN=abc123 | base64", "TOKEN=[REDACTED:assignment] | base64"},
+		{`password: "abc" trailing`, "password: [REDACTED:assignment]"},
+		{"password: 'abc' then words", "password: [REDACTED:assignment]"},
+	} {
+		out, _ := s.Scrub(c.in)
+		if out != c.want {
+			t.Errorf("%q -> %q, want %q", c.in, out, c.want)
+		}
+		out2, f2 := s.Scrub(out)
+		if out2 != out || len(f2) != 0 {
+			t.Errorf("unstable %q -> %q (%d)", out, out2, len(f2))
+		}
+	}
+}
