@@ -218,7 +218,7 @@ func FitBudget(lines []Line, budget int) []Line { return withinBudget(lines, bud
 func withinBudget(lines []Line, budget, maxLines int) []Line {
 	used := 0
 	for i, l := range lines {
-		cost := estimateTokens(renderLine(l))
+		cost := EstimateTokens(renderLine(l))
 		if (budget > 0 && used+cost > budget) || (maxLines > 0 && i >= maxLines) {
 			return lines[:i]
 		}
@@ -230,7 +230,7 @@ func withinBudget(lines []Line, budget, maxLines int) []Line {
 func trimHits(hits []hit, budget, maxLines int) []hit {
 	used := 0
 	for i, h := range hits {
-		cost := estimateTokens(renderLine(h.Line))
+		cost := EstimateTokens(renderLine(h.Line))
 		if (budget > 0 && used+cost > budget) || (maxLines > 0 && i >= maxLines) {
 			return hits[:i]
 		}

@@ -62,7 +62,7 @@ func cfg() config.RecallCfg { return config.Defaults().Recall }
 func tokens(lines []Line) int {
 	n := 0
 	for _, l := range lines {
-		n += estimateTokens(renderLine(l))
+		n += EstimateTokens(renderLine(l))
 	}
 	return n
 }
