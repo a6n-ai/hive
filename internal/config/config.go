@@ -217,9 +217,12 @@ func validate(c Config) error {
 		}
 		return nil
 	}
-	var holdoutErr, idleErr error
-	if h := c.Stats.Holdout; h < 0 || h > 0.5 {
+	var holdoutErr, sampleErr, idleErr error
+	if h := c.Stats.Holdout; !(h >= 0 && h <= 0.5) {
 		holdoutErr = fmt.Errorf("stats.holdout = %v: allowed range is 0 to 0.5", h)
+	}
+	if c.Stats.HoldoutMinSample <= 0 {
+		sampleErr = fmt.Errorf("stats.holdout_min_sample = %d: must be at least 1", c.Stats.HoldoutMinSample)
 	}
 	if c.Stats.IdleMinutes < 1 {
 		idleErr = fmt.Errorf("stats.idle_minutes = %d: must be at least 1", c.Stats.IdleMinutes)
@@ -229,6 +232,7 @@ func validate(c Config) error {
 		check("retention.prompt_clock", c.Retention.PromptClock, "original", "stored"),
 		check("skills.enabled", string(c.Skills.Enabled), "auto", "true", "false"),
 		holdoutErr,
+		sampleErr,
 		idleErr,
 	)
 }

@@ -175,16 +175,21 @@ func TestStatsDefaults(t *testing.T) {
 
 func TestStatsValidate(t *testing.T) {
 	for body, wantErr := range map[string]bool{
-		"[stats]\nholdout = -0.1\n":   true,
-		"[stats]\nholdout = 0.6\n":    true,
-		"[stats]\nholdout = 0.5\n":    false,
-		"[stats]\nidle_minutes = 0\n": true,
+		"[stats]\nholdout = -0.1\n":         true,
+		"[stats]\nholdout = 0.6\n":          true,
+		"[stats]\nholdout = 0.5\n":          false,
+		"[stats]\nidle_minutes = 0\n":       true,
+		"[stats]\nholdout_min_sample = 0\n": true,
+		"[stats]\nholdout = nan\n":          true,
 	} {
 		home := t.TempDir()
 		write(t, filepath.Join(home, "config.toml"), body)
 		_, _, err := Load(home, "")
 		if (err != nil) != wantErr {
 			t.Fatalf("%q: err = %v, wantErr %v", body, err, wantErr)
+		}
+		if wantErr && strings.Contains(body, "holdout") && !strings.Contains(err.Error(), "stats.holdout") {
+			t.Fatalf("%q: err = %v, want stats.holdout in text", body, err)
 		}
 	}
 }
