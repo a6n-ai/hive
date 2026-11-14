@@ -16,6 +16,7 @@ import (
 
 	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/internal/consolidate"
+	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/model"
 	_ "modernc.org/sqlite"
 )
@@ -1029,5 +1030,89 @@ func TestSessionStartClosesStalledLiveSession(t *testing.T) {
 	run("next", "SessionStart")
 	if !endedOf(t, home, "stalled-tab") {
 		t.Fatal("a session silent for 2h stayed open because its process is alive")
+	}
+}
+
+func systemMessage(t *testing.T, out string) string {
+	t.Helper()
+	var reply struct {
+		SystemMessage string `json:"systemMessage"`
+	}
+	if err := json.Unmarshal([]byte(out), &reply); err != nil {
+		t.Fatalf("reply %q: %v", out, err)
+	}
+	return reply.SystemMessage
+}
+
+func injectionRows(t *testing.T, home, hook string) (ids string, estTokens int, n int) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.QueryRow(`SELECT count(*) FROM injections WHERE hook = ?`, hook).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n > 0 {
+		if err := db.QueryRow(`SELECT memory_ids, est_tokens FROM injections WHERE hook = ? ORDER BY id DESC LIMIT 1`, hook).Scan(&ids, &estTokens); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return ids, estTokens, n
+}
+
+func finishedSession(t *testing.T, home, proj, session string) {
+	t.Helper()
+	hookOK(t, home, map[string]any{"session_id": session, "cwd": proj, "hook_event_name": "UserPromptSubmit", "prompt": "deploy notes"}, "UserPromptSubmit")
+	hookOK(t, home, map[string]any{"session_id": session, "cwd": proj, "hook_event_name": "SessionEnd"}, "SessionEnd")
+}
+
+func TestAnalyticsSessionStartSummary(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	finishedSession(t, home, proj, "old")
+	out := hookOK(t, home, map[string]any{"session_id": "new", "cwd": proj, "hook_event_name": "SessionStart"}, "SessionStart")
+	ctx := additionalContext(t, out)
+	if !strings.Contains(ctx, "[inscribe] last 7d:") {
+		t.Fatalf("additionalContext = %q", ctx)
+	}
+	if msg := systemMessage(t, out); !strings.Contains(msg, " · last 7d:") {
+		t.Fatalf("systemMessage = %q", msg)
+	}
+	_, est, n := injectionRows(t, home, "SessionStart")
+	if n != 1 || est != recall.EstimateTokens(ctx) {
+		t.Fatalf("rows = %d, est_tokens = %d, want 1 and %d", n, est, recall.EstimateTokens(ctx))
+	}
+}
+
+func TestPromptInjectionRecorded(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	a := strings.TrimSpace(runOK(t, home, "", "remember", "run migrations before deploying staging", "--type", "note", "--scope", "global"))
+	b := strings.TrimSpace(runOK(t, home, "", "remember", "run migrations before deploying production", "--type", "note", "--scope", "global"))
+	out := hookOK(t, home, map[string]any{"session_id": "p1", "cwd": proj, "hook_event_name": "UserPromptSubmit",
+		"prompt": "run migrations before deploying"}, "UserPromptSubmit")
+	ctx := additionalContext(t, out)
+	ids, est, n := injectionRows(t, home, "UserPromptSubmit")
+	if n != 1 || est != recall.EstimateTokens(ctx) {
+		t.Fatalf("rows = %d, est_tokens = %d, context %q", n, est, ctx)
+	}
+	var got []string
+	if err := json.Unmarshal([]byte(ids), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !(got[0] == a && got[1] == b || got[0] == b && got[1] == a) {
+		t.Fatalf("memory_ids = %v, want %s and %s", got, a, b)
+	}
+}
+
+func TestSessionLineOff(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("[stats]\nsession_line = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	finishedSession(t, home, proj, "old")
+	out := hookOK(t, home, map[string]any{"session_id": "new", "cwd": proj, "hook_event_name": "SessionStart"}, "SessionStart")
+	if strings.Contains(out, "[inscribe]") || strings.Contains(systemMessage(t, out), " · ") {
+		t.Fatalf("reply = %q", out)
 	}
 }

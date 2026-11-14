@@ -106,10 +106,10 @@ func ContextJSON(event string, lines []recall.Line) []byte {
 // for agents that support systemMessage. Empty status shows nothing.
 func ContextStatusJSON(event string, lines []recall.Line, status string) []byte {
 	reply := map[string]any{}
-	if len(lines) > 0 {
+	if ctx := recall.Render(lines); ctx != "" {
 		reply["hookSpecificOutput"] = map[string]any{
 			"hookEventName":     event,
-			"additionalContext": recall.Render(lines),
+			"additionalContext": ctx,
 		}
 	}
 	if status != "" {

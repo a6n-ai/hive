@@ -17,6 +17,7 @@ import (
 	"github.com/a6n-ai/inscribe/internal/extract"
 	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/store"
 	"github.com/a6n-ai/inscribe/model"
 )
 
@@ -103,6 +104,13 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 			logLine(config.Home(), "recent sessions: %v", err)
 		}
 		lines = append(lines, recentLines(rs, e.Project, time.Now())...)
+		if h.StatsConfig().SessionLine {
+			if s, err := h.SessionLine(e.Project); err != nil {
+				logLine(config.Home(), "session line: %v", err)
+			} else {
+				lines = append(lines, recall.Line{Type: "inscribe", Text: s})
+			}
+		}
 	}
 	ids := make([]string, 0, len(lines))
 	for _, l := range lines {
@@ -111,8 +119,30 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 		}
 	}
 	logLine(config.Home(), "%s %s %s: injected %d line(s) %v", e.Agent, event, e.Project, len(lines), ids)
+	if len(lines) > 0 {
+		in := store.InjectionInput{
+			TS: e.TS, Session: e.Session, Agent: e.Agent, Project: e.Project,
+			Hook: injectionHooks[e.Kind], LineCount: len(lines),
+			EstTokens: recall.EstimateTokens(recall.Render(lines)), MemoryIDs: ids,
+		}
+		switch e.Kind {
+		case model.Prompt:
+			in.PromptDigest = e.Digest
+		case model.PostTool:
+			in.Tool = e.Tool
+		}
+		if err := h.RecordInjection(ctx, in); err != nil {
+			logLine(config.Home(), "record injection: %v", err)
+		}
+	}
 	out, asked := askFeedback(ctx, h, ad, event, e, saved, ad.Reply(event, lines))
 	return writeDebug(stdout, h, ad, event, e, out, lines, saved, asked)
+}
+
+var injectionHooks = map[model.EventKind]string{
+	model.SessionStart: "SessionStart",
+	model.Prompt:       "UserPromptSubmit",
+	model.PostTool:     "PostToolUseFailure",
 }
 
 // askEvents are the Claude Code events whose reply can carry additionalContext.

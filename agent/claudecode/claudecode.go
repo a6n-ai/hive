@@ -126,16 +126,22 @@ func (a *Adapter) Reply(event string, lines []recall.Line) []byte {
 // every prompt, so a working install is visible, and on tool events only when a
 // fix was injected, since those fire on every tool call.
 func status(event string, lines []recall.Line) string {
-	recent := 0
+	recent, summary := 0, ""
 	for _, l := range lines {
-		if l.Type == "recent" {
+		switch l.Type {
+		case "recent":
 			recent++
+		case "inscribe":
+			summary = " · " + l.Text
 		}
 	}
 	mems := len(lines) - recent
+	if summary != "" {
+		mems--
+	}
 	switch {
 	case event == "SessionStart":
-		return fmt.Sprintf("inscribe: loaded %d memories, %d recent sessions", mems, recent)
+		return fmt.Sprintf("inscribe: loaded %d memories, %d recent sessions%s", mems, recent, summary)
 	case event == "UserPromptSubmit":
 		return fmt.Sprintf("inscribe: recalled %d memories for this prompt", mems)
 	case mems == 0:

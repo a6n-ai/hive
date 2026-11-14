@@ -3,6 +3,8 @@ package agent
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/a6n-ai/inscribe/internal/recall"
 )
 
 func TestAddContext(t *testing.T) {
@@ -32,5 +34,15 @@ func TestAddContext(t *testing.T) {
 	}
 	if reply["systemMessage"] != "status" {
 		t.Fatalf("systemMessage = %v", reply["systemMessage"])
+	}
+}
+
+func TestContextJSONEmptyRender(t *testing.T) {
+	if got := ContextJSON("SessionStart", []recall.Line{{Type: "holdout"}}); got != nil {
+		t.Fatalf("got %s", got)
+	}
+	got := ContextStatusJSON("SessionStart", []recall.Line{{Type: "holdout"}}, "hi")
+	if string(got) != `{"systemMessage":"hi"}` {
+		t.Fatalf("got %s", got)
 	}
 }

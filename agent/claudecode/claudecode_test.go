@@ -271,3 +271,12 @@ func TestReinstallFromNewPathReplaces(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusSessionStartWithSummary(t *testing.T) {
+	sum := "last 7d: 4/9 prompt lines hit, 1.2k tok injected, 3 next-try fixes"
+	lines := []recall.Line{{Type: "command", MemoryID: "m1"}, {Type: "recent"}, {Type: "recent"}, {Type: "inscribe", Text: sum}}
+	want := "inscribe: loaded 1 memories, 2 recent sessions · " + sum
+	if got := status("SessionStart", lines); got != want {
+		t.Fatalf("status = %q, want %q", got, want)
+	}
+}
