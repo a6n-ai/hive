@@ -1,7 +1,11 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
+
+	"github.com/a6n-ai/inscribe/model"
 )
 
 type Window struct {
@@ -165,4 +169,76 @@ func (s *Store) PromptIndex(session string, before int64) (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT count(*) FROM events WHERE session = ? AND kind = 'prompt' AND ts < ?`, session, before).Scan(&n)
 	return n, err
+}
+
+// EventsIn returns one session's events with from <= ts <= to, oldest first.
+func (s *Store) EventsIn(session string, from, to int64) ([]model.Event, error) {
+	rows, err := s.db.Query(eventSelect+` WHERE e.session = ? AND e.ts >= ? AND e.ts <= ? ORDER BY e.ts, e.id`, session, from, to)
+	if err != nil {
+		return nil, err
+	}
+	return scanEvents(rows)
+}
+
+type Hit struct {
+	MemoryID, Session, Reason string
+	TS                        int64
+}
+
+// HitsIn returns outcomes labeled 1 with ts in [w.From, w.To); an empty Project means all.
+func (s *Store) HitsIn(w Window) ([]Hit, error) {
+	rows, err := s.db.Query(`SELECT o.memory_id, o.session, o.reason, o.ts
+		FROM score_outcomes o JOIN sessions s ON s.id = o.session
+		WHERE o.label = 1 AND o.ts >= ? AND o.ts < ? AND (? = '' OR s.project = ?)
+		ORDER BY o.ts, o.id`, w.From, w.To, w.Project, w.Project)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Hit
+	for rows.Next() {
+		var h Hit
+		if err := rows.Scan(&h.MemoryID, &h.Session, &h.Reason, &h.TS); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+type OutcomeCount struct {
+	Reason string
+	Label  int
+	N      int
+}
+
+// OutcomeCounts counts outcomes in the window by reason and label; Label is -1 for unlabeled.
+func (s *Store) OutcomeCounts(w Window) ([]OutcomeCount, error) {
+	rows, err := s.db.Query(`SELECT o.reason, coalesce(o.label, -1), count(*)
+		FROM score_outcomes o JOIN sessions s ON s.id = o.session
+		WHERE o.ts >= ? AND o.ts < ? AND (? = '' OR s.project = ?)
+		GROUP BY 1, 2 ORDER BY 1, 2`, w.From, w.To, w.Project, w.Project)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []OutcomeCount
+	for rows.Next() {
+		var c OutcomeCount
+		if err := rows.Scan(&c.Reason, &c.Label, &c.N); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// MemoryText returns a memory's text, or "" when it is gone.
+func (s *Store) MemoryText(id string) (string, error) {
+	var t string
+	err := s.db.QueryRow(`SELECT text FROM memories WHERE id = ?`, id).Scan(&t)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return t, err
 }

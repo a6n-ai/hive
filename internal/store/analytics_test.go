@@ -366,3 +366,95 @@ func TestSessionsToIngestSkipsMissingWithoutNewerEvent(t *testing.T) {
 		t.Fatalf("got %v err %v, want 1 after a newer event", got, err)
 	}
 }
+
+func seedOutcomes(t *testing.T, st *Store) {
+	t.Helper()
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		for i, s := range []struct{ id, project string }{{"a", "p"}, {"b", "q"}} {
+			if err := tx.TouchSession(&model.Event{TS: 1, Agent: "claude-code", Session: s.id, Project: s.project, Kind: model.PostTool, Digest: string(rune('x' + i))}); err != nil {
+				return err
+			}
+		}
+		for _, o := range []struct {
+			mem, sess, reason string
+			ts                int64
+			label             any
+		}{
+			{"m1", "a", "agent", 10, 1}, {"m2", "a", "agent", 11, 0}, {"m3", "a", "full_command", 12, 1},
+			{"m4", "a", "", 13, nil}, {"m5", "b", "review", 14, 1}, {"m6", "a", "agent", 20, 1},
+		} {
+			if _, err := tx.tx.Exec(`INSERT INTO score_outcomes(memory_id, session, ts, features, score, label, reason) VALUES (?, ?, ?, '', 0, ?, ?)`,
+				o.mem, o.sess, o.ts, o.label, o.reason); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHitsIn(t *testing.T) {
+	st, _ := openTemp(t)
+	seedOutcomes(t, st)
+	got, err := st.HitsIn(Window{From: 10, To: 20, Project: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Hit{{"m1", "a", "agent", 10}, {"m3", "a", "full_command", 12}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	if all, _ := st.HitsIn(Window{From: 10, To: 20}); len(all) != 3 {
+		t.Fatalf("all projects = %+v, want 3", all)
+	}
+}
+
+func TestOutcomeCounts(t *testing.T) {
+	st, _ := openTemp(t)
+	seedOutcomes(t, st)
+	got, err := st.OutcomeCounts(Window{From: 10, To: 20, Project: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []OutcomeCount{{"", -1, 1}, {"agent", 0, 1}, {"agent", 1, 1}, {"full_command", 1, 1}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestEventsInInclusiveAndMemoryText(t *testing.T) {
+	st, _ := openTemp(t)
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		for i, ts := range []int64{5, 10, 20, 25} {
+			if _, err := tx.InsertEvent(&model.Event{TS: ts, Agent: "claude-code", Session: "s", Project: "p", Kind: model.PostTool, Digest: string(rune('a' + i))}); err != nil {
+				return err
+			}
+		}
+		_, err := tx.InsertEvent(&model.Event{TS: 15, Agent: "claude-code", Session: "other", Project: "p", Kind: model.PostTool, Digest: "z"})
+		if err != nil {
+			return err
+		}
+		_, err = tx.UpsertMemory(&model.Memory{Type: model.Fix, ScopeKind: model.ProjectScope, Scope: "p", Key: "k", Text: "hello",
+			Confidence: 0.5, Status: model.Active, FirstSeen: 1, LastSeen: 1}, nil, 0)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, err := st.EventsIn("s", 10, 20)
+	if err != nil || len(evs) != 2 || evs[0].TS != 10 || evs[1].TS != 20 {
+		t.Fatalf("got %+v err=%v, want ts 10 and 20", evs, err)
+	}
+	var id string
+	if err := st.db.QueryRow(`SELECT id FROM memories`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if txt, err := st.MemoryText(id); err != nil || txt != "hello" {
+		t.Fatalf("text %q err %v", txt, err)
+	}
+	if txt, err := st.MemoryText("gone"); err != nil || txt != "" {
+		t.Fatalf("gone: %q %v", txt, err)
+	}
+}
