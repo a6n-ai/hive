@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,7 @@ func TestDefaultsWithNoFiles(t *testing.T) {
 		Skills:      SkillsCfg{Enabled: "auto", Enrich: []string{}},
 		Scrub:       ScrubCfg{Patterns: []string{}},
 		Exclude:     ExcludeCfg{Paths: []string{}},
+		Stats:       StatsCfg{SessionLine: true, HoldoutMinSample: 100, IdleMinutes: 5},
 	}
 	if !reflect.DeepEqual(c, want) {
 		t.Fatalf("defaults:\n got  %+v\n want %+v", c, want)
@@ -158,5 +160,47 @@ func TestHome(t *testing.T) {
 	h, _ := os.UserHomeDir()
 	if Home() != filepath.Join(h, ".inscribe") {
 		t.Fatal(Home())
+	}
+}
+
+func TestStatsDefaults(t *testing.T) {
+	c, _, err := Load(t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (StatsCfg{true, 0, 100, 5}); c.Stats != want {
+		t.Fatalf("stats = %+v, want %+v", c.Stats, want)
+	}
+}
+
+func TestStatsValidate(t *testing.T) {
+	for body, wantErr := range map[string]bool{
+		"[stats]\nholdout = -0.1\n":   true,
+		"[stats]\nholdout = 0.6\n":    true,
+		"[stats]\nholdout = 0.5\n":    false,
+		"[stats]\nidle_minutes = 0\n": true,
+	} {
+		home := t.TempDir()
+		write(t, filepath.Join(home, "config.toml"), body)
+		_, _, err := Load(home, "")
+		if (err != nil) != wantErr {
+			t.Fatalf("%q: err = %v, wantErr %v", body, err, wantErr)
+		}
+	}
+}
+
+func TestStatsProjectIgnored(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(proj, ".inscribe.toml"), "[stats]\nholdout = 0.2\n")
+	c, warns, err := Load(home, proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Stats.Holdout != 0 {
+		t.Fatalf("holdout = %v, project must not set it", c.Stats.Holdout)
+	}
+	want := filepath.Join(proj, ".inscribe.toml") + ": ignored stats.holdout (only your global config.toml may set it)"
+	if !slices.Contains(warns, want) {
+		t.Fatalf("warns = %v, want %q", warns, want)
 	}
 }

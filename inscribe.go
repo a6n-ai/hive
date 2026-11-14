@@ -252,6 +252,9 @@ func (h *Inscribe) Consolidate(ctx context.Context, session string, runner conso
 // Consolidation returns the consolidation settings in effect.
 func (h *Inscribe) Consolidation() config.ConsolidateCfg { return h.cfg.Consolidate }
 
+// StatsConfig returns the [stats] settings.
+func (h *Inscribe) StatsConfig() config.StatsCfg { return h.cfg.Stats }
+
 // Debug reports whether config.toml or INSCRIBE_DEBUG=1 turned on diagnostics.
 func (h *Inscribe) Debug() bool { return h.cfg.Debug }
 

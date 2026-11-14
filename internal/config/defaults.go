@@ -9,5 +9,6 @@ func Defaults() Config {
 		Skills:      SkillsCfg{Enabled: "auto", Enrich: []string{}},
 		Scrub:       ScrubCfg{Patterns: []string{}},
 		Exclude:     ExcludeCfg{Paths: []string{}},
+		Stats:       StatsCfg{SessionLine: true, HoldoutMinSample: 100, IdleMinutes: 5},
 	}
 }

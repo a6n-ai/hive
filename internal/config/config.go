@@ -23,6 +23,7 @@ type Config struct {
 	Scrub       ScrubCfg       `toml:"scrub"`
 	Exclude     ExcludeCfg     `toml:"exclude"`
 	Share       ShareCfg       `toml:"share"`
+	Stats       StatsCfg       `toml:"stats"`
 	// Debug shows extra diagnostics, such as what each hook event saved. INSCRIBE_DEBUG=1 also turns it on.
 	Debug bool `toml:"debug"`
 }
@@ -68,6 +69,14 @@ type ExcludeCfg struct {
 type ShareCfg struct {
 	Analytics bool   `toml:"analytics"`
 	URL       string `toml:"url"`
+}
+
+// StatsCfg is global-only: holdout changes what recall injects, so a repository cannot set it.
+type StatsCfg struct {
+	SessionLine      bool    `toml:"session_line"`
+	Holdout          float64 `toml:"holdout"`
+	HoldoutMinSample int     `toml:"holdout_min_sample"`
+	IdleMinutes      int     `toml:"idle_minutes"`
 }
 
 // Tristate is "auto", "true", or "false"; TOML may give a bool or a string.
@@ -208,9 +217,18 @@ func validate(c Config) error {
 		}
 		return nil
 	}
+	var holdoutErr, idleErr error
+	if h := c.Stats.Holdout; h < 0 || h > 0.5 {
+		holdoutErr = fmt.Errorf("stats.holdout = %v: allowed range is 0 to 0.5", h)
+	}
+	if c.Stats.IdleMinutes < 1 {
+		idleErr = fmt.Errorf("stats.idle_minutes = %d: must be at least 1", c.Stats.IdleMinutes)
+	}
 	return errors.Join(
 		check("retention.mode", c.Retention.Mode, "storage_time", "rolling", "keep_all"),
 		check("retention.prompt_clock", c.Retention.PromptClock, "original", "stored"),
 		check("skills.enabled", string(c.Skills.Enabled), "auto", "true", "false"),
+		holdoutErr,
+		idleErr,
 	)
 }
