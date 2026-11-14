@@ -9,9 +9,10 @@ import (
 
 // MemoryCredit is one memory's hit credited with its discovery window's cost.
 type MemoryCredit struct {
-	MemoryID, Source string
-	Tokens           int
-	ActiveMS         int64
+	MemoryID string `json:"memory_id"`
+	Source   string `json:"source"`
+	Tokens   int    `json:"tokens"`
+	ActiveMS int64  `json:"active_ms"`
 }
 
 var sourceOf = map[string]string{"full_command": "rule", "agent": "agent", "review": "review"}

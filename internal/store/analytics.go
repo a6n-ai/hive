@@ -9,8 +9,9 @@ import (
 )
 
 type Window struct {
-	From, To int64
-	Project  string
+	From    int64  `json:"from"`
+	To      int64  `json:"to"`
+	Project string `json:"project"`
 }
 
 type InjectionInput struct {
@@ -91,7 +92,10 @@ type UsageTurn struct {
 }
 
 type UsageSum struct {
-	Input, Output, CacheRead, CacheCreation int
+	Input         int `json:"input"`
+	Output        int `json:"output"`
+	CacheRead     int `json:"cache_read"`
+	CacheCreation int `json:"cache_creation"`
 }
 
 // UpsertUsageTurns stores one row per (session, message id). A message that
@@ -267,6 +271,125 @@ func (s *Store) PromptsIn(w Window) ([]PromptRef, error) {
 			return nil, err
 		}
 		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// AskCounts counts feedback asks made in the window and how many were answered.
+func (s *Store) AskCounts(w Window) (asked, answered int, err error) {
+	err = s.db.QueryRow(`SELECT count(*), coalesce(sum(a.answered), 0)
+		FROM feedback_asks a JOIN sessions s ON s.id = a.session
+		WHERE a.ts >= ? AND a.ts < ? AND (? = '' OR s.project = ?)`, w.From, w.To, w.Project, w.Project).Scan(&asked, &answered)
+	return asked, answered, err
+}
+
+// MemoryCounts counts all memories by status and by type.
+func (s *Store) MemoryCounts() (byStatus, byType map[string]int, err error) {
+	count := func(col string) (map[string]int, error) {
+		rows, err := s.db.Query(`SELECT ` + col + `, count(*) FROM memories GROUP BY 1`)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		out := map[string]int{}
+		for rows.Next() {
+			var k string
+			var n int
+			if err := rows.Scan(&k, &n); err != nil {
+				return nil, err
+			}
+			out[k] = n
+		}
+		return out, rows.Err()
+	}
+	if byStatus, err = count("status"); err != nil {
+		return nil, nil, err
+	}
+	byType, err = count("type")
+	return byStatus, byType, err
+}
+
+type Penalty struct {
+	MemoryID string  `json:"memory_id"`
+	Penalty  float64 `json:"penalty"`
+}
+
+// Penalized returns up to limit memories with a penalty above 0, largest first.
+func (s *Store) Penalized(limit int) ([]Penalty, error) {
+	rows, err := s.db.Query(`SELECT id, penalty FROM memories WHERE penalty > 0 ORDER BY penalty DESC, id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Penalty
+	for rows.Next() {
+		var p Penalty
+		if err := rows.Scan(&p.MemoryID, &p.Penalty); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// ActiveMemoryIDs returns the ids of all active memories.
+func (s *Store) ActiveMemoryIDs() ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM memories WHERE status = 'active' ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// StoreCounts holds the row counts shown under store footprint and corrections.
+// Events and Trajectory cover the whole store; Corrections and Sessions the window.
+type StoreCounts struct {
+	Events, Trajectory, Corrections, Sessions int
+}
+
+func (s *Store) StoreCounts(w Window) (StoreCounts, error) {
+	var c StoreCounts
+	err := s.db.QueryRow(`SELECT (SELECT count(*) FROM events), (SELECT count(*) FROM trajectory_records),
+		(SELECT count(*) FROM events WHERE kind = 'correction' AND ts >= ?1 AND ts < ?2 AND (?3 = '' OR project = ?3)),
+		(SELECT count(*) FROM sessions WHERE last_event >= ?1 AND last_event < ?2 AND (?3 = '' OR project = ?3))`,
+		w.From, w.To, w.Project).Scan(&c.Events, &c.Trajectory, &c.Corrections, &c.Sessions)
+	return c, err
+}
+
+// NextTryCounts counts error-fix injections in the window and how many were
+// followed by a successful call of the same tool.
+func (s *Store) NextTryCounts(w Window) (fixes, shown int, err error) {
+	err = s.db.QueryRow(`SELECT count(*), coalesce(sum((SELECT json_extract(e.payload, '$.error') IS NULL FROM events e
+			WHERE e.session = i.session AND e.kind = 'post_tool' AND e.tool = i.tool AND e.ts > i.ts ORDER BY e.ts LIMIT 1)), 0)
+		FROM injections i WHERE i.hook = 'PostToolUseFailure' AND i.ts >= ?1 AND i.ts < ?2 AND (?3 = '' OR i.project = ?3)`,
+		w.From, w.To, w.Project).Scan(&shown, &fixes)
+	return fixes, shown, err
+}
+
+// SessionsIn returns the ids of sessions with events in [w.From, w.To); an empty Project means all.
+func (s *Store) SessionsIn(w Window) ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM sessions WHERE last_event >= ? AND started < ? AND (? = '' OR project = ?) ORDER BY id`,
+		w.From, w.To, w.Project, w.Project)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
 	}
 	return out, rows.Err()
 }

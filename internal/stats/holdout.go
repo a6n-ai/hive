@@ -22,16 +22,23 @@ var Draw = func(session, digest string, index int, share float64) bool {
 }
 
 type GroupStats struct {
-	N                                                                 int
-	MeanTokens, FailedPerPrompt, CorrectionsPerPrompt, WouldBeHitRate float64
+	N                    int     `json:"n"`
+	MeanTokens           float64 `json:"mean_tokens"`
+	FailedPerPrompt      float64 `json:"failed_per_prompt"`
+	CorrectionsPerPrompt float64 `json:"corrections_per_prompt"`
+	WouldBeHitRate       float64 `json:"would_be_hit_rate"`
 }
 
 type HoldoutResult struct {
-	State           string
-	Holdout, Normal GroupStats
-	Diff, Lo, Hi    float64
-	Expected        float64
-	Verdict         string
+	State     string     `json:"state"`
+	Holdout   GroupStats `json:"holdout"`
+	Normal    GroupStats `json:"normal"`
+	Diff      float64    `json:"diff"`
+	Lo        float64    `json:"lo"`
+	Hi        float64    `json:"hi"`
+	Expected  float64    `json:"expected"`
+	MinSample int        `json:"min_sample"`
+	Verdict   string     `json:"verdict"`
 }
 
 // WouldBeHit reports whether some command reaches the shown line: it has content
@@ -57,7 +64,7 @@ type promptMeasure struct {
 
 // Compare measures holdout against normal prompts that had at least one line shown.
 func Compare(st *store.Store, w store.Window, minSample int, expected float64) (HoldoutResult, error) {
-	res := HoldoutResult{Expected: expected}
+	res := HoldoutResult{Expected: expected, MinSample: minSample}
 	injs, err := st.InjectionsIn(w)
 	if err != nil {
 		return res, err

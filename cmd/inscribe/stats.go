@@ -12,8 +12,7 @@ import (
 
 func statsCmd(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] != "ingest" {
-		fmt.Fprintln(stderr, "stats: report not built yet")
-		return 2
+		return statsReport(args, stdout, stderr)
 	}
 	fs := flag.NewFlagSet("stats ingest", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -37,5 +36,34 @@ func statsCmd(args []string, stdout, stderr io.Writer) int {
 		logLine(config.Home(), "stats ingest: %v", err)
 	}
 	fmt.Fprintf(stdout, "ingested %d session(s)\n", n)
+	return 0
+}
+
+func statsReport(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	days := fs.Int("days", 7, "window in days")
+	all := fs.Bool("all", false, "all projects")
+	explain := fs.Bool("explain", false, "print the estimate model and its biases")
+	asJSON := fs.Bool("json", false, "print JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 || *days <= 0 {
+		fmt.Fprintln(stderr, "usage: inscribe stats [--days N] [--all] [--explain] [--json]")
+		return 2
+	}
+	h, err := inscribe.Open(inscribe.Options{Caller: "inscribe"})
+	if err != nil {
+		fmt.Fprintln(stderr, "inscribe:", err)
+		return 1
+	}
+	defer func() { _ = h.Close() }()
+	out, err := h.Stats(context.Background(), inscribe.StatsOptions{Days: *days, Project: defaultProject(), All: *all, Explain: *explain, JSON: *asJSON})
+	if err != nil {
+		fmt.Fprintln(stderr, "inscribe:", err)
+		return 1
+	}
+	fmt.Fprint(stdout, out)
 	return 0
 }

@@ -1,0 +1,21 @@
+inscribe stats: this project, last 7d (5 sessions)
+
+Measured
+  injected       SessionStart 1.2k tok · UserPromptSubmit 3.4k tok · PostToolUseFailure 210 tok · feedback_ask 380 tok
+  session-start  42 lines, 1.2k tok (cost only, not labeled)
+  hits           rule 0/0 · agent 4/9 (44%) · review 11/56 (20%) · unlabeled 17
+  misses         forgotten 28 · agent 5 · review 34 · review_wrong 11
+  wrong          13/65 rated (20%) · penalized: m_ab12 0.2, m_cd34 0.05
+  feedback asks  1/1 answered · 11 agent-rated rows
+  memories       31/148 active used · 60 unused 30d · top: m_ab12 9, m_cd34 7
+  store          active 140 · candidate 5 · forgotten 3 · 14.2 MB · 1306 events · 1616 trajectory
+  next try       3 of 5 shown fixes followed by a success (correlation, not cause)
+  corrections    0.2 per session
+  usage          in 12.3k · out 48.2k · cache read 2.1M · cache write 310.4k tok · active 3h 12m
+  usage missing  1 missing · 0 unparsed
+
+Estimated
+  not enough data (15 labeled hits, need 30)
+
+Holdout
+  off

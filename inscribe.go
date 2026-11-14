@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -376,6 +377,35 @@ func (h *Inscribe) CloseSessions(ctx context.Context, ids []string) error {
 	err := h.store.Write(ctx, func(tx *store.Tx) error { return tx.CloseSessions(ids) })
 	h.afterWrite()
 	return err
+}
+
+// StatsOptions selects the window and format of Stats. Days defaults to 7.
+type StatsOptions struct {
+	Days               int
+	Project            string
+	All, Explain, JSON bool
+}
+
+// Stats renders the value report as text, or as JSON when o.JSON is set.
+func (h *Inscribe) Stats(ctx context.Context, o StatsOptions) (string, error) {
+	days := o.Days
+	if days <= 0 {
+		days = 7
+	}
+	now := time.Now()
+	w := store.Window{From: now.Add(-time.Duration(days) * 24 * time.Hour).UnixMilli(), To: now.UnixMilli() + 1, Project: o.Project}
+	if o.All {
+		w.Project = ""
+	}
+	r, err := stats.Build(h.store, w, h.cfg.Stats, now)
+	if err != nil {
+		return "", err
+	}
+	if o.JSON {
+		b, err := json.MarshalIndent(r, "", "  ")
+		return string(b) + "\n", err
+	}
+	return stats.Text(r, o.Explain), nil
 }
 
 // IngestUsage reads Claude Code token usage for up to limit finished sessions.
