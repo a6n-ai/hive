@@ -458,3 +458,39 @@ func TestEventsInInclusiveAndMemoryText(t *testing.T) {
 		t.Fatalf("gone: %q %v", txt, err)
 	}
 }
+
+func TestPromptsIn(t *testing.T) {
+	st, _ := openTemp(t)
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		for _, e := range []model.Event{
+			{TS: 10, Session: "s", Project: "p", Kind: model.Prompt, Digest: "a"},
+			{TS: 20, Session: "s", Project: "p", Kind: model.TurnEnd, Digest: "b"},
+			{TS: 30, Session: "s", Project: "p", Kind: model.Prompt, Digest: "c"},
+			{TS: 15, Session: "o", Project: "q", Kind: model.Prompt, Digest: "d"},
+			{TS: 40, Session: "s", Project: "p", Kind: model.Prompt, Digest: "e"},
+		} {
+			e.Agent = "claude-code"
+			if _, err := tx.InsertEvent(&e); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.PromptsIn(Window{From: 0, To: 40, Project: "p"})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %+v err=%v, want 2 prompts", got, err)
+	}
+	if got[0].TS != 10 || got[0].Digest != "a" || got[0].NextPromptTS != 30 || got[0].TurnEndTS != 20 {
+		t.Fatalf("first %+v", got[0])
+	}
+	if got[1].TS != 30 || got[1].NextPromptTS != 40 || got[1].TurnEndTS != 0 {
+		t.Fatalf("second %+v", got[1])
+	}
+	all, err := st.PromptsIn(Window{From: 0, To: 100})
+	if err != nil || len(all) != 4 || all[3].NextPromptTS != 0 {
+		t.Fatalf("all %+v err=%v", all, err)
+	}
+}

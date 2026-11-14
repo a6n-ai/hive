@@ -242,3 +242,32 @@ func (s *Store) MemoryText(id string) (string, error) {
 	}
 	return t, err
 }
+
+type PromptRef struct {
+	EventID, TS             int64
+	Session, Digest         string
+	NextPromptTS, TurnEndTS int64
+}
+
+// PromptsIn returns prompt events in [w.From, w.To) oldest first, each with the
+// ts of the next prompt and next turn_end in its session (0 when absent).
+func (s *Store) PromptsIn(w Window) ([]PromptRef, error) {
+	rows, err := s.db.Query(`SELECT e.id, e.ts, e.session, e.digest,
+		coalesce((SELECT min(n.ts) FROM events n WHERE n.session = e.session AND n.kind = 'prompt' AND n.ts > e.ts), 0),
+		coalesce((SELECT min(n.ts) FROM events n WHERE n.session = e.session AND n.kind = 'turn_end' AND n.ts > e.ts), 0)
+		FROM events e WHERE e.kind = 'prompt' AND e.ts >= ? AND e.ts < ? AND (? = '' OR e.project = ?) ORDER BY e.ts, e.id`,
+		w.From, w.To, w.Project, w.Project)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []PromptRef
+	for rows.Next() {
+		var p PromptRef
+		if err := rows.Scan(&p.EventID, &p.TS, &p.Session, &p.Digest, &p.NextPromptTS, &p.TurnEndTS); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
