@@ -367,6 +367,22 @@ func TestSessionsToIngestSkipsMissingWithoutNewerEvent(t *testing.T) {
 	}
 }
 
+func TestSessionsToIngestSkipsLoneSessionEnd(t *testing.T) {
+	st, _ := openTemp(t)
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		if err := tx.TouchSession(&model.Event{TS: 5, Agent: "claude-code", Session: "s", Project: "p", Kind: model.SessionEnd, TranscriptPath: "/t"}); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.SessionsToIngest("claude-code", 10); err != nil || len(got) != 0 {
+		t.Fatalf("got %v err %v, want none for a lone SessionEnd", got, err)
+	}
+}
+
 func seedOutcomes(t *testing.T, st *Store) {
 	t.Helper()
 	err := st.Write(context.Background(), func(tx *Tx) error {

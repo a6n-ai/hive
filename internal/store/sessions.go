@@ -42,10 +42,11 @@ type IngestTarget struct {
 }
 
 // SessionsToIngest returns ended sessions of agent that were never ingested or
-// had events after their last ingest, newest first.
+// had events after their last ingest, newest first. A lone SessionEnd (from a
+// CLI subcommand such as `claude mcp get`) has no transcript, so it is skipped.
 func (s *Store) SessionsToIngest(agent string, limit int) ([]IngestTarget, error) {
 	rows, err := s.db.Query(`SELECT id, transcript_path, last_event FROM sessions
-		WHERE agent = ? AND ended IS NOT NULL AND transcript_path IS NOT NULL
+		WHERE agent = ? AND ended IS NOT NULL AND transcript_path IS NOT NULL AND event_count > 1
 		AND (usage_ingested_at IS NULL OR last_event > usage_ingested_at)
 		ORDER BY last_event DESC LIMIT ?`, agent, limit)
 	if err != nil {
