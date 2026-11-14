@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/a6n-ai/inscribe/index"
@@ -23,6 +24,7 @@ import (
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/internal/retention"
 	"github.com/a6n-ai/inscribe/internal/scrub"
+	"github.com/a6n-ai/inscribe/internal/stats"
 	"github.com/a6n-ai/inscribe/internal/store"
 	"github.com/a6n-ai/inscribe/model"
 )
@@ -66,6 +68,8 @@ type Inscribe struct {
 	readOnly bool
 	// mu serializes index sync and snapshot save, which share stamp.
 	mu sync.Mutex
+	// droppedInjections counts injection rows skipped because the store was locked or unwritable.
+	droppedInjections atomic.Int64
 }
 
 // Open opens the Inscribe database under o.Home with the config for o.Project.
@@ -159,6 +163,33 @@ func (h *Inscribe) Prepare(e *Event) {
 
 // DroppedOutcomes counts score outcome rows not written because the store was locked.
 func (h *Inscribe) DroppedOutcomes() int64 { return h.store.DroppedOutcomes() }
+
+// DroppedInjections counts injection rows not written because the store was locked or unwritable.
+func (h *Inscribe) DroppedInjections() int64 { return h.droppedInjections.Load() }
+
+// RecordInjection stores one injection row. A locked, read-only or newer-schema
+// store drops the row and counts it; the hook must not fail over bookkeeping.
+func (h *Inscribe) RecordInjection(ctx context.Context, in store.InjectionInput) error {
+	if h.store.HitLock() {
+		h.droppedInjections.Add(1)
+		return nil
+	}
+	err := h.store.Write(ctx, func(tx *store.Tx) error { return tx.InsertInjection(in) })
+	if errors.Is(err, store.ErrLocked) || errors.Is(err, store.ErrReadOnly) || errors.Is(err, store.ErrSchemaNewer) {
+		h.droppedInjections.Add(1)
+		return nil
+	}
+	return err
+}
+
+// SessionLine summarizes the last 7 days of project's injections for session start.
+func (h *Inscribe) SessionLine(project string) (string, error) {
+	c, err := h.store.SessionLineCounts(project, time.Now().Add(-7*24*time.Hour).UnixMilli())
+	if err != nil {
+		return "", err
+	}
+	return stats.SessionLine(c), nil
+}
 
 // RecentSessions returns the latest sessions other than exclude, in any project.
 func (h *Inscribe) RecentSessions(exclude string, limit int) ([]RecentSession, error) {
