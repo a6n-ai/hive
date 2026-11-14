@@ -322,7 +322,7 @@ func askRound(t *testing.T, h *inscribe.Inscribe, proj, session, digest string, 
 	if err := h.MarkMCPServed(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	askID, _, _, err := h.MaybeAsk(ctx, session, true, now)
+	askID, _, _, _, err := h.MaybeAsk(ctx, session, true, now)
 	if err != nil || askID == "" {
 		t.Fatalf("MaybeAsk = %q, %v; want an ask", askID, err)
 	}
@@ -402,13 +402,13 @@ func TestMCPFeedbackNoAskBeforeServerRuns(t *testing.T) {
 	if _, err := h.Recall(ctx, inscribe.Query{Project: proj, Text: "deploy make target", Agent: "codex", Session: "s1", PromptDigest: "d1", Budget: maxBudget, Mode: recall.Prompt}); err != nil {
 		t.Fatal(err)
 	}
-	if askID, _, _, err := h.MaybeAsk(ctx, "s1", true, now); err != nil || askID != "" {
+	if askID, _, _, _, err := h.MaybeAsk(ctx, "s1", true, now); err != nil || askID != "" {
 		t.Fatalf("MaybeAsk before the MCP server ran = %q, %v; want no ask", askID, err)
 	}
 	if err := h.MarkMCPServed(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	if askID, _, _, err := h.MaybeAsk(ctx, "s1", true, now); err != nil || askID == "" {
+	if askID, _, _, _, err := h.MaybeAsk(ctx, "s1", true, now); err != nil || askID == "" {
 		t.Fatalf("MaybeAsk after the MCP server ran = %q, %v; want an ask", askID, err)
 	}
 }

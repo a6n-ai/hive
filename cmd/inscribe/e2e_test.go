@@ -1116,3 +1116,33 @@ func TestSessionLineOff(t *testing.T) {
 		t.Fatalf("reply = %q", out)
 	}
 }
+
+func TestFeedbackAskInjection(t *testing.T) {
+	for _, tc := range []struct{ name, event, errText string }{
+		{"early return", "PostToolUse", ""},
+		{"main path", "PostToolUse", "exit status 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home, proj := t.TempDir(), t.TempDir()
+			seedRecalled(t, home, proj, "f1", askTexts)
+			markMCPServed(t, home)
+			out := hookOK(t, home, bashPayload(tc.event, "f1", proj, "go vet ./...", tc.errText), tc.event)
+			ctx := additionalContext(t, out)
+			i := strings.Index(ctx, "inscribe feedback a_")
+			if i < 0 {
+				t.Fatalf("save did not ask for feedback: %q", out)
+			}
+			ids, est, n := injectionRows(t, home, "feedback_ask")
+			if n != 1 {
+				t.Fatalf("feedback_ask rows = %d, want 1", n)
+			}
+			var got []string
+			if err := json.Unmarshal([]byte(ids), &got); err != nil || len(got) != len(askTexts) {
+				t.Fatalf("memory_ids = %q, %v; want %d ids", ids, err, len(askTexts))
+			}
+			if want := recall.EstimateTokens(ctx[i:]); est != want {
+				t.Fatalf("est_tokens = %d, want %d", est, want)
+			}
+		})
+	}
+}

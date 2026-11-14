@@ -89,6 +89,7 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 	q, ok := hookQuery(e, h.Scrub)
 	if !ok {
 		out, asked := askFeedback(ctx, h, ad, event, e, saved, nil)
+		logDroppedInjections(h)
 		return writeDebug(stdout, h, ad, event, e, out, nil, saved, asked)
 	}
 	lines, err := h.Recall(ctx, q)
@@ -119,10 +120,10 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 		}
 	}
 	logLine(config.Home(), "%s %s %s: injected %d line(s) %v", e.Agent, event, e.Project, len(lines), ids)
-	if len(lines) > 0 {
+	if hook, ok := injectionHooks[e.Kind]; ok && len(lines) > 0 {
 		in := store.InjectionInput{
 			TS: e.TS, Session: e.Session, Agent: e.Agent, Project: e.Project,
-			Hook: injectionHooks[e.Kind], LineCount: len(lines),
+			Hook: hook, LineCount: len(lines),
 			EstTokens: recall.EstimateTokens(recall.Render(lines)), MemoryIDs: ids,
 		}
 		switch e.Kind {
@@ -136,7 +137,14 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 		}
 	}
 	out, asked := askFeedback(ctx, h, ad, event, e, saved, ad.Reply(event, lines))
+	logDroppedInjections(h)
 	return writeDebug(stdout, h, ad, event, e, out, lines, saved, asked)
+}
+
+func logDroppedInjections(h *inscribe.Inscribe) {
+	if n := h.DroppedInjections(); n > 0 {
+		logLine(config.Home(), "analytics: dropped %d injection rows (store locked)", n)
+	}
 }
 
 var injectionHooks = map[model.EventKind]string{
@@ -151,28 +159,43 @@ var askEvents = map[string]bool{"UserPromptSubmit": true, "PostToolUse": true, "
 
 // askFeedback adds the feedback question to a Claude Code reply when a save makes
 // one due. It returns the note that says so, for debug output. A failed ask is logged, never returned.
-func askFeedback(ctx context.Context, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, saved []inscribe.Memory, out []byte) ([]byte, string) {
+func askFeedback(ctx context.Context, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, saved []inscribe.Memory, out []byte) ([]byte, askInfo) {
 	if ad.Name() != "claude-code" || !askEvents[event] {
-		return out, ""
+		return out, askInfo{}
 	}
-	askID, text, n, err := h.MaybeAsk(ctx, e.Session, len(saved) > 0, time.Now())
+	askID, text, ids, _, err := h.MaybeAsk(ctx, e.Session, len(saved) > 0, time.Now())
 	if err != nil {
 		logLine(config.Home(), "feedback ask: %v", err)
-		return out, ""
+		return out, askInfo{}
 	}
 	if askID == "" {
-		return out, ""
+		return out, askInfo{}
 	}
-	return agent.AddContext(out, event, text), fmt.Sprintf("feedback asked %s (%d memories)", askID, n)
+	in := store.InjectionInput{
+		TS: e.TS, Session: e.Session, Agent: e.Agent, Project: e.Project,
+		Hook: "feedback_ask", LineCount: len(ids),
+		EstTokens: recall.EstimateTokens(text), MemoryIDs: ids,
+	}
+	if err := h.RecordInjection(ctx, in); err != nil {
+		logLine(config.Home(), "record injection: %v", err)
+	}
+	return agent.AddContext(out, event, text), askInfo{ID: askID, Text: text, MemoryIDs: ids}
+}
+
+// askInfo describes a feedback ask added to a reply. The zero value means none.
+type askInfo struct {
+	ID        string
+	Text      string
+	MemoryIDs []string
 }
 
 // writeDebug writes the adapter's reply. In debug mode it first logs what the
 // event loaded and saved, and adds that to the status line agents show the user.
-func writeDebug(stdout io.Writer, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, out []byte, lines []recall.Line, saved []inscribe.Memory, asked string) error {
+func writeDebug(stdout io.Writer, h *inscribe.Inscribe, ad agent.Adapter, event string, e inscribe.Event, out []byte, lines []recall.Line, saved []inscribe.Memory, asked askInfo) error {
 	if h.Debug() {
 		if note := debugNote(lines, saved, e.TS); note != "" {
-			if asked != "" {
-				note += "\n  " + asked
+			if asked.ID != "" {
+				note += fmt.Sprintf("\n  feedback asked %s (%d memories)", asked.ID, len(asked.MemoryIDs))
 			}
 			logLine(config.Home(), "debug %s %s %s: %s", e.Agent, event, e.Project, note)
 			if ad.Capabilities().ShowsStatus {

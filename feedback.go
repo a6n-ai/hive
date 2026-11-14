@@ -35,49 +35,50 @@ func (h *Inscribe) MarkMCPServed(ctx context.Context, now time.Time) error {
 // MaybeAsk returns the feedback question to add after a save, or an empty askID
 // when none is due. The ask covers every unasked outcome row of the window, so
 // rows of one memory are asked about once.
-func (h *Inscribe) MaybeAsk(ctx context.Context, session string, savedAny bool, now time.Time) (askID, text string, n int, err error) {
+func (h *Inscribe) MaybeAsk(ctx context.Context, session string, savedAny bool, now time.Time) (askID, text string, ids []string, n int, err error) {
 	if !savedAny {
-		return "", "", 0, nil
+		return "", "", nil, 0, nil
 	}
 	if _, ok, err := h.store.GetMeta(mcpSeenKey); err != nil || !ok {
-		return "", "", 0, err
+		return "", "", nil, 0, err
 	}
 	last, err := h.store.LastAskTS(session)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", nil, 0, err
 	}
 	if now.UnixMilli()-last < askEvery.Milliseconds() {
-		return "", "", 0, nil
+		return "", "", nil, 0, nil
 	}
 	rows, err := h.store.UnaskedOutcomes(session, askGroups)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", nil, 0, err
 	}
 	if len(rows) < askMinRows {
-		return "", "", 0, nil
+		return "", "", nil, 0, nil
 	}
 	seen := map[string]bool{}
-	var ids []string
+	var memIDs []string
 	outcomeIDs := make([]int64, 0, len(rows))
 	for _, r := range rows {
 		outcomeIDs = append(outcomeIDs, r.ID)
 		if !seen[r.MemoryID] {
 			seen[r.MemoryID] = true
-			ids = append(ids, r.MemoryID)
+			memIDs = append(memIDs, r.MemoryID)
 		}
 	}
-	all, err := h.store.MemoriesByID(ids)
+	all, err := h.store.MemoriesByID(memIDs)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", nil, 0, err
 	}
 	var ms []model.Memory
 	for _, m := range all {
 		if m.Status == model.Active {
 			ms = append(ms, m)
+			ids = append(ids, m.ID)
 		}
 	}
 	if len(ms) == 0 {
-		return "", "", 0, nil
+		return "", "", nil, 0, nil
 	}
 	askID = feedback.NewAskID()
 	skipped := false
@@ -93,9 +94,9 @@ func (h *Inscribe) MaybeAsk(ctx context.Context, session string, savedAny bool, 
 		return tx.InsertAsk(askID, session, now.UnixMilli(), outcomeIDs)
 	})
 	if err != nil || skipped {
-		return "", "", 0, err
+		return "", "", nil, 0, err
 	}
-	return askID, feedback.Render(askID, ms), len(ms), nil
+	return askID, feedback.Render(askID, ms), ids, len(ms), nil
 }
 
 // answerPlan is one checked answer, ready to write.
