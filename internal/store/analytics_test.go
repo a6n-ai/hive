@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/a6n-ai/inscribe/model"
@@ -90,4 +92,112 @@ func TestTouchSessionTranscriptPath(t *testing.T) {
 	if got := get("s2"); got.Valid {
 		t.Fatalf("s2 transcript_path = %v, want NULL", got)
 	}
+}
+
+func TestInsertInjectionRoundTrip(t *testing.T) {
+	st, _ := openTemp(t)
+	in := InjectionInput{TS: 5, Session: "s1", Agent: "claude-code", Project: "p", Hook: "PostToolUseFailure", Tool: "shell",
+		LineCount: 2, EstTokens: 30, MemoryIDs: []string{"m_1", "m_2"}, Holdout: true, PromptDigest: "d"}
+	if err := st.Write(context.Background(), func(tx *Tx) error { return tx.InsertInjection(in) }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.InjectionsIn(Window{From: 0, To: 10})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %v err %v", got, err)
+	}
+	if got[0].ID == 0 || !reflect.DeepEqual(got[0].InjectionInput, in) {
+		t.Fatalf("got %+v, want %+v", got[0], in)
+	}
+}
+
+func seedAnalytics(t testing.TB, st *Store, outcomes, injections int) {
+	t.Helper()
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		for _, id := range []string{"s1", "s2"} {
+			if err := tx.TouchSession(&model.Event{TS: 1, Agent: "claude-code", Session: id, Project: "p", Kind: model.PostTool}); err != nil {
+				return err
+			}
+			if err := tx.TouchSession(&model.Event{TS: 900, Agent: "claude-code", Session: id, Project: "p", Kind: model.SessionEnd}); err != nil {
+				return err
+			}
+		}
+		for i := 0; i < outcomes; i++ {
+			if _, err := tx.tx.Exec(`INSERT INTO score_outcomes(memory_id, session, ts, features, score, label, reason) VALUES ('m', 's1', 100, '{}', 0.5, ?, ?)`,
+				[]any{1, 0, nil}[i%3], []string{"", "agent", ""}[i%3]); err != nil {
+				return err
+			}
+		}
+		for i := 0; i < injections; i++ {
+			if err := tx.InsertInjection(InjectionInput{TS: 100, Session: "s1", Agent: "claude-code", Project: "p", Hook: "UserPromptSubmit", EstTokens: 1, MemoryIDs: []string{"m"}}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionLineCounts(t *testing.T) {
+	st, _ := openTemp(t)
+	seedAnalytics(t, st, 3, 0)
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		for _, e := range []model.Event{
+			{TS: 150, Session: "s1", Kind: model.PostTool, Tool: "shell", Digest: "e1"},
+			{TS: 250, Session: "s1", Kind: model.PostTool, Tool: "shell", Payload: map[string]any{"error": "boom"}, Digest: "e2"},
+		} {
+			e.Agent, e.Project = "claude-code", "p"
+			if _, err := tx.InsertEvent(&e); err != nil {
+				return err
+			}
+		}
+		for _, in := range []InjectionInput{
+			{TS: 100, EstTokens: 100, Hook: "UserPromptSubmit"},
+			{TS: 100, EstTokens: 50, Hook: "UserPromptSubmit"},
+			{TS: 140, EstTokens: 10, Hook: "PostToolUseFailure", Tool: "shell"},
+			{TS: 200, EstTokens: 10, Hook: "PostToolUseFailure", Tool: "shell"},
+		} {
+			in.Session, in.Agent, in.Project = "s1", "claude-code", "p"
+			if err := tx.InsertInjection(in); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.SessionLineCounts("p", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := SessionLineCounts{Sessions: 2, Hits: 1, Shown: 3, InjectedTokens: 170, NextTryFixes: 1, AgentAnswered: 1}
+	if got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestSessionLineCountsEmpty(t *testing.T) {
+	st, _ := openTemp(t)
+	got, err := st.SessionLineCounts("p", 0)
+	if err != nil || got != (SessionLineCounts{}) {
+		t.Fatalf("got %+v err %v", got, err)
+	}
+}
+
+func BenchmarkSessionLineCounts(b *testing.B) {
+	st, err := Open(filepath.Join(b.TempDir(), "inscribe.db"), false)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = st.Close() })
+	seedAnalytics(b, st, 10000, 2000)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := st.SessionLineCounts("p", 0); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportMetric(float64(b.Elapsed().Microseconds())/1000/float64(b.N), "ms/op")
 }
