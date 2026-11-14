@@ -279,9 +279,15 @@ func seedSession(t *testing.T, home, session string, n int) {
 	}
 }
 
+// testDSN opens the test store with a busy timeout, so a read waits out the
+// detached jobs a hook spawns instead of failing on their write lock.
+func testDSN(home string) string {
+	return "file:" + filepath.Join(home, "inscribe.db") + "?_pragma=busy_timeout(5000)"
+}
+
 func runRows(t *testing.T, home string) int {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +542,7 @@ func TestDoctorAnalyticsCounts(t *testing.T) {
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,7 +799,7 @@ func TestHookPromptDigestMatchesStoredEvent(t *testing.T) {
 	if !strings.Contains(ctx, "make lint") {
 		t.Fatalf("additionalContext = %q", ctx)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -880,7 +886,7 @@ func markMCPServed(t *testing.T, home string) {
 
 func dbCount(t *testing.T, home, query string) int {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -982,7 +988,7 @@ func TestHookFeedbackNoAskWithoutActive(t *testing.T) {
 
 func endedOf(t *testing.T, home, session string) bool {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1065,7 +1071,7 @@ func TestSessionStartClosesStalledLiveSession(t *testing.T) {
 		}
 	}
 	run("stalled-tab", "UserPromptSubmit")
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1093,7 +1099,7 @@ func systemMessage(t *testing.T, out string) string {
 
 func injectionRows(t *testing.T, home, hook string) (ids string, estTokens int, n int) {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1178,7 +1184,7 @@ func TestHoldoutPrompt(t *testing.T) {
 	if msg := systemMessage(t, out); msg != "inscribe: holdout prompt, 0 memories injected" {
 		t.Fatalf("systemMessage = %q", msg)
 	}
-	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	db, err := sql.Open("sqlite", testDSN(home))
 	if err != nil {
 		t.Fatal(err)
 	}
