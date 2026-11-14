@@ -37,7 +37,8 @@ type Summary struct {
 	Files, Lines, Skipped, Events int
 }
 
-type rawLine struct {
+// RawLine is one decoded Claude Code transcript line.
+type RawLine struct {
 	Type        string `json:"type"`
 	UUID        string `json:"uuid"`
 	SessionID   string `json:"sessionId"`
@@ -45,8 +46,19 @@ type rawLine struct {
 	Cwd         string `json:"cwd"`
 	IsSidechain bool   `json:"isSidechain"`
 	Message     struct {
+		ID      string          `json:"id"`
+		Model   string          `json:"model"`
 		Content json.RawMessage `json:"content"`
+		Usage   *Usage          `json:"usage"`
 	} `json:"message"`
+}
+
+// Usage is the token usage Claude Code records on an assistant message.
+type Usage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 }
 
 type block struct {
@@ -62,7 +74,7 @@ type block struct {
 
 // lineCtx is one accepted transcript line with its resolved time and project.
 type lineCtx struct {
-	l       rawLine
+	l       RawLine
 	ts      int64
 	project string
 }
@@ -115,37 +127,48 @@ func ClaudeCode(ctx context.Context, opts Options, sink func(context.Context, mo
 }
 
 func importFile(ctx context.Context, path string, opts Options, sink func(context.Context, model.Event) error, sum *Summary) error {
-	f, err := os.Open(path) //nolint:gosec // G304: transcripts come from the user's Claude Code projects directory
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
 	imp := &fileImport{opts: opts, sink: sink, sum: sum, started: map[string]bool{},
 		prompted: map[string]bool{}, pending: map[string]toolUse{}, projects: map[string]string{}}
 	sum.Files++
+	lines, malformed, err := ReadTranscript(path, func(l RawLine) error { return imp.line(ctx, l) })
+	sum.Lines += lines
+	sum.Skipped += malformed
+	return err
+}
+
+// ReadTranscript decodes every line of a transcript and passes it to fn, with no
+// filtering. Lines that are not valid JSON are counted as malformed and skipped.
+func ReadTranscript(path string, fn func(RawLine) error) (lines, malformed int, err error) {
+	f, err := os.Open(path) //nolint:gosec // G304: transcripts come from the user's Claude Code projects directory
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = f.Close() }()
 	r := bufio.NewReaderSize(f, 64<<10)
 	for {
-		raw, err := r.ReadBytes('\n')
+		raw, rerr := r.ReadBytes('\n')
 		if len(raw) > 0 {
-			sum.Lines++
-			if lerr := imp.line(ctx, bytes.TrimSpace(raw)); lerr != nil {
-				return lerr
+			lines++
+			var l RawLine
+			if json.Unmarshal(bytes.TrimSpace(raw), &l) != nil {
+				malformed++
+			} else if ferr := fn(l); ferr != nil {
+				return lines, malformed, ferr
 			}
 		}
-		if errors.Is(err, io.EOF) {
-			return nil
+		if errors.Is(rerr, io.EOF) {
+			return lines, malformed, nil
 		}
-		if err != nil {
-			return err
+		if rerr != nil {
+			return lines, malformed, rerr
 		}
 	}
 }
 
-// line decodes one transcript line and dispatches it. Lines that do not decode,
-// lack a session or time, are sidechains, or have an unknown type are skipped.
-func (f *fileImport) line(ctx context.Context, raw []byte) error {
-	var l rawLine
-	if json.Unmarshal(raw, &l) != nil || l.SessionID == "" || l.Timestamp == "" {
+// line dispatches one decoded transcript line. Lines that lack a session or
+// time, are sidechains, or have an unknown type are skipped.
+func (f *fileImport) line(ctx context.Context, l RawLine) error {
+	if l.SessionID == "" || l.Timestamp == "" {
 		f.sum.Skipped++
 		return nil
 	}

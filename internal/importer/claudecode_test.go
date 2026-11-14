@@ -2,6 +2,7 @@ package importer_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,5 +118,42 @@ func TestImportSinceAndProject(t *testing.T) {
 	other := importFixture(t, h, importer.Options{Project: "/does/not/exist"})
 	if other.Events != 0 || other.NewEvents != 0 {
 		t.Errorf("project filter: events=%d new_events=%d, want 0 and 0", other.Events, other.NewEvents)
+	}
+}
+
+func TestReadTranscriptAllLines(t *testing.T) {
+	big := `{"type":"user","uuid":"big","message":{"content":"` + strings.Repeat("x", 2<<20) + `"}}`
+	body := strings.Join([]string{
+		`{"type":"assistant","uuid":"a1","sessionId":"s","message":{"id":"m1","model":"claude-x","usage":{"input_tokens":3,"output_tokens":5,"cache_read_input_tokens":7,"cache_creation_input_tokens":11}}}`,
+		`{"type":"assistant","uuid":"a2","sessionId":"s","isSidechain":true}`,
+		`not json`,
+		big,
+	}, "\n") + "\n"
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got []importer.RawLine
+	lines, malformed, err := importer.ReadTranscript(path, func(l importer.RawLine) error {
+		got = append(got, l)
+		return nil
+	})
+	if err != nil || lines != 4 || malformed != 1 || len(got) != 3 {
+		t.Fatalf("lines=%d malformed=%d got=%d err=%v", lines, malformed, len(got), err)
+	}
+	u := got[0].Message.Usage
+	if got[0].Message.ID != "m1" || got[0].Message.Model != "claude-x" || u == nil ||
+		*u != (importer.Usage{InputTokens: 3, OutputTokens: 5, CacheReadInputTokens: 7, CacheCreationInputTokens: 11}) {
+		t.Fatalf("usage not decoded: %+v", got[0].Message)
+	}
+	if !got[1].IsSidechain {
+		t.Fatal("sidechain line must pass through unfiltered")
+	}
+}
+
+func TestReadTranscriptMissing(t *testing.T) {
+	_, _, err := importer.ReadTranscript(filepath.Join(t.TempDir(), "none.jsonl"), func(importer.RawLine) error { return nil })
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("err=%v, want ErrNotExist", err)
 	}
 }
