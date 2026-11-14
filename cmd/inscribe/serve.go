@@ -183,7 +183,7 @@ var errShareNotTable = errors.New("share is not a table")
 // setShareAnalytics sets share.analytics in the global config and leaves every other
 // key as it was. Comments in an existing file are not kept.
 func setShareAnalytics(home string, on bool) error {
-	raw, err := os.ReadFile(filepath.Join(home, "config.toml"))
+	raw, err := os.ReadFile(filepath.Join(home, "config.toml")) //nolint:gosec // G304: the config path is under the user's INSCRIBE_HOME
 	if errors.Is(err, fs.ErrNotExist) {
 		return writeConfigFile(home, fmt.Appendf(nil, "[share]\nanalytics = %t\n", on))
 	}
@@ -244,7 +244,7 @@ func writeConfigFile(home string, data []byte) error {
 		return err
 	}
 	// Some platforms cannot fsync a directory; the rename already happened.
-	if d, err := os.Open(dir); err == nil {
+	if d, err := os.Open(dir); err == nil { //nolint:gosec // G304: dir is the parent of the file this function just wrote
 		_ = d.Sync()
 		_ = d.Close()
 	}

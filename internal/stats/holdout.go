@@ -182,7 +182,7 @@ func groupStats(ms []promptMeasure) GroupStats {
 
 func bootstrap(hold, norm []promptMeasure, w store.Window) (lo, hi float64) {
 	const resamples = 1000
-	rng := rand.New(rand.NewPCG(uint64(w.From), uint64(w.To)))
+	rng := rand.New(rand.NewPCG(uint64(w.From), uint64(w.To))) //nolint:gosec // G404: a seeded bootstrap must repeat for the same window; not security
 	mean := func(ms []promptMeasure) float64 {
 		var s float64
 		for range ms {

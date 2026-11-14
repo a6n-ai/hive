@@ -11,14 +11,9 @@ import (
 	"github.com/a6n-ai/inscribe/model"
 )
 
-// seedSession records a Claude Code session the way capture does: each event is
-// inserted and touches the session row, and the last touch is the session end.
+// seedSessionAs records a session the way capture does: each event is inserted
+// and touches the session row, and the last touch is the session end.
 // attempted, when set, is a consolidation attempt recorded through the store.
-func seedSession(t *testing.T, h *Inscribe, session string, ended time.Time, attempted time.Time) {
-	t.Helper()
-	seedSessionAs(t, h, "claude-code", session, ended, attempted)
-}
-
 func seedSessionAs(t *testing.T, h *Inscribe, agent, session string, ended time.Time, attempted time.Time) {
 	t.Helper()
 	base := ended.Add(-time.Hour).UnixMilli()

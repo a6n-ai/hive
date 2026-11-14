@@ -91,7 +91,7 @@ func Open(path string, readOnly bool) (*Store, error) {
 	case v > latestVersion():
 		s.newer = true
 	case !readOnly && v < latestVersion():
-		if err := migrate(db, v); err != nil {
+		if err := migrate(db); err != nil {
 			_ = db.Close()
 			return nil, err
 		}

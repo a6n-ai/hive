@@ -286,7 +286,7 @@ func (s *Store) AskCounts(w Window) (asked, answered int, err error) {
 // MemoryCounts counts all memories by status and by type.
 func (s *Store) MemoryCounts() (byStatus, byType map[string]int, err error) {
 	count := func(col string) (map[string]int, error) {
-		rows, err := s.db.Query(`SELECT ` + col + `, count(*) FROM memories GROUP BY 1`)
+		rows, err := s.db.Query(`SELECT ` + col + `, count(*) FROM memories GROUP BY 1`) //nolint:gosec // G202: col is one of two fixed column names
 		if err != nil {
 			return nil, err
 		}
@@ -318,7 +318,7 @@ type Penalty struct {
 // A non-empty project keeps the global and that project's memories.
 func (s *Store) Penalized(limit int, project string) ([]Penalty, error) {
 	cond, args := filterSQL("memories", ListFilter{Project: project})
-	rows, err := s.db.Query(`SELECT id, penalty FROM memories WHERE penalty > 0`+cond+` ORDER BY penalty DESC, id LIMIT ?`, append(args, limit)...)
+	rows, err := s.db.Query(`SELECT id, penalty FROM memories WHERE penalty > 0`+cond+` ORDER BY penalty DESC, id LIMIT ?`, append(args, limit)...) //nolint:gosec // G202: cond comes from filterSQL and binds values as args
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +338,7 @@ func (s *Store) Penalized(limit int, project string) ([]Penalty, error) {
 // the global and that project's memories.
 func (s *Store) ActiveMemoryIDs(project string) ([]string, error) {
 	cond, args := filterSQL("memories", ListFilter{Project: project})
-	rows, err := s.db.Query(`SELECT id FROM memories WHERE status = 'active'`+cond+` ORDER BY id`, args...)
+	rows, err := s.db.Query(`SELECT id FROM memories WHERE status = 'active'`+cond+` ORDER BY id`, args...) //nolint:gosec // G202: cond comes from filterSQL and binds values as args
 	if err != nil {
 		return nil, err
 	}

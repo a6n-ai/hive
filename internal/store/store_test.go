@@ -242,7 +242,7 @@ func TestMigration0007ClosesOpenRows(t *testing.T) {
 
 func TestMigrateTwiceIsSafe(t *testing.T) {
 	st, _ := openTemp(t)
-	if err := migrate(st.db, 6); err != nil {
+	if err := migrate(st.db); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
 	v, err := st.SchemaVersion()

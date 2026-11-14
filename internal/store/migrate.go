@@ -73,7 +73,7 @@ func schemaVersion(db interface {
 }
 
 // migrate applies every pending migration in one transaction. Forward only.
-func migrate(db *sql.DB, current int) error {
+func migrate(db *sql.DB) error {
 	ms, err := migrations()
 	if err != nil {
 		return err
@@ -84,7 +84,8 @@ func migrate(db *sql.DB, current int) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	// Another process may have migrated since the caller read the version.
-	if current, err = schemaVersion(tx); err != nil {
+	current, err := schemaVersion(tx)
+	if err != nil {
 		return err
 	}
 	applied := current

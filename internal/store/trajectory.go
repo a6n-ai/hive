@@ -71,8 +71,9 @@ func (s *Store) SearchTrajectory(project string, terms []string, limit int) ([]T
 		return nil, nil
 	}
 	// Terms are bound. The SQL only concatenates "?" placeholders.
+	//nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	q := `SELECT event_id, role, agent, record FROM trajectory_records
-		WHERE project = ? AND (` + strings.Join(likes, " OR ") + `) ORDER BY id DESC LIMIT ?` //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
+		WHERE project = ? AND (` + strings.Join(likes, " OR ") + `) ORDER BY id DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := s.db.Query(q, args...)
 	if err != nil {

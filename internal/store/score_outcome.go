@@ -206,8 +206,9 @@ func (s *Store) MemoriesTouching(project, token string, statuses []model.Status,
 	}
 	like := "%" + escapeLike(token) + "%"
 	where, args := filterSQL("memories", ListFilter{Project: project, Statuses: statuses})
+	//nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	q := memorySelect + ` WHERE (scope LIKE ? ESCAPE '\' OR key LIKE ? ESCAPE '\' OR body LIKE ? ESCAPE '\')` + where +
-		` ORDER BY last_seen DESC LIMIT ?` //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
+		` ORDER BY last_seen DESC LIMIT ?`
 	args = append([]any{like, like, like}, args...)
 	args = append(args, limit)
 	rows, err := s.db.Query(q, args...)

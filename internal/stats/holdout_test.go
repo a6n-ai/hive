@@ -10,7 +10,8 @@ import (
 )
 
 func TestDraw(t *testing.T) {
-	if Draw("s", "d", 1, 0.3) != Draw("s", "d", 1, 0.3) {
+	first, second := Draw("s", "d", 1, 0.3), Draw("s", "d", 1, 0.3)
+	if first != second {
 		t.Fatal("Draw is not deterministic")
 	}
 	holdouts := 0

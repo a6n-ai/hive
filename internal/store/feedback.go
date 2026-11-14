@@ -58,8 +58,9 @@ func (t *Tx) UnresolveSessionMemoryRows(session, memoryID string, resolvedAt int
 	for _, r := range reasons {
 		args = append(args, r)
 	}
+	//nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
 	_, err := t.tx.Exec(`UPDATE score_outcomes SET label = NULL, reason = '', scale = 1, resolved = NULL
-		WHERE session = ? AND memory_id = ? AND resolved = ? AND reason IN (`+placeholders(len(reasons))+`)`, args...) //nolint:gosec // G202: only "?" placeholders are concatenated; every value is bound
+		WHERE session = ? AND memory_id = ? AND resolved = ? AND reason IN (`+placeholders(len(reasons))+`)`, args...)
 	return err
 }
 
