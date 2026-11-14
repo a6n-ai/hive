@@ -34,18 +34,16 @@ type HoldoutResult struct {
 	Verdict         string
 }
 
-// WouldBeHit reports whether some command contains every content word of line.
-func WouldBeHit(commands []string, line string) bool {
-	words := recall.ContentWords(line)
-	if len(words) == 0 {
-		return false
+// WouldBeHit reports whether some command reaches the shown line: it has content
+// words and every one appears in the line's terms (the recall label rule).
+func WouldBeHit(commands []string, key, line string) bool {
+	have := map[string]bool{}
+	for _, t := range text.Terms(key + " " + line) {
+		have[t] = true
 	}
 	for _, c := range commands {
-		have := map[string]bool{}
-		for _, t := range text.Terms(c) {
-			have[t] = true
-		}
-		if !slices.ContainsFunc(words, func(w string) bool { return !have[w] }) {
+		words := recall.ContentWords(c)
+		if len(words) > 0 && !slices.ContainsFunc(words, func(w string) bool { return !have[w] }) {
 			return true
 		}
 	}
@@ -134,7 +132,7 @@ func measure(st *store.Store, w store.Window, in store.Injection, p store.Prompt
 	if len(in.MemoryIDs) == 0 {
 		return m, nil
 	}
-	line, err := st.MemoryText(in.MemoryIDs[0])
+	key, line, err := st.MemoryKeyText(in.MemoryIDs[0])
 	if err != nil {
 		return m, err
 	}
@@ -150,7 +148,7 @@ func measure(st *store.Store, w store.Window, in store.Injection, p store.Prompt
 			cmds = append(cmds, c)
 		}
 	}
-	m.hit = WouldBeHit(cmds, line)
+	m.hit = WouldBeHit(cmds, key, line)
 	return m, nil
 }
 

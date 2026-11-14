@@ -233,14 +233,13 @@ func (s *Store) OutcomeCounts(w Window) ([]OutcomeCount, error) {
 	return out, rows.Err()
 }
 
-// MemoryText returns a memory's text, or "" when it is gone.
-func (s *Store) MemoryText(id string) (string, error) {
-	var t string
-	err := s.db.QueryRow(`SELECT text FROM memories WHERE id = ?`, id).Scan(&t)
+// MemoryKeyText returns a memory's key and text, or "" for both when it is gone.
+func (s *Store) MemoryKeyText(id string) (key, text string, err error) {
+	err = s.db.QueryRow(`SELECT key, text FROM memories WHERE id = ?`, id).Scan(&key, &text)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
+		return "", "", nil
 	}
-	return t, err
+	return key, text, err
 }
 
 type PromptRef struct {

@@ -153,7 +153,7 @@ func TestCompareMeasures(t *testing.T) {
 	wbSeed(t, e, 2, true, alt(10, 10), memID)
 	err := e.st.Write(context.Background(), func(tx *store.Tx) error {
 		for _, ev := range []model.Event{
-			{TS: 1003, Session: fmt.Sprintf("true-0-%d", evSeq-1), Kind: model.PostTool, Tool: "shell", Payload: map[string]any{"command": "go test -run Foo"}, Digest: "x1"},
+			{TS: 1003, Session: fmt.Sprintf("true-0-%d", evSeq-1), Kind: model.PostTool, Tool: "shell", Payload: map[string]any{"command": "go test pkg"}, Digest: "x1"},
 			{TS: 1004, Session: fmt.Sprintf("true-0-%d", evSeq-1), Kind: model.PostTool, Tool: "shell", Payload: map[string]any{"command": "ls", "error": "boom"}, Digest: "x2"},
 			{TS: 1006, Session: fmt.Sprintf("true-0-%d", evSeq-1), Kind: model.Correction, Digest: "x3"},
 		} {
@@ -180,20 +180,22 @@ func TestCompareMeasures(t *testing.T) {
 
 func TestWouldBeHit(t *testing.T) {
 	cases := []struct {
-		cmds []string
-		line string
-		want bool
+		cmds      []string
+		key, line string
+		want      bool
 	}{
-		{[]string{"go test ./... -run Login"}, "run go test login", true},
-		{[]string{"ls", "go build"}, "go test login", false},
-		{[]string{"GO TEST login"}, "go test login", true},
-		{[]string{"anything"}, "", false},
-		{[]string{"anything"}, "a an of", false},
-		{nil, "go test", false},
+		{[]string{"go test login"}, "k", "run go test login now", true},
+		{[]string{"GO TEST login"}, "k", "go test login", true},
+		{[]string{"ls", "go build"}, "k", "go test login", false},
+		{[]string{"go test login extra"}, "k", "go test login", false},
+		{[]string{"go login"}, "login", "go", true},
+		{[]string{"a an of"}, "k", "a an of", false},
+		{[]string{""}, "k", "go test", false},
+		{nil, "k", "go test", false},
 	}
 	for _, c := range cases {
-		if got := WouldBeHit(c.cmds, c.line); got != c.want {
-			t.Errorf("WouldBeHit(%v, %q) = %v, want %v", c.cmds, c.line, got, c.want)
+		if got := WouldBeHit(c.cmds, c.key, c.line); got != c.want {
+			t.Errorf("WouldBeHit(%v, %q, %q) = %v, want %v", c.cmds, c.key, c.line, got, c.want)
 		}
 	}
 }

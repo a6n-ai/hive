@@ -424,7 +424,7 @@ func TestOutcomeCounts(t *testing.T) {
 	}
 }
 
-func TestEventsInInclusiveAndMemoryText(t *testing.T) {
+func TestEventsInInclusiveAndMemoryKeyText(t *testing.T) {
 	st, _ := openTemp(t)
 	err := st.Write(context.Background(), func(tx *Tx) error {
 		for i, ts := range []int64{5, 10, 20, 25} {
@@ -451,11 +451,11 @@ func TestEventsInInclusiveAndMemoryText(t *testing.T) {
 	if err := st.db.QueryRow(`SELECT id FROM memories`).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
-	if txt, err := st.MemoryText(id); err != nil || txt != "hello" {
-		t.Fatalf("text %q err %v", txt, err)
+	if k, txt, err := st.MemoryKeyText(id); err != nil || k != "k" || txt != "hello" {
+		t.Fatalf("key %q text %q err %v", k, txt, err)
 	}
-	if txt, err := st.MemoryText("gone"); err != nil || txt != "" {
-		t.Fatalf("gone: %q %v", txt, err)
+	if k, txt, err := st.MemoryKeyText("gone"); err != nil || k != "" || txt != "" {
+		t.Fatalf("gone: %q %q %v", k, txt, err)
 	}
 }
 
