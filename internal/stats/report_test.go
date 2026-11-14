@@ -179,3 +179,37 @@ func TestReportEstimateShown(t *testing.T) {
 		t.Fatalf("text:\n%s", txt)
 	}
 }
+
+func TestReportMemoryFiguresScopedToProject(t *testing.T) {
+	e := newEnv(t)
+	t.Setenv("INSCRIBE_HOME", e.dir)
+	a, b, g := e.memory(t, "a"), e.memory(t, "b"), e.memory(t, "g")
+	if _, err := e.db.Exec(`UPDATE memories SET scope = 'q' WHERE id = ?`, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.Exec(`UPDATE memories SET scope_kind = 'global', scope = '' WHERE id = ?`, g); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.Exec(`UPDATE memories SET penalty = 0.2`); err != nil {
+		t.Fatal(err)
+	}
+	err := e.st.Write(t.Context(), func(tx *store.Tx) error {
+		return tx.InsertInjection(store.InjectionInput{TS: 1500, Session: "s1", Agent: "claude-code", Project: "p", Hook: "SessionStart", LineCount: 1, EstTokens: 5, MemoryIDs: []string{a}})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		project              string
+		active, unused, pens int
+	}{{"p", 2, 1, 2}, {"", 3, 2, 3}} {
+		r, err := Build(e.st, store.Window{From: 0, To: 1 << 40, Project: tc.project}, reportCfg, time.UnixMilli(10000))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := r.Measured
+		if m.MemoriesActive != tc.active || len(m.Unused30d) != tc.unused || len(m.Penalized) != tc.pens {
+			t.Fatalf("project %q: active %d unused %v penalized %v", tc.project, m.MemoriesActive, m.Unused30d, m.Penalized)
+		}
+	}
+}

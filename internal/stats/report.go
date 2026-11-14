@@ -135,8 +135,7 @@ func Build(st *store.Store, w store.Window, cfg config.StatsCfg, now time.Time) 
 	if m.ByStatus, m.ByType, err = st.MemoryCounts(); err != nil {
 		return r, err
 	}
-	m.MemoriesActive = m.ByStatus["active"]
-	if m.Penalized, err = st.Penalized(10); err != nil {
+	if m.Penalized, err = st.Penalized(10, w.Project); err != nil {
 		return r, err
 	}
 	if err := unused(st, w, now, m); err != nil {
@@ -240,10 +239,11 @@ func outcomes(st *store.Store, w store.Window, m *Measured) error {
 }
 
 func unused(st *store.Store, w store.Window, now time.Time, m *Measured) error {
-	ids, err := st.ActiveMemoryIDs()
+	ids, err := st.ActiveMemoryIDs(w.Project)
 	if err != nil {
 		return err
 	}
+	m.MemoriesActive = len(ids)
 	recent, err := st.InjectionsIn(store.Window{From: now.UnixMilli() - 30*24*time.Hour.Milliseconds(), To: w.To, Project: w.Project})
 	if err != nil {
 		return err

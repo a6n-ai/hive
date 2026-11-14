@@ -36,7 +36,7 @@ func ingestOne(st *store.Store, t store.IngestTarget, now time.Time) error {
 	var turns []store.UsageTurn
 	assistant, lacking := 0, 0
 	var prevTS int64
-	_, _, err := importer.ReadTranscript(t.Path, func(l importer.RawLine) error {
+	_, malformed, err := importer.ReadTranscript(t.Path, func(l importer.RawLine) error {
 		if l.Type != "assistant" {
 			return nil
 		}
@@ -61,7 +61,7 @@ func ingestOne(st *store.Store, t store.IngestTarget, now time.Time) error {
 		status, turns = "missing", nil
 	case err != nil:
 		return err
-	case assistant > 0 && lacking*2 > assistant:
+	case (assistant+malformed) > 0 && (lacking+malformed)*2 > assistant+malformed:
 		status = "unparsed"
 	}
 	return st.Write(context.Background(), func(tx *store.Tx) error {

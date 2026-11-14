@@ -3,6 +3,7 @@ package stats
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -203,5 +204,33 @@ func TestIngestPermissionDenied(t *testing.T) {
 	}
 	if st, at := e.status(t, "s1"); st.Valid || at.Valid {
 		t.Fatalf("session marked: %v %v", st, at)
+	}
+}
+
+func TestIngestAllMalformedUnparsed(t *testing.T) {
+	e := newEnv(t)
+	p := e.write(t, "t.jsonl", "not json\n{broken\n")
+	e.touch(t, "s1", p, model.SessionEnd, 100)
+	if _, err := IngestUsage(e.st, 20, now); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := e.status(t, "s1"); st.String != "unparsed" {
+		t.Fatalf("status = %v", st)
+	}
+}
+
+func TestIngestMostlyGoodWithMalformedOK(t *testing.T) {
+	e := newEnv(t)
+	good := `{"type":"assistant","timestamp":"2026-01-01T00:00:00Z","message":{"id":"%s","usage":{"output_tokens":5}}}` + "\n"
+	p := e.write(t, "t.jsonl", fmt.Sprintf(good, "a")+fmt.Sprintf(good, "b")+fmt.Sprintf(good, "c")+"not json\n")
+	e.touch(t, "s1", p, model.SessionEnd, 100)
+	if _, err := IngestUsage(e.st, 20, now); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := e.status(t, "s1"); st.String != "ok" {
+		t.Fatalf("status = %v", st)
+	}
+	if got := e.outputs(t, "s1"); len(got) != 3 {
+		t.Fatalf("rows = %v", got)
 	}
 }

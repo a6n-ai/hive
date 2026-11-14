@@ -315,8 +315,10 @@ type Penalty struct {
 }
 
 // Penalized returns up to limit memories with a penalty above 0, largest first.
-func (s *Store) Penalized(limit int) ([]Penalty, error) {
-	rows, err := s.db.Query(`SELECT id, penalty FROM memories WHERE penalty > 0 ORDER BY penalty DESC, id LIMIT ?`, limit)
+// A non-empty project keeps the global and that project's memories.
+func (s *Store) Penalized(limit int, project string) ([]Penalty, error) {
+	cond, args := filterSQL("memories", ListFilter{Project: project})
+	rows, err := s.db.Query(`SELECT id, penalty FROM memories WHERE penalty > 0`+cond+` ORDER BY penalty DESC, id LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -332,9 +334,11 @@ func (s *Store) Penalized(limit int) ([]Penalty, error) {
 	return out, rows.Err()
 }
 
-// ActiveMemoryIDs returns the ids of all active memories.
-func (s *Store) ActiveMemoryIDs() ([]string, error) {
-	rows, err := s.db.Query(`SELECT id FROM memories WHERE status = 'active' ORDER BY id`)
+// ActiveMemoryIDs returns the ids of active memories. A non-empty project keeps
+// the global and that project's memories.
+func (s *Store) ActiveMemoryIDs(project string) ([]string, error) {
+	cond, args := filterSQL("memories", ListFilter{Project: project})
+	rows, err := s.db.Query(`SELECT id FROM memories WHERE status = 'active'`+cond+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
