@@ -68,6 +68,8 @@ untouched. `inscribe uninstall --agent NAME` removes only Inscribe's hooks. Agen
   lines, up to 500 characters.
 - File contents are never stored. Paths of `.env*`, `*.pem`, `id_*` and
   `*credentials*` files are kept, nothing else of them.
+- Token counts, model and message ids (no message text) are read from Claude
+  Code transcripts, and stored with the session they belong to.
 - Rolling retention and the replay sample are planned for a later release.
 - Set `INSCRIBE_DISABLED=1` to make hooks do nothing.
 - A session that stops without a `SessionEnd` (a closed window, a crash, a tab
@@ -111,6 +113,8 @@ fails processing is quarantined in `spool/bad` while the rest commit.
     inscribe undo RUN_ID
     inscribe sync --agent claude-code|codex|gemini [--project P] [--include-global]
     inscribe score (train|show [--outcomes]|combine --dir DIR)
+    inscribe stats [--days N] [--all] [--explain] [--json]
+    inscribe stats ingest --catch-up [--limit N]
     inscribe serve [--addr 127.0.0.1:7331]
     inscribe mcp
 
@@ -172,8 +176,44 @@ are accepted only with a `Host` of `127.0.0.1:PORT` or `localhost:PORT`, plus
 drops comments.
 
 `doctor` reports each agent's installed hooks and its warnings, the database and
-schema version, a scrubber self-test, and pending spool files. It warns when
+schema version, how many ended Claude Code sessions have missing or unparsed usage,
+a scrubber self-test, and pending spool files. It warns when
 claude-mem hooks are still in an agent's settings file.
+
+### Stats
+
+`inscribe stats` reports what Inscribe injected and what came of it, for this
+project over the last 7 days (`--days N`, `--all` for every project, `--json` for
+machine output, `--explain` for the estimate model and its biases).
+`inscribe stats ingest --catch-up` reads token usage from the transcripts of
+ended Claude Code sessions; Inscribe also spawns it detached at Claude Code session start and end.
+Upgrading applies migration 0009, which adds the analytics tables. Older binaries
+then refuse the store, so do not downgrade without restoring a backup.
+
+What the numbers mean:
+
+- **Measured** figures are counts: tokens injected per hook, hit and miss
+  labels, wrong ratings, feedback asks, memory use, store size, and usage.
+  Nothing in that block is a guess.
+- **Estimated** tokens saved are a range, from rule-only labels (the low end) to
+  every label (the high end). The range is hidden until at least 30 labeled hits
+  exist.
+- **Holdout** is off by default. With `[stats] holdout` set, that fraction of prompts
+  get no injection, and the report compares them with the rest. The verdict is
+  `consistent`, `contradicted` or `inconclusive`. The net (saved minus injected)
+  is shown only when the verdict is `consistent`.
+
+The `[stats]` keys, in the global `config.toml` only:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `session_line` | `true` | Show the one-line summary at session start. |
+| `holdout` | `0` | Fraction of prompts held out from injection, `0` to `0.5`; `0` is off. |
+| `holdout_min_sample` | `100` | Held-out prompts needed before a verdict. |
+| `idle_minutes` | `5` | Gap that ends active time in a session. |
+
+`[share] analytics` is a different switch: it controls the upload described
+above and has nothing to do with `[stats]`.
 
 `sync` writes this project's memories into the agent's instructions file for agents
 without hooks. It writes only project and file memories unless `--include-global`

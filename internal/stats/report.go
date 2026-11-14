@@ -194,6 +194,15 @@ func Build(st *store.Store, w store.Window, cfg config.StatsCfg, now time.Time) 
 		net := e.HiTokens - e.InjectedTokens
 		e.Net = &net
 	}
+	if m.Penalized == nil {
+		m.Penalized = []Penalty{}
+	}
+	if m.TopInjected == nil {
+		m.TopInjected = []Count{}
+	}
+	if e.Top == nil {
+		e.Top = []MemoryCredit{}
+	}
 	return r, nil
 }
 

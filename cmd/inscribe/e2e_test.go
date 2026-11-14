@@ -18,6 +18,7 @@ import (
 	"github.com/a6n-ai/inscribe/internal/consolidate"
 	"github.com/a6n-ai/inscribe/internal/recall"
 	"github.com/a6n-ai/inscribe/internal/stats"
+	"github.com/a6n-ai/inscribe/internal/store"
 	"github.com/a6n-ai/inscribe/model"
 	_ "modernc.org/sqlite"
 )
@@ -514,6 +515,42 @@ func TestDoctorToleratesJSONC(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("doctor output lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestDoctorAnalyticsCounts(t *testing.T) {
+	home := t.TempDir()
+	st, err := store.Open(filepath.Join(home, "inscribe.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = st.Write(context.Background(), func(tx *store.Tx) error {
+		if err := tx.TouchSession(&model.Event{TS: 1, Agent: "claude-code", Session: "s1", Project: "p", Kind: model.PostTool}); err != nil {
+			return err
+		}
+		return tx.MarkIngested("s1", "missing", 1)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`UPDATE sessions SET ended = 5 WHERE id = 's1'`)
+	_ = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := runOK(t, home, "", "doctor")
+	if !strings.Contains(out, "usage: 1 missing, 0 unparsed") {
+		t.Fatalf("doctor output lacks usage counts:\n%s", out)
+	}
+	if strings.Contains(out, "injection rows dropped") {
+		t.Fatalf("doctor reports drops on a fresh process:\n%s", out)
 	}
 }
 

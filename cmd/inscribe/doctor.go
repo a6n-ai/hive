@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/agent"
 	"github.com/a6n-ai/inscribe/agent/hookjson"
 	"github.com/a6n-ai/inscribe/internal/config"
@@ -31,11 +33,23 @@ func doctorCmd(stdout io.Writer) error {
 		fmt.Fprintf(stdout, "database: %s: %v\n", dbPath, err)
 	} else {
 		v, verr := st.SchemaVersion()
+		missing, unparsed, uerr := st.UsageStatusCounts(store.Window{To: time.Now().UnixMilli()})
 		_ = st.Close()
 		if verr != nil {
 			return verr
 		}
 		fmt.Fprintf(stdout, "database: %s (schema version %d)\n", dbPath, v)
+		if uerr != nil {
+			fmt.Fprintf(stdout, "usage: cannot count: %v\n", uerr)
+		} else {
+			fmt.Fprintf(stdout, "usage: %d missing, %d unparsed\n", missing, unparsed)
+		}
+		if h, err := inscribe.Open(inscribe.Options{Caller: "inscribe", ReadOnly: true}); err == nil {
+			if d := h.DroppedInjections(); d > 0 {
+				fmt.Fprintf(stdout, "analytics: %d injection rows dropped (store locked)\n", d)
+			}
+			_ = h.Close()
+		}
 	}
 
 	fmt.Fprintf(stdout, "scrubber: %s\n", scrubberSelfTest())

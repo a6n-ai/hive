@@ -44,8 +44,8 @@ func goldenReport() stats.Report {
 			InjectedByHook:     map[string]int{"SessionStart": 1200, "UserPromptSubmit": 3400, "PostToolUseFailure": 210, "feedback_ask": 380},
 			SessionStartTokens: 1200, SessionStartLines: 42,
 			Rates: map[string]stats.Rate{
-				"rule":   {MissReasons: map[string]int{"forgotten": 28}},
-				"agent":  {Hits: 4, Misses: 5, MissReasons: map[string]int{"agent": 5}},
+				"rule":   {Misses: 28, MissReasons: map[string]int{"forgotten": 28}},
+				"agent":  {Hits: 4, Misses: 5, MissReasons: map[string]int{"agent": 3, "agent_wrong": 2}},
 				"review": {Hits: 11, Misses: 45, MissReasons: map[string]int{"review": 34, "review_wrong": 11}},
 			},
 			Unlabeled: 17, Shown: 82, Wrong: 13, Rated: 65,
@@ -88,6 +88,15 @@ func TestStatsJSONKeys(t *testing.T) {
 	for _, k := range []string{"window", "measured", "estimate", "holdout"} {
 		if _, ok := top[k]; !ok {
 			t.Fatalf("missing %s in %s", k, out)
+		}
+	}
+}
+
+func TestStatsJSONEmptySlices(t *testing.T) {
+	out := runOK(t, t.TempDir(), "", "stats", "--json")
+	for _, field := range []string{`"penalized":`, `"unused_30d":`, `"top_injected":`, `"top":`} {
+		if !strings.Contains(out, field+"[]") && !strings.Contains(out, field+" []") {
+			t.Fatalf("%s is not []:\n%s", field, out)
 		}
 	}
 }

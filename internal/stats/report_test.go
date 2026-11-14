@@ -67,7 +67,7 @@ func TestReportHiddenEstimate(t *testing.T) {
 		e.outcome(t, fmt.Sprint("m", i), fmt.Sprint("s", i), "agent", lbl(1))
 	}
 	r := build(t, e, reportCfg)
-	if !r.Estimate.Hidden || r.Estimate.LabeledHits != 15 || r.Estimate.Top != nil {
+	if !r.Estimate.Hidden || r.Estimate.LabeledHits != 15 || len(r.Estimate.Top) != 0 {
 		t.Fatalf("%+v", r.Estimate)
 	}
 	if txt := Text(r, false); !strings.Contains(txt, "not enough data (15 labeled hits, need 30)") {
