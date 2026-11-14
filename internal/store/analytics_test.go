@@ -201,3 +201,168 @@ func BenchmarkSessionLineCounts(b *testing.B) {
 	}
 	b.ReportMetric(float64(b.Elapsed().Microseconds())/1000/float64(b.N), "ms/op")
 }
+
+func seedUsage(t *testing.T, st *Store, turns ...UsageTurn) {
+	t.Helper()
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		_, err := tx.UpsertUsageTurns(turns)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteOldAnalyticsKeepsEvidence(t *testing.T) {
+	st, _ := openTemp(t)
+	ctx := context.Background()
+	err := st.Write(ctx, func(tx *Tx) error {
+		e := model.Event{TS: 1, Agent: "claude-code", Session: "keep", Project: "p", Kind: model.PostTool, Digest: "d"}
+		if _, err := tx.InsertEvent(&e); err != nil {
+			return err
+		}
+		mem := &model.Memory{Type: model.Fix, ScopeKind: model.ProjectScope, Scope: "p", Key: "k", Text: "t",
+			Confidence: 0.5, Status: model.Active, FirstSeen: 1, LastSeen: 1}
+		if _, err := tx.UpsertMemory(mem, nil, e.ID); err != nil {
+			return err
+		}
+		for _, ts := range []int64{5, 500} {
+			if err := tx.InsertInjection(InjectionInput{TS: ts, Session: "keep", Agent: "claude-code", Project: "p", Hook: "UserPromptSubmit"}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedUsage(t, st,
+		UsageTurn{Session: "keep", MessageID: "a", TS: 5, Input: 1},
+		UsageTurn{Session: "other", MessageID: "b", TS: 5, Input: 1},
+		UsageTurn{Session: "other", MessageID: "c", TS: 500, Input: 1})
+	var inj, use int64
+	err = st.Write(ctx, func(tx *Tx) error {
+		var err error
+		inj, use, err = tx.DeleteOldAnalytics(100, 10)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inj != 1 || use != 1 {
+		t.Fatalf("deleted injections=%d usage=%d, want 1 and 1", inj, use)
+	}
+	var n int
+	if err := st.db.QueryRow(`SELECT count(*) FROM usage_turns WHERE session = 'keep'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("evidence session usage rows = %d (%v), want 1", n, err)
+	}
+	if err := st.db.QueryRow(`SELECT count(*) FROM usage_turns`).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("usage rows = %d (%v), want 2", n, err)
+	}
+}
+
+func TestUsageInRangeHalfOpen(t *testing.T) {
+	st, _ := openTemp(t)
+	seedUsage(t, st,
+		UsageTurn{Session: "s", MessageID: "a", TS: 10, Input: 1, Output: 2, CacheRead: 3, CacheCreation: 4},
+		UsageTurn{Session: "s", MessageID: "b", TS: 20, Input: 10},
+		UsageTurn{Session: "x", MessageID: "c", TS: 15, Input: 100})
+	got, err := st.UsageInRange("s", 10, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (UsageSum{Input: 1, Output: 2, CacheRead: 3, CacheCreation: 4}); got != want {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestUsageTotalsFiltersWindowAndProject(t *testing.T) {
+	st, _ := openTemp(t)
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		for id, p := range map[string]string{"s1": "p", "s2": "q"} {
+			if err := tx.TouchSession(&model.Event{TS: 1, Agent: "claude-code", Session: id, Project: p, Kind: model.PostTool}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedUsage(t, st,
+		UsageTurn{Session: "s1", MessageID: "a", TS: 10, Input: 1},
+		UsageTurn{Session: "s1", MessageID: "b", TS: 20, Input: 10},
+		UsageTurn{Session: "s2", MessageID: "c", TS: 10, Input: 100})
+	if got, err := st.UsageTotals(Window{From: 10, To: 20, Project: "p"}); err != nil || got.Input != 1 {
+		t.Fatalf("project p: %+v %v, want input 1", got, err)
+	}
+	if got, err := st.UsageTotals(Window{From: 10, To: 20}); err != nil || got.Input != 101 {
+		t.Fatalf("all projects: %+v %v, want input 101", got, err)
+	}
+}
+
+func TestUsageStatusCounts(t *testing.T) {
+	st, _ := openTemp(t)
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		for _, s := range []struct {
+			id, project, status string
+			ended               int64
+		}{
+			{"a", "p", "missing", 10}, {"b", "p", "unparsed", 15}, {"c", "p", "ok", 15},
+			{"d", "p", "missing", 20}, {"e", "q", "missing", 12},
+		} {
+			if err := tx.TouchSession(&model.Event{TS: 1, Agent: "claude-code", Session: s.id, Project: s.project, Kind: model.PostTool}); err != nil {
+				return err
+			}
+			if _, err := tx.tx.Exec(`UPDATE sessions SET ended = ? WHERE id = ?`, s.ended, s.id); err != nil {
+				return err
+			}
+			if err := tx.MarkIngested(s.id, s.status, 1); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing, unparsed, err := st.UsageStatusCounts(Window{From: 10, To: 20, Project: "p"})
+	if err != nil || missing != 1 || unparsed != 1 {
+		t.Fatalf("got missing=%d unparsed=%d err=%v, want 1 and 1", missing, unparsed, err)
+	}
+	if missing, _, _ = st.UsageStatusCounts(Window{From: 10, To: 20}); missing != 2 {
+		t.Fatalf("all projects missing = %d, want 2", missing)
+	}
+}
+
+func TestSessionsToIngestSkipsMissingWithoutNewerEvent(t *testing.T) {
+	st, _ := openTemp(t)
+	err := st.Write(context.Background(), func(tx *Tx) error {
+		if err := tx.TouchSession(&model.Event{TS: 5, Agent: "claude-code", Session: "s", Project: "p", Kind: model.PostTool}); err != nil {
+			return err
+		}
+		if _, err := tx.tx.Exec(`UPDATE sessions SET ended = 5, transcript_path = '/t' WHERE id = 's'`); err != nil {
+			return err
+		}
+		return tx.MarkIngested("s", "missing", 10)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.SessionsToIngest("claude-code", 10); err != nil || len(got) != 0 {
+		t.Fatalf("got %v err %v, want none", got, err)
+	}
+	err = st.Write(context.Background(), func(tx *Tx) error {
+		if err := tx.TouchSession(&model.Event{TS: 50, Agent: "claude-code", Session: "s", Project: "p", Kind: model.PostTool}); err != nil {
+			return err
+		}
+		_, err := tx.tx.Exec(`UPDATE sessions SET ended = last_event WHERE id = 's'`)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := st.SessionsToIngest("claude-code", 10); err != nil || len(got) != 1 {
+		t.Fatalf("got %v err %v, want 1 after a newer event", got, err)
+	}
+}

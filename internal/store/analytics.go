@@ -139,3 +139,23 @@ func (s *Store) UsageStatusCounts(w Window) (missing, unparsed int, err error) {
 		Scan(&missing, &unparsed)
 	return missing, unparsed, err
 }
+
+// DeleteOldAnalytics deletes up to limit injections and up to limit usage rows
+// older than cutoff. Usage of a session that owns evidence for a live memory stays.
+func (t *Tx) DeleteOldAnalytics(cutoff int64, limit int) (injections, usage int64, err error) {
+	res, err := t.tx.Exec(`DELETE FROM injections WHERE id IN (SELECT id FROM injections WHERE ts < ? LIMIT ?)`, cutoff, limit)
+	if err != nil {
+		return 0, 0, err
+	}
+	if injections, err = res.RowsAffected(); err != nil {
+		return 0, 0, err
+	}
+	res, err = t.tx.Exec(`DELETE FROM usage_turns WHERE rowid IN (SELECT rowid FROM usage_turns u WHERE u.ts < ? AND NOT EXISTS (
+		SELECT 1 FROM memory_evidence me JOIN events e ON e.id = me.event_id JOIN memories m ON m.id = me.memory_id
+		WHERE e.session = u.session AND m.status <> 'forgotten') LIMIT ?)`, cutoff, limit)
+	if err != nil {
+		return 0, 0, err
+	}
+	usage, err = res.RowsAffected()
+	return injections, usage, err
+}

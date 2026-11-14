@@ -242,3 +242,54 @@ func TestSettingsChangePauses(t *testing.T) {
 		t.Error("still paused after apply with the new settings")
 	}
 }
+
+func (f *fixture) analytics(n int, age time.Duration) {
+	f.t.Helper()
+	err := f.st.Write(context.Background(), func(tx *store.Tx) error {
+		for i := 0; i < n; i++ {
+			if err := tx.InsertInjection(store.InjectionInput{TS: now.Add(-age).UnixMilli(), Session: "s1", Agent: "claude-code", Project: "/p", Hook: "UserPromptSubmit"}); err != nil {
+				return err
+			}
+		}
+		_, err := tx.UpsertUsageTurns([]store.UsageTurn{{Session: "u1", MessageID: "m1", TS: now.Add(-age).UnixMilli(), Input: 1}})
+		return err
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func TestRetentionAnalyticsBatches(t *testing.T) {
+	f := newFixture(t)
+	f.analytics(5010, 400*day)
+	rep := f.apply(f.conf, false)
+	if rep.InjectionsDeleted != 5010 || rep.UsageTurnsDeleted != 1 {
+		t.Errorf("report = %+v, want 5010 injections and 1 usage turn", rep)
+	}
+	if n := f.count(`SELECT count(*) FROM injections`); n != 0 {
+		t.Errorf("injections left = %d, want 0", n)
+	}
+}
+
+func TestRetentionKeepAllAnalytics(t *testing.T) {
+	f := newFixture(t)
+	f.analytics(3, 400*day)
+	cfg := f.conf
+	cfg.Mode = "keep_all"
+	f.apply(cfg, false)
+	if n := f.count(`SELECT (SELECT count(*) FROM injections) + (SELECT count(*) FROM usage_turns)`); n != 4 {
+		t.Errorf("analytics rows = %d, want 4", n)
+	}
+}
+
+func TestDryRunAnalyticsChangesNothing(t *testing.T) {
+	f := newFixture(t)
+	f.analytics(3, 400*day)
+	rep := f.apply(f.conf, true)
+	if rep.InjectionsDeleted != 3 || rep.UsageTurnsDeleted != 1 {
+		t.Errorf("dry-run report = %+v, want 3 injections and 1 usage turn", rep)
+	}
+	if n := f.count(`SELECT (SELECT count(*) FROM injections) + (SELECT count(*) FROM usage_turns)`); n != 4 {
+		t.Errorf("analytics rows = %d after dry run, want 4", n)
+	}
+}

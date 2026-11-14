@@ -241,7 +241,7 @@ func TestRetentionApplyYes(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := runOK(t, home, "", "retention", "apply", "--yes")
-	for _, want := range []string{"prompt_texts_cleared=1", "events_deleted=1"} {
+	for _, want := range []string{"prompt_texts_cleared=1", "events_deleted=1", "injections_deleted=", "usage_turns_deleted="} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output %q missing %q", out, want)
 		}

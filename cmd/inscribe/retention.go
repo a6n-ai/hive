@@ -67,7 +67,7 @@ func retentionApply(ctx context.Context, h *inscribe.Inscribe, args []string, st
 }
 
 func writeReport(w io.Writer, label string, r retention.Report) error {
-	_, err := fmt.Fprintf(w, "%s: prompt_texts_cleared=%d events_deleted=%d replay_added=%d replay_dropped=%d kept_as_evidence=%d\n",
-		label, r.PromptTextsCleared, r.EventsDeleted, r.ReplayAdded, r.ReplayDropped, r.KeptAsEvidence)
+	_, err := fmt.Fprintf(w, "%s: prompt_texts_cleared=%d events_deleted=%d replay_added=%d replay_dropped=%d kept_as_evidence=%d injections_deleted=%d usage_turns_deleted=%d\n",
+		label, r.PromptTextsCleared, r.EventsDeleted, r.ReplayAdded, r.ReplayDropped, r.KeptAsEvidence, r.InjectionsDeleted, r.UsageTurnsDeleted)
 	return err
 }

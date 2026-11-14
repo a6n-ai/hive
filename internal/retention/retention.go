@@ -15,7 +15,7 @@ import (
 
 // Report counts what a prune changed, or would change in a dry run.
 type Report struct {
-	PromptTextsCleared, EventsDeleted, ReplayAdded, ReplayDropped, KeptAsEvidence int
+	PromptTextsCleared, EventsDeleted, ReplayAdded, ReplayDropped, KeptAsEvidence, InjectionsDeleted, UsageTurnsDeleted int
 }
 
 const (
@@ -183,12 +183,19 @@ func trimReplay(tx *store.Tx, cfg config.RetentionCfg, now time.Time, rep *Repor
 }
 
 func deleteOld(tx *store.Tx, cfg config.RetentionCfg, now time.Time, rep *Report) (int, error) {
-	n, err := tx.DeleteOldEvents(now.Add(-days(cfg.EventDays)).UnixMilli(), batchSize)
+	cutoff := now.Add(-days(cfg.EventDays)).UnixMilli()
+	n, err := tx.DeleteOldEvents(cutoff, batchSize)
+	if err != nil {
+		return 0, err
+	}
+	inj, use, err := tx.DeleteOldAnalytics(cutoff, batchSize)
 	if err != nil {
 		return 0, err
 	}
 	rep.EventsDeleted += int(n)
-	return int(n), nil
+	rep.InjectionsDeleted += int(inj)
+	rep.UsageTurnsDeleted += int(use)
+	return int(n + inj + use), nil
 }
 
 // finish drops evidence links to deleted events and counts the old events kept as evidence.
