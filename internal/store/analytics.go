@@ -79,3 +79,63 @@ func (s *Store) SessionLineCounts(project string, from int64) (SessionLineCounts
 		project, from).Scan(&c.Sessions, &c.Hits, &c.Shown, &c.InjectedTokens, &c.NextTryFixes, &c.AgentAnswered, &c.AgentHelpful)
 	return c, err
 }
+
+type UsageTurn struct {
+	Session, MessageID, Model               string
+	TS                                      int64
+	Input, Output, CacheRead, CacheCreation int
+}
+
+type UsageSum struct {
+	Input, Output, CacheRead, CacheCreation int
+}
+
+// UpsertUsageTurns stores one row per (session, message id). A message that
+// shows up again keeps the larger value of each token field, since a streamed
+// message's counts only grow.
+func (t *Tx) UpsertUsageTurns(turns []UsageTurn) (int, error) {
+	for _, u := range turns {
+		if _, err := t.tx.Exec(`INSERT INTO usage_turns(session, message_id, ts, model, input, output, cache_read, cache_creation)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(session, message_id) DO UPDATE SET
+			input = max(input, excluded.input), output = max(output, excluded.output),
+			cache_read = max(cache_read, excluded.cache_read), cache_creation = max(cache_creation, excluded.cache_creation)`,
+			u.Session, u.MessageID, u.TS, u.Model, u.Input, u.Output, u.CacheRead, u.CacheCreation); err != nil {
+			return 0, err
+		}
+	}
+	return len(turns), nil
+}
+
+// MarkIngested records that a session's usage was read, with the outcome status.
+func (t *Tx) MarkIngested(session, status string, ts int64) error {
+	_, err := t.tx.Exec(`UPDATE sessions SET usage_status = ?, usage_ingested_at = ? WHERE id = ?`, status, ts, session)
+	return err
+}
+
+// UsageInRange sums one session's usage with ts in [from, to).
+func (s *Store) UsageInRange(session string, from, to int64) (UsageSum, error) {
+	var u UsageSum
+	err := s.db.QueryRow(`SELECT coalesce(sum(input), 0), coalesce(sum(output), 0), coalesce(sum(cache_read), 0), coalesce(sum(cache_creation), 0)
+		FROM usage_turns WHERE session = ? AND ts >= ? AND ts < ?`, session, from, to).
+		Scan(&u.Input, &u.Output, &u.CacheRead, &u.CacheCreation)
+	return u, err
+}
+
+// UsageTotals sums usage with ts in [w.From, w.To); an empty Project means all.
+func (s *Store) UsageTotals(w Window) (UsageSum, error) {
+	var u UsageSum
+	err := s.db.QueryRow(`SELECT coalesce(sum(u.input), 0), coalesce(sum(u.output), 0), coalesce(sum(u.cache_read), 0), coalesce(sum(u.cache_creation), 0)
+		FROM usage_turns u JOIN sessions s ON s.id = u.session
+		WHERE u.ts >= ? AND u.ts < ? AND (? = '' OR s.project = ?)`, w.From, w.To, w.Project, w.Project).
+		Scan(&u.Input, &u.Output, &u.CacheRead, &u.CacheCreation)
+	return u, err
+}
+
+// UsageStatusCounts counts sessions ended in the window whose usage could not be read.
+func (s *Store) UsageStatusCounts(w Window) (missing, unparsed int, err error) {
+	err = s.db.QueryRow(`SELECT coalesce(sum(usage_status = 'missing'), 0), coalesce(sum(usage_status = 'unparsed'), 0)
+		FROM sessions WHERE ended >= ? AND ended < ? AND (? = '' OR project = ?)`, w.From, w.To, w.Project, w.Project).
+		Scan(&missing, &unparsed)
+	return missing, unparsed, err
+}

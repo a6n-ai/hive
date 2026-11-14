@@ -51,6 +51,9 @@ func TestParseGolden(t *testing.T) {
 		if e.Project == "" {
 			t.Errorf("%s: empty project", c.file)
 		}
+		if want := map[string]string{"SessionStart.json": "/t.jsonl", "UserPromptSubmit.json": "/t.jsonl"}[c.file]; want != "" && e.TranscriptPath != want {
+			t.Errorf("%s: transcript path = %q, want %q", c.file, e.TranscriptPath, want)
+		}
 		if !reflect.DeepEqual(e.Payload, c.payload) {
 			t.Errorf("%s: payload = %v, want %v", c.file, e.Payload, c.payload)
 		}

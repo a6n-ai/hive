@@ -34,3 +34,31 @@ func (t *Tx) CloseSessions(ids []string) error {
 	}
 	return nil
 }
+
+// IngestTarget is an ended session whose transcript has usage to read.
+type IngestTarget struct {
+	Session, Path string
+	LastEvent     int64
+}
+
+// SessionsToIngest returns ended sessions of agent that were never ingested or
+// had events after their last ingest, newest first.
+func (s *Store) SessionsToIngest(agent string, limit int) ([]IngestTarget, error) {
+	rows, err := s.db.Query(`SELECT id, transcript_path, last_event FROM sessions
+		WHERE agent = ? AND ended IS NOT NULL AND transcript_path IS NOT NULL
+		AND (usage_ingested_at IS NULL OR last_event > usage_ingested_at)
+		ORDER BY last_event DESC LIMIT ?`, agent, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []IngestTarget
+	for rows.Next() {
+		var t IngestTarget
+		if err := rows.Scan(&t.Session, &t.Path, &t.LastEvent); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

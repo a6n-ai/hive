@@ -43,12 +43,13 @@ func New() *Adapter { return &Adapter{} }
 func init() { agent.Register(New()) }
 
 type hookPayload struct {
-	SessionID string         `json:"session_id"`
-	Cwd       string         `json:"cwd"`
-	Prompt    string         `json:"prompt"`
-	ToolName  string         `json:"tool_name"`
-	ToolInput map[string]any `json:"tool_input"`
-	Error     string         `json:"error"`
+	SessionID      string         `json:"session_id"`
+	TranscriptPath string         `json:"transcript_path"`
+	Cwd            string         `json:"cwd"`
+	Prompt         string         `json:"prompt"`
+	ToolName       string         `json:"tool_name"`
+	ToolInput      map[string]any `json:"tool_input"`
+	Error          string         `json:"error"`
 }
 
 func (a *Adapter) Name() string { return name }
@@ -65,7 +66,7 @@ func (a *Adapter) Parse(event string, stdin []byte) (model.Event, error) {
 	if p.SessionID == "" {
 		return model.Event{}, errors.New("claude-code: payload has no session_id")
 	}
-	e := model.Event{Agent: name, Session: p.SessionID, Project: capture.ResolveProject(p.Cwd), Cwd: p.Cwd, Kind: kind, Payload: map[string]any{}}
+	e := model.Event{Agent: name, Session: p.SessionID, Project: capture.ResolveProject(p.Cwd), Cwd: p.Cwd, TranscriptPath: p.TranscriptPath, Kind: kind, Payload: map[string]any{}}
 	switch kind {
 	case model.Prompt:
 		e.PromptText = p.Prompt

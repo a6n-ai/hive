@@ -372,3 +372,8 @@ func (h *Inscribe) CloseSessions(ctx context.Context, ids []string) error {
 	h.afterWrite()
 	return err
 }
+
+// IngestUsage reads Claude Code token usage for up to limit finished sessions.
+func (h *Inscribe) IngestUsage(ctx context.Context, limit int) (int, error) {
+	return stats.IngestUsage(h.store, limit, time.Now())
+}

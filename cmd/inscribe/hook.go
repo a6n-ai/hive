@@ -313,6 +313,9 @@ func followUps(event string, e inscribe.Event, auto bool) error {
 		if err := spawnDetached("score", "train"); err != nil {
 			return err
 		}
+		if err := spawnStatsIngest(e); err != nil {
+			return err
+		}
 		if auto {
 			return spawnDetached("consolidate", "--catch-up", "--agent", e.Agent)
 		}
@@ -321,11 +324,22 @@ func followUps(event string, e inscribe.Event, auto bool) error {
 		if err := spawnDetached("score", "train"); err != nil {
 			return err
 		}
+		if err := spawnStatsIngest(e); err != nil {
+			return err
+		}
 		if auto {
 			return spawnDetached("consolidate", "--session", e.Session, "--agent", e.Agent)
 		}
 	}
 	return nil
+}
+
+// spawnStatsIngest backfills Claude Code token usage. Only Claude Code writes a transcript Inscribe reads.
+func spawnStatsIngest(e inscribe.Event) error {
+	if e.Agent != "claude-code" {
+		return nil
+	}
+	return spawnDetached("stats", "ingest", "--catch-up")
 }
 
 // hookQuery picks what to recall for an event by its kind, so every agent's
