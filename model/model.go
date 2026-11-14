@@ -19,17 +19,18 @@ const (
 )
 
 type Event struct {
-	ID         int64
-	TS         int64 // unix ms
-	Agent      string
-	Session    string
-	Project    string
-	Cwd        string // agent working directory; stored on the trajectory record, not on events
-	Kind       EventKind
-	Tool       string
-	Payload    map[string]any
-	PromptText string
-	Digest     string
+	ID             int64
+	TS             int64 // unix ms
+	Agent          string
+	Session        string
+	Project        string
+	Cwd            string // agent working directory; stored on the trajectory record, not on events
+	TranscriptPath string // stored on sessions, not events
+	Kind           EventKind
+	Tool           string
+	Payload        map[string]any
+	PromptText     string
+	Digest         string
 }
 
 type MemoryType string

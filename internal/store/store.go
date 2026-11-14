@@ -350,11 +350,12 @@ func nullInt(v int64) any {
 // SessionEnd reopens a session that CloseSessions ended, since it resumed.
 func (t *Tx) TouchSession(e *model.Event) error {
 	ended := e.Kind == model.SessionEnd
-	_, err := t.tx.Exec(`INSERT INTO sessions(id, agent, project, started, last_event, event_count, ended)
-		VALUES (?, ?, ?, ?, ?, 1, CASE WHEN ? THEN ? END)
+	_, err := t.tx.Exec(`INSERT INTO sessions(id, agent, project, started, last_event, event_count, ended, transcript_path)
+		VALUES (?, ?, ?, ?, ?, 1, CASE WHEN ? THEN ? END, NULLIF(?, ''))
 		ON CONFLICT(id) DO UPDATE SET last_event = excluded.last_event, event_count = event_count + 1,
-		ended = CASE WHEN ? THEN excluded.last_event END`,
-		e.Session, e.Agent, e.Project, e.TS, e.TS, ended, e.TS, ended)
+		ended = CASE WHEN ? THEN excluded.last_event END,
+		transcript_path = COALESCE(transcript_path, NULLIF(excluded.transcript_path, ''))`,
+		e.Session, e.Agent, e.Project, e.TS, e.TS, ended, e.TS, e.TranscriptPath, ended)
 	return err
 }
 
