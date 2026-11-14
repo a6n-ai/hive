@@ -182,6 +182,11 @@ func (h *Inscribe) RecordInjection(ctx context.Context, in store.InjectionInput)
 	return err
 }
 
+// PromptIndex counts the session's prompts recorded before ts.
+func (h *Inscribe) PromptIndex(session string, before int64) (int, error) {
+	return h.store.PromptIndex(session, before)
+}
+
 // SessionLine summarizes the last 7 days of project's injections for session start.
 func (h *Inscribe) SessionLine(project string) (string, error) {
 	c, err := h.store.SessionLineCounts(project, time.Now().Add(-7*24*time.Hour).UnixMilli())

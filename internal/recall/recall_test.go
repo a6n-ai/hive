@@ -390,3 +390,35 @@ func TestMarkUsedSwallowsLockHitMidWrite(t *testing.T) {
 		t.Fatalf("HitLock=%v DroppedOutcomes=%d, want true and 1", st.HitLock(), st.DroppedOutcomes())
 	}
 }
+
+func TestHoldoutQueryNoOutcomes(t *testing.T) {
+	st := newStore(t)
+	put(t, st, model.Memory{Type: model.Note, Key: "k1", Text: "deploy with make deploy"})
+	q := Query{Project: "/p", Text: "deploy", Mode: Prompt, Session: "s1", Agent: "claude-code", PromptDigest: "d1"}
+	q.Holdout = true
+	held, err := Recall(context.Background(), st, nil, cfg(), q, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", st.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var outcomes int
+	var used sql.NullInt64
+	if err := db.QueryRow(`SELECT (SELECT count(*) FROM score_outcomes), (SELECT last_used FROM memories LIMIT 1)`).Scan(&outcomes, &used); err != nil {
+		t.Fatal(err)
+	}
+	if outcomes != 0 || used.Valid {
+		t.Fatalf("holdout wrote outcomes = %d, last_used = %v", outcomes, used)
+	}
+	if un, err := st.UnaskedOutcomes("s1", 10); err != nil || len(un) != 0 {
+		t.Fatalf("UnaskedOutcomes = %v, %v", un, err)
+	}
+	q.Holdout = false
+	normal, err := Recall(context.Background(), st, nil, cfg(), q, now)
+	if err != nil || len(normal) != 1 || len(held) != 1 || held[0] != normal[0] {
+		t.Fatalf("held = %+v, normal = %+v, err = %v", held, normal, err)
+	}
+}

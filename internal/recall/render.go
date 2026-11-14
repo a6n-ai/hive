@@ -3,7 +3,7 @@ package recall
 import "strings"
 
 func renderLine(l Line) string {
-	if l.Type == "holdout" {
+	if l.Type == HoldoutType {
 		return ""
 	}
 	return "[" + string(l.Type) + "] " + l.Text

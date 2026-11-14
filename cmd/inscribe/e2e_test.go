@@ -17,6 +17,7 @@ import (
 	"github.com/a6n-ai/inscribe"
 	"github.com/a6n-ai/inscribe/internal/consolidate"
 	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/stats"
 	"github.com/a6n-ai/inscribe/model"
 	_ "modernc.org/sqlite"
 )
@@ -1096,10 +1097,10 @@ func TestAnalyticsSessionStartSummary(t *testing.T) {
 
 func TestPromptInjectionRecorded(t *testing.T) {
 	home, proj := t.TempDir(), t.TempDir()
-	a := strings.TrimSpace(runOK(t, home, "", "remember", "run migrations before deploying staging", "--type", "note", "--scope", "global"))
-	b := strings.TrimSpace(runOK(t, home, "", "remember", "run migrations before deploying production", "--type", "note", "--scope", "global"))
+	strong := strings.TrimSpace(runOK(t, home, "", "remember", "run migrations before deploying production", "--type", "note", "--scope", "global"))
+	weak := strings.TrimSpace(runOK(t, home, "", "remember", "deploying needs a staging check", "--type", "note", "--scope", "global"))
 	out := hookOK(t, home, map[string]any{"session_id": "p1", "cwd": proj, "hook_event_name": "UserPromptSubmit",
-		"prompt": "run migrations before deploying"}, "UserPromptSubmit")
+		"prompt": "run migrations before deploying production"}, "UserPromptSubmit")
 	ctx := additionalContext(t, out)
 	ids, est, n := injectionRows(t, home, "UserPromptSubmit")
 	if n != 1 || est != recall.EstimateTokens(ctx) {
@@ -1109,8 +1110,60 @@ func TestPromptInjectionRecorded(t *testing.T) {
 	if err := json.Unmarshal([]byte(ids), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || !(got[0] == a && got[1] == b || got[0] == b && got[1] == a) {
-		t.Fatalf("memory_ids = %v, want %s and %s", got, a, b)
+	if len(got) < 1 || got[0] != strong || (len(got) == 2 && got[1] != weak) || len(got) > 2 {
+		t.Fatalf("memory_ids = %v, want %s first, then at most %s", got, strong, weak)
+	}
+}
+
+func TestHoldoutPrompt(t *testing.T) {
+	home, proj := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.toml"), []byte("[stats]\nholdout = 0.05\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := strings.TrimSpace(runOK(t, home, "", "remember", "run migrations before deploying production", "--type", "note", "--scope", "global"))
+	t.Setenv("INSCRIBE_HOME", home)
+	t.Setenv("INSCRIBE_TEST_NO_SPAWN", "1")
+	orig := stats.Draw
+	stats.Draw = func(string, string, int, float64) bool { return true }
+	t.Cleanup(func() { stats.Draw = orig })
+	prompt := func(session, text string) string {
+		b, _ := json.Marshal(map[string]any{"session_id": session, "cwd": proj, "hook_event_name": "UserPromptSubmit", "prompt": text})
+		var out, errOut bytes.Buffer
+		if code := run([]string{"hook", "--agent", "claude-code", "UserPromptSubmit"}, bytes.NewReader(b), &out, &errOut); code != 0 {
+			t.Fatalf("exit %d: %s", code, errOut.String())
+		}
+		return out.String()
+	}
+	out := prompt("h1", "run migrations before deploying production")
+	if strings.Contains(out, "hookSpecificOutput") {
+		t.Fatalf("holdout reply carries context: %q", out)
+	}
+	if msg := systemMessage(t, out); msg != "inscribe: holdout prompt, 0 memories injected" {
+		t.Fatalf("systemMessage = %q", msg)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(home, "inscribe.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var ids string
+	var holdout, est, lines, outcomes, asks int
+	if err := db.QueryRow(`SELECT memory_ids, holdout, est_tokens, line_count FROM injections WHERE hook = 'UserPromptSubmit'`).Scan(&ids, &holdout, &est, &lines); err != nil {
+		t.Fatal(err)
+	}
+	if ids != `["`+m+`"]` || holdout != 1 || est != 0 || lines != 1 {
+		t.Fatalf("row = ids %s holdout %d est %d lines %d", ids, holdout, est, lines)
+	}
+	if err := db.QueryRow(`SELECT (SELECT count(*) FROM score_outcomes), (SELECT count(*) FROM injections WHERE hook = 'feedback_ask')`).Scan(&outcomes, &asks); err != nil {
+		t.Fatal(err)
+	}
+	if outcomes != 0 || asks != 0 {
+		t.Fatalf("outcomes = %d, asks = %d, want 0", outcomes, asks)
+	}
+	prompt("h2", "zzz unrelated qqq")
+	var rows int
+	if err := db.QueryRow(`SELECT count(*) FROM injections WHERE session = 'h2'`).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("zero-line holdout wrote %d rows, err = %v", rows, err)
 	}
 }
 

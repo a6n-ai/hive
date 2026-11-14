@@ -129,6 +129,9 @@ func (a *Adapter) Reply(event string, lines []recall.Line) []byte {
 func status(event string, lines []recall.Line) string {
 	recent, summary := 0, ""
 	for _, l := range lines {
+		if l.Type == recall.HoldoutType {
+			return "inscribe: holdout prompt, 0 memories injected"
+		}
 		switch l.Type {
 		case "recent":
 			recent++

@@ -17,6 +17,7 @@ import (
 	"github.com/a6n-ai/inscribe/internal/extract"
 	"github.com/a6n-ai/inscribe/internal/feedback"
 	"github.com/a6n-ai/inscribe/internal/recall"
+	"github.com/a6n-ai/inscribe/internal/stats"
 	"github.com/a6n-ai/inscribe/internal/store"
 	"github.com/a6n-ai/inscribe/model"
 )
@@ -92,6 +93,18 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 		logDroppedInjections(h)
 		return writeDebug(stdout, h, ad, event, e, out, nil, saved, asked)
 	}
+	heldOut := false
+	if q.Mode == recall.Prompt && q.Session != "" {
+		if share := h.StatsConfig().Holdout; share > 0 {
+			idx, err := h.PromptIndex(e.Session, e.TS)
+			if err != nil {
+				logLine(config.Home(), "prompt index: %v", err)
+			} else {
+				heldOut = stats.Draw(e.Session, e.Digest, idx, share)
+			}
+		}
+	}
+	q.Holdout = heldOut
 	lines, err := h.Recall(ctx, q)
 	if err != nil {
 		return err
@@ -119,12 +132,16 @@ func runHook(args []string, stdin io.Reader, stdout io.Writer) error {
 			ids = append(ids, l.MemoryID)
 		}
 	}
+	wouldBe := len(lines)
+	if heldOut && len(lines) > 0 {
+		lines = []recall.Line{{Type: recall.HoldoutType}}
+	}
 	logLine(config.Home(), "%s %s %s: injected %d line(s) %v", e.Agent, event, e.Project, len(lines), ids)
 	if hook, ok := injectionHooks[e.Kind]; ok && len(lines) > 0 {
 		in := store.InjectionInput{
 			TS: e.TS, Session: e.Session, Agent: e.Agent, Project: e.Project,
-			Hook: hook, LineCount: len(lines),
-			EstTokens: recall.EstimateTokens(recall.Render(lines)), MemoryIDs: ids,
+			Hook: hook, LineCount: wouldBe,
+			EstTokens: recall.EstimateTokens(recall.Render(lines)), MemoryIDs: ids, Holdout: heldOut,
 		}
 		switch e.Kind {
 		case model.Prompt:

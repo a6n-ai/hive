@@ -13,6 +13,9 @@ import (
 	"github.com/a6n-ai/inscribe/model"
 )
 
+// HoldoutType marks the sentinel line that replaces a held-out prompt's recall.
+const HoldoutType = "holdout"
+
 type Mode int
 
 const (
@@ -37,6 +40,7 @@ type Query struct {
 	Agent          string // runtime that submitted the prompt; scored, not used as a filter
 	Session        string // set by the hook so an injection can be labeled after the session ends
 	PromptDigest   string // digest of the prompt event; the group key its shown lines are labeled by
+	Holdout        bool   // the lines will not be shown, so recall writes no usage or outcome rows
 }
 
 // hit is a scored line plus the column features that produced it.
@@ -101,6 +105,9 @@ func Recall(ctx context.Context, st *store.Store, src Source, cfg config.RecallC
 	lines := make([]Line, len(hits))
 	for i, h := range hits {
 		lines[i] = h.Line
+	}
+	if q.Holdout {
+		return lines, nil
 	}
 	return lines, markUsed(ctx, st, hits, q, now)
 }

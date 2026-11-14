@@ -283,3 +283,13 @@ func TestStatusSessionStartWithSummary(t *testing.T) {
 		t.Fatalf("status = %q, want %q", got, want)
 	}
 }
+
+func TestStatusHoldout(t *testing.T) {
+	lines := []recall.Line{{Type: recall.HoldoutType}}
+	want := "inscribe: holdout prompt, 0 memories injected"
+	for _, ev := range []string{"UserPromptSubmit", "SessionStart"} {
+		if got := status(ev, lines); got != want {
+			t.Fatalf("%s: status = %q, want %q", ev, got, want)
+		}
+	}
+}

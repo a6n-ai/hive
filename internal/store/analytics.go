@@ -159,3 +159,10 @@ func (t *Tx) DeleteOldAnalytics(cutoff int64, limit int) (injections, usage int6
 	usage, err = res.RowsAffected()
 	return injections, usage, err
 }
+
+// PromptIndex counts a session's prompt events before ts.
+func (s *Store) PromptIndex(session string, before int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT count(*) FROM events WHERE session = ? AND kind = 'prompt' AND ts < ?`, session, before).Scan(&n)
+	return n, err
+}
